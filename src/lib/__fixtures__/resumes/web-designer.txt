@@ -1,0 +1,48 @@
+Devan Ruiz-Halloran
+Product / web designer — Chicago, IL (remote only)
+devan.ruizhalloran@example.com
+
+PROFILE
+Eleven years designing web products, mostly for organizations where the
+interface is the service: utilities, transit, civic software. I do the research,
+the system and the screens, and I hand off cleanly to engineers. Senior IC. I
+have been asked twice to manage and said no both times.
+
+WORK
+
+Senior Product Designer — Kettle & Vine (design agency), Chicago. 2021–present.
+Lead designer on the customer portal redesign for a regional electric utility.
+Their bill-pay and outage pages had a 40% mobile bounce rate and the call center
+was absorbing the difference. I ran fourteen stakeholder interviews and five
+rounds of moderated usability tests, built a Figma design system the utility
+still runs on, and designed responsive flows for billing, the outage map and
+rebate enrollment. Handed the system off to their in-house React team with
+annotated specs and a component-by-component walkthrough. Mobile bounce fell to
+18%. Rebate enrollment completions doubled in the first quarter after launch.
+
+Design Lead (contract) — City of Lakeport Transit Authority digital team.
+2019–2021, two-year engagement.
+Owned design for the agency's trip-planning and real-time arrivals app. Worked
+daily with the GTFS data engineers to figure out what the feed could honestly
+promise and designed around the gaps. Ran accessibility audits every sprint and
+shipped monthly. The app store rating went from 2.9 to 4.4 over the engagement,
+and the agency's WCAG AA audit closed with zero critical findings.
+
+Web Designer — Foldermill (B2B SaaS), Chicago. 2015–2019.
+Early-career marketing-side role. Built landing page templates in Webflow for
+the demand-gen team and ran A/B tests on hero layouts and CTA placement.
+Conversion gains were small and honestly most of the job was template
+maintenance, but it is where I learned to ship weekly.
+
+SKILLS
+UX research, moderated usability testing, design systems, responsive design,
+Figma, developer handoff, accessibility (WCAG AA), data-heavy and
+information-dense UI, cross-functional work with data engineers, Webflow.
+
+EDUCATION
+BFA, Graphic Design, Midwest College of Art and Design, 2014.
+
+LOOKING FOR
+Remote only. Senior individual contributor. Interested in building
+electrification, public transit and climate policy work. Happy to learn a new
+domain; not interested in retraining into engineering.

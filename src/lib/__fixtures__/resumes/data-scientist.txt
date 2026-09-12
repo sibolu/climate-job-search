@@ -1,0 +1,43 @@
+PRIYA VENKATARAMAN-COLE
+Staff Data Scientist | San Francisco Bay Area | p.venkataraman.cole@example.com
+
+Nine years post-PhD. Causal inference and forecasting in production. I build the
+measurement machinery other teams make decisions with.
+
+EXPERIENCE
+
+Staff Data Scientist, Pricing & Marketplace — Tollgate Market (two-sided
+marketplace), San Francisco. 2021–present.
+Pricing experiments at Tollgate were badly confounded: sellers reacted to price
+changes within hours, so naive A/B splits leaked across arms. I designed
+switchback and cluster-randomized experiments to handle the interference, then
+built an internal causal-inference library — doubly robust estimators, synthetic
+controls, sensitivity analysis — that six teams now use. I also review experiment
+designs company-wide, roughly one a week. Pricing decisions moved onto the
+platform. A synthetic-control study on a proposed fee change caught a 4% GMV
+loss that the original difference-in-means analysis had scored as neutral, and
+the change was pulled.
+
+Senior Data Scientist, Forecasting — Tollgate Market. 2019–2021.
+Forecasting team serving operations and finance. Built hierarchical time-series
+forecasts reconciled across region and category, owned the feature pipeline and
+the monitoring dashboards, and migrated model training off a laptop cron onto a
+scheduled batch system with alerting. Forecast error down 22% year over year.
+The models have run unattended for 18 months since.
+
+PhD in Economics — Western Bay University, 2017.
+Dissertation on the effect of a state residential energy-efficiency subsidy,
+using linked administrative utility billing and rebate records. Difference-in-
+differences with staggered adoption and a regression-discontinuity design at the
+income eligibility cutoff, on a panel of about 900k households. Two published
+papers; one was cited in a state regulatory filing on program cost-effectiveness.
+
+SKILLS
+Causal inference (DiD, RDD, synthetic control, doubly robust estimation),
+experiment design and interference, hierarchical time-series forecasting,
+Python, SQL, data pipelines, MLOps and model monitoring, econometrics, program
+evaluation, policy analysis, technical leadership and design review.
+
+PREFERENCES
+Bay Area, hybrid. Staff or senior IC. Will go deep on a new domain; will not go
+back for another degree.
