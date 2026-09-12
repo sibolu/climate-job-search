@@ -106,7 +106,7 @@ orchestrator runs before marking `[DONE]`. Every step ends in one commit.
 | # | Step | Model | Acceptance |
 |---|---|---|---|
 | 0.1 `[DONE]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
-| 0.2 `[TODO]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
+| 0.2 `[DONE]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
 | 0.3 `[TODO]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
 | 0.4 `[TODO]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
 
@@ -273,3 +273,34 @@ integrates, and commits.
    `PASSCODE_COOKIE_SECRET` and carrying no user data — only a format version
    and an expiry. Signing and verification use the Web Crypto API so the gate
    stays portable to the Edge runtime.
+9. **`profile.md` format is "labeled-bullet markdown"**, defined once in the
+   header comment of `src/lib/profile.ts`: seven `##` sections in fixed order
+   (Preferences, Experience Cards, Skills, Fields, Role Shortlist, Queries,
+   Session Notes); items are `### <ID>: <title>` headings with
+   `- **Key:** value` lines; lists are comma-separated inline except Sources
+   (one URL per indented `-` line). No YAML or JSON blocks, so a nontechnical
+   user can read and edit it in a textarea. Preferences are stated unless
+   tagged `(inferred)`. Field `explored` is a boolean separate from `status`.
+10. **ID stability rule.** Card/field/role/query IDs (`C1`, `F1`, `R1`, `Q1`)
+    are never renumbered on edit; a new item gets the highest existing number
+    plus one (gaps are never reused). Items that a user adds by hand without
+    an ID, or with a duplicate ID, are assigned the next free one with a
+    warning. Excluded cards stay in the file with `Excluded: yes` rather than
+    being deleted, so fit reasoning that cites them keeps resolving.
+11. **Tolerance rule.** `parseProfile` never throws on a string. Unknown
+    `##` sections and unknown `- **Key:**` lines are preserved and written
+    back by `serializeProfile`; unlabeled text is moved to the nearest
+    free-text slot (`Notes` on the item, else Session Notes) and reported in
+    `warnings`; invalid enum values fall back to the default with a warning.
+    Serialization is canonical (fixed order, every known key present) so
+    `parse(serialize(p))` deep-equals `p` and `serialize(parse(md))` is
+    idempotent, which keeps per-turn diffs small. The fixtures under
+    `src/lib/__fixtures__/` are stored in canonical form and the tests assert
+    that byte-for-byte.
+12. **zod is the shared schema layer.** `profile.ts` and `session.ts` export
+    zod schemas alongside the inferred TS types; route handlers validate
+    request bodies with them (`parseTurnRequest`) and 0.3's structured-outputs
+    helper and the 1.x modules pass the same schemas to the Anthropic SDK.
+    The `profile.md` text, not the parsed object, is the source of truth in
+    `localStorage`; `SessionState` carries only `version`, a random
+    `sessionId`, `profileMd`, and `messages` — no identity fields by design.

@@ -100,14 +100,34 @@ One shared passcode, no accounts (PLAN.md §2 "Access", §7 decision 5).
   to `/`. A wrong passcode returns `401` and sets no cookie. The submitted
   passcode is never logged.
 
+## `profile.md` is the contract (PLAN.md §7 decisions 9–12)
+
+- The format is defined once, in the header comment of `src/lib/profile.ts`,
+  with a complete example. Change the format only there, in the same commit
+  as the fixtures under `src/lib/__fixtures__/` and the round-trip tests.
+- Every module reads and writes the profile through `parseProfile` /
+  `serializeProfile` and the pure helpers (`upsertCard`, `setFieldStatus`,
+  `setQueryStatus`, …). Never string-edit the markdown elsewhere.
+- IDs (`C1`, `F1`, `R1`, `Q1`) are stable: never renumber; use `nextCardId`
+  etc. for new items. Exclude cards, do not delete them.
+- `parseProfile` never throws; surface its `warnings` to the user rather than
+  discarding them. Unknown sections and keys must survive a round trip.
+- Fixtures are stored in canonical form (`serializeProfile(parseProfile(md))
+  === md`). After changing the serializer, regenerate them and review the
+  diff by hand.
+- `session.ts` owns what the browser stores and sends: the profile text is
+  the source of truth, `sessionId` is random and anonymous, and no field may
+  carry identity. Route handlers validate bodies with `parseTurnRequest`.
+
 ## Repo layout (target, PLAN.md §2)
 
 ```
 src/
   lib/
     passcode.ts     # shared-passcode logic (done, 0.1)
-    profile.ts      # profile.md schema, parse/serialize  (the contract)
-    session.ts      # what the browser sends each turn: profile + messages + feedback
+    profile.ts      # profile.md schema, parse/serialize  (the contract; done, 0.2)
+    session.ts      # browser session state + per-turn payload (done, 0.2)
+    __fixtures__/   # canonical profile.md fixtures used by the round-trip tests
     llm.ts          # client wrapper, model config, usage logging, web tools
     reference.ts    # typed reads from the Supabase reference tables
     cards.ts        # pasted text → experience cards
