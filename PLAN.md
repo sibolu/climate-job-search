@@ -107,7 +107,7 @@ orchestrator runs before marking `[DONE]`. Every step ends in one commit.
 |---|---|---|---|
 | 0.1 `[DONE]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
 | 0.2 `[DONE]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
-| 0.3 `[TODO]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
+| 0.3 `[DONE]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
 | 0.4 `[DONE]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
 
 Gate 0: orchestrator runs tests, `/code-review` at medium, commits. User skims
@@ -338,3 +338,40 @@ integrates, and commits.
     and the CLI stack runs in Docker (`pnpm db:start`). No `supabase link` to a
     remote project from a development machine; the production project is set
     up in Phase 3.3 and seeded from the same `data/*.yaml`.
+18. **`@anthropic-ai/sdk` 0.125.0, non-beta endpoints only.** Structured
+    outputs use the documented stable path — `client.messages.parse()` with
+    `output_config.format = zodOutputFormat(schema)` from
+    `@anthropic-ai/sdk/helpers/zod` (which targets `zod/v4`, matching the
+    repo's zod 4) — and streaming uses `client.messages.stream()` +
+    `finalMessage()`. No beta header is needed for structured outputs, effort,
+    adaptive thinking, prompt caching or the web tools, so `llm.ts` never
+    touches `client.beta.*`; that keeps the app off surfaces that can change
+    shape under us. `structured()` re-validates `parsed_output` with the
+    caller's zod schema instead of casting, so a schema change can never be
+    silently wrong at runtime.
+19. **Web tool type strings are `web_search_20260209` and
+    `web_fetch_20260209`** (the dynamic-filtering variants; `claude-opus-5`
+    supports them, confirmed against the `claude-api` skill's server-tool
+    table on 2026-09-12). Web fetch is configured with citations on, because
+    every recommendation has to cite a real source. Because those tools run
+    code execution under the hood, `code_execution` is never declared
+    separately. `webTools()` in `llm.ts` is the only factory, and every call
+    passes its tools through `assertToolsAllowed()`, which throws unless each
+    web tool blocks all three domains — the belt to §7.13's braces.
+20. **Pricing lives in `PRICE_PER_MTOK` in `llm.ts`**, from the `claude-api`
+    skill's model table and prompt-caching economics, checked 2026-09-12:
+    `claude-opus-5` input $5/MTok, output $25/MTok, cache read 0.1× input
+    ($0.50), 5-minute cache write 1.25× input ($6.25). The comment carries the
+    date; re-check it whenever the skill's numbers move, because `cost_usd` in
+    `llm_usage` is computed here and nowhere else.
+21. **One `llm_usage` row per logical call.** A `pause_turn` continuation is
+    part of the same logical call: the wrapper resumes it (up to
+    `MAX_PAUSE_TURN_CONTINUATIONS = 5`, then `LlmPauseLimitError`), sums the
+    token counters across every continuation, and writes a single row. Rows
+    are written fire-and-forget through the anon key, and a failure is a
+    `console.warn` carrying the error *code* only — telemetry must never cost
+    the user their turn, and must never be a channel through which content
+    leaks. Refused and truncated turns are logged before the error is thrown,
+    so the cost telemetry stays complete. `UsageRow`'s key set is fixed by
+    `USAGE_ROW_KEYS` and guarded both at compile time and in `llm.test.ts`, so
+    adding a content field fails the build.

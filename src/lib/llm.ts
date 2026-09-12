@@ -1,0 +1,755 @@
+/**
+ * The single door to the Claude API (PLAN.md §2 "LLM", §6, §7 decisions 2 and
+ * 13). Every model call in this app goes through `createLlm()`; no other
+ * module may construct an Anthropic client, build a web tool, or write an
+ * `llm_usage` row.
+ *
+ * Why one module:
+ *
+ *   * **Terms-of-use compliance is code.** {@link BLOCKED_DOMAINS} is THE
+ *     enforcement point for the PRD's "no scraping LinkedIn, Indeed or
+ *     Climatebase". {@link webTools} is the only web-tool factory, and every
+ *     call runs its tools through {@link assertToolsAllowed}, which throws on
+ *     any web tool that does not block all three domains. A new fetch path
+ *     that does not come through here is a bug, not a shortcut.
+ *   * **No user data server-side.** The only server-side write in the product
+ *     is an anonymous {@link UsageRow}: counters, a random session id and a
+ *     step name. This module never logs, stores or forwards prompt or
+ *     completion text — not in the usage row, not in an error message, not in
+ *     a `console.warn`.
+ *   * **Cost telemetry is comparable.** One row per logical call (a
+ *     `pause_turn` continuation is part of the same logical call and its
+ *     tokens are summed), priced from {@link PRICE_PER_MTOK}.
+ *
+ * Server-only: {@link createLlm} throws in a browser. The API key is a
+ * server-only env var and route handlers are the only callers.
+ *
+ * SDK notes (checked against the `claude-api` skill on 2026-09-12,
+ * `@anthropic-ai/sdk` 0.125.0):
+ *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call;
+ *     `budget_tokens` is rejected by `claude-opus-5`.
+ *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
+ *   * Structured outputs use `client.messages.parse()` with
+ *     `output_config.format = zodOutputFormat(schema)` — no beta header.
+ *   * Web search / web fetch are the `_20260209` dynamic-filtering variants,
+ *     which `claude-opus-5` supports on the non-beta endpoint.
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import type { z } from "zod";
+
+import type { StepName } from "./session";
+import { anonClient } from "./supabase";
+
+// ---------------------------------------------------------------------------
+// Model, effort and limits
+// ---------------------------------------------------------------------------
+
+/** One model everywhere (PLAN.md §7.2). Re-evaluate Sonnet 5 after Phase 3. */
+export const MODEL = "claude-opus-5";
+
+/** Effort levels this app uses. The SDK also accepts `xhigh`; we do not. */
+export type Effort = "low" | "medium" | "high" | "max";
+
+/**
+ * Depth per call type (PLAN.md §2: chat `medium`, discovery `high`). Chat-like
+ * steps answer from what the user just said; discovery steps reason over the
+ * reference collection and the web and are worth the extra tokens.
+ */
+export const EFFORT_BY_STEP: Record<StepName, Effort> = {
+  cards: "medium",
+  elicit: "medium",
+  discover: "high",
+  explore: "high",
+  queries: "high",
+  revise: "high",
+};
+
+/**
+ * `maxDuration` for the route handlers that call this module. Discovery and
+ * exploration turns with web search run 1–3 minutes (PLAN.md §6).
+ */
+export const MAX_DURATION_SECONDS = 800;
+
+/** How many `pause_turn` resumes one logical call may make before giving up. */
+export const MAX_PAUSE_TURN_CONTINUATIONS = 5;
+
+/** Streaming turns get room; the model stops when it is done, not at the cap. */
+export const DEFAULT_MAX_TOKENS_STREAM = 32_000;
+
+/** Structured calls are not streamed, so keep them under the HTTP timeout. */
+export const DEFAULT_MAX_TOKENS_STRUCTURED = 16_000;
+
+/** TypeScript SDK timeouts are milliseconds. Sized for a 1–3 minute turn. */
+export const REQUEST_TIMEOUT_MS = 600_000;
+
+/** SDK default; retries 408/409/429/5xx and connection errors. */
+export const MAX_RETRIES = 2;
+
+// ---------------------------------------------------------------------------
+// Blocked domains — the enforcement point
+// ---------------------------------------------------------------------------
+
+/**
+ * THE enforcement point for the PRD's "no scraping LinkedIn, Indeed or
+ * Climatebase" (PLAN.md §6, §7.13). Passed as `blocked_domains` on every web
+ * tool, so the server-side tools never search or fetch these hosts (or their
+ * subdomains) at all.
+ *
+ * The same three domains are also enforced on stored reference data, twice:
+ * `BLOCKED_SOURCE_DOMAINS` in `reference-schema.ts` and
+ * `private.blocked_source_domains()` in `supabase/migrations/`. All three
+ * lists must stay in step — `llm.test.ts` asserts this one equals the
+ * TypeScript one, and `pnpm db:check-rls` covers the SQL one.
+ */
+export const BLOCKED_DOMAINS = ["linkedin.com", "indeed.com", "climatebase.org"] as const;
+
+/** Server-tool type strings for `claude-opus-5` (dynamic filtering variants). */
+export const WEB_SEARCH_TOOL_TYPE = "web_search_20260209";
+export const WEB_FETCH_TOOL_TYPE = "web_fetch_20260209";
+
+/** A tool definition this module will send. Only server tools are supported. */
+export type LlmTool = Anthropic.Messages.ToolUnion;
+
+export interface WebToolOptions {
+  /** Searches per logical call. */
+  searchMaxUses?: number;
+  /** Page fetches per logical call. */
+  fetchMaxUses?: number;
+}
+
+/**
+ * The ONLY way to build a web tool in this app. Both tools carry
+ * {@link BLOCKED_DOMAINS}; web fetch also turns citations on, because every
+ * recommendation has to cite a real source (PLAN.md §3 steps 1.4 and 2.2).
+ */
+export function webTools({ searchMaxUses = 8, fetchMaxUses = 8 }: WebToolOptions = {}): LlmTool[] {
+  return [
+    {
+      type: WEB_SEARCH_TOOL_TYPE,
+      name: "web_search",
+      max_uses: searchMaxUses,
+      blocked_domains: [...BLOCKED_DOMAINS],
+    },
+    {
+      type: WEB_FETCH_TOOL_TYPE,
+      name: "web_fetch",
+      max_uses: fetchMaxUses,
+      blocked_domains: [...BLOCKED_DOMAINS],
+      citations: { enabled: true },
+    },
+  ];
+}
+
+function isWebTool(tool: LlmTool): boolean {
+  const type = (tool as { type?: unknown }).type;
+  return typeof type === "string" && (type.startsWith("web_search") || type.startsWith("web_fetch"));
+}
+
+function blockedDomainsOf(tool: LlmTool): readonly string[] {
+  const raw = (tool as { blocked_domains?: unknown }).blocked_domains;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim().toLowerCase());
+}
+
+/**
+ * Defense in depth: refuses any web tool that does not block all three
+ * domains, whoever built it. {@link webTools} always passes; a hand-rolled
+ * tool definition (or one that switched to `allowed_domains`) does not.
+ */
+export function assertToolsAllowed(tools: readonly LlmTool[]): void {
+  for (const tool of tools) {
+    if (!isWebTool(tool)) continue;
+    const blocked = blockedDomainsOf(tool);
+    const missing = BLOCKED_DOMAINS.filter((domain) => !blocked.includes(domain));
+    if (missing.length > 0) {
+      const name = String((tool as { type?: unknown }).type ?? "web tool");
+      throw new LlmToolPolicyError(
+        `${name} is missing blocked_domains ${missing.join(", ")}. Build web tools with ` +
+          "webTools() — the PRD forbids scraping those sites and blocked_domains is where " +
+          "that is enforced (PLAN.md §6).",
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pricing
+// ---------------------------------------------------------------------------
+
+/**
+ * USD per million tokens for `claude-opus-5`, from the `claude-api` skill's
+ * model table and prompt-caching economics (checked 2026-09-12): input $5,
+ * output $25, cache read 0.1× input, 5-minute cache write 1.25× input. Update
+ * both this table and the date when the skill's numbers change.
+ */
+export const PRICE_PER_MTOK = {
+  input: 5,
+  output: 25,
+  cacheRead: 0.5,
+  cacheWrite: 6.25,
+} as const;
+
+/** Token counters, summed across the continuations of one logical call. */
+export interface TokenCounts {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+export function zeroTokenCounts(): TokenCounts {
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+}
+
+/** Adds one response's `usage` to a running total. Missing counters are 0. */
+export function addUsage(counts: TokenCounts, usage: Anthropic.Usage | undefined): TokenCounts {
+  return {
+    input: counts.input + (usage?.input_tokens ?? 0),
+    output: counts.output + (usage?.output_tokens ?? 0),
+    cacheRead: counts.cacheRead + (usage?.cache_read_input_tokens ?? 0),
+    cacheWrite: counts.cacheWrite + (usage?.cache_creation_input_tokens ?? 0),
+  };
+}
+
+/** Cost of one logical call, rounded to the `numeric(10, 6)` column. */
+export function costUsd(counts: TokenCounts): number {
+  const dollars =
+    (counts.input * PRICE_PER_MTOK.input +
+      counts.output * PRICE_PER_MTOK.output +
+      counts.cacheRead * PRICE_PER_MTOK.cacheRead +
+      counts.cacheWrite * PRICE_PER_MTOK.cacheWrite) /
+    1_000_000;
+  return Math.round(dollars * 1e6) / 1e6;
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/** Base class for everything this module throws. SDK errors pass through. */
+export class LlmError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = new.target.name;
+  }
+}
+
+/** `stop_reason: "refusal"`. Carries the category only — never the text. */
+export class LlmRefusalError extends LlmError {
+  readonly step: StepName;
+  readonly category: string | null;
+
+  constructor(step: StepName, category: string | null) {
+    super(
+      `Claude refused the ${step} request` +
+        (category === null ? "." : ` (category: ${category}).`),
+    );
+    this.step = step;
+    this.category = category;
+  }
+}
+
+/** `stop_reason: "max_tokens"`: the answer is cut off, so it is not usable. */
+export class LlmTruncatedError extends LlmError {
+  readonly step: StepName;
+  readonly maxTokens: number;
+
+  constructor(step: StepName, maxTokens: number) {
+    super(`The ${step} response hit max_tokens (${maxTokens}) and is incomplete.`);
+    this.step = step;
+    this.maxTokens = maxTokens;
+  }
+}
+
+/** Server tools kept pausing past {@link MAX_PAUSE_TURN_CONTINUATIONS}. */
+export class LlmPauseLimitError extends LlmError {
+  readonly step: StepName;
+
+  constructor(step: StepName, continuations: number) {
+    super(
+      `The ${step} turn still paused after ${continuations} continuations; giving up rather ` +
+        "than looping. Narrow the prompt or lower max_uses on the web tools.",
+    );
+    this.step = step;
+  }
+}
+
+/** A web tool that does not block all three domains was passed to a call. */
+export class LlmToolPolicyError extends LlmError {}
+
+/** Structured output was missing or did not match the schema. */
+export class LlmOutputError extends LlmError {
+  readonly step: StepName;
+
+  constructor(step: StepName, detail: string) {
+    super(`The ${step} response did not match its schema: ${detail}`);
+    this.step = step;
+  }
+}
+
+/** Missing configuration, or a call from the browser. */
+export class LlmConfigError extends LlmError {}
+
+// ---------------------------------------------------------------------------
+// Usage logging (PLAN.md §7.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per logical call. THERE ARE NO CONTENT FIELDS AND NONE MAY BE ADDED:
+ * no prompt, no completion, no profile or chat text, no identifiers. The
+ * matching CHECK constraints and the table comment in
+ * `supabase/migrations/*_llm_usage.sql` say the same thing in SQL.
+ */
+export interface UsageRow {
+  session_id: string;
+  step: StepName;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+  cost_usd: number;
+  duration_ms: number;
+}
+
+/** The row's keys, in insert order. `llm.test.ts` asserts a row matches this. */
+export const USAGE_ROW_KEYS = [
+  "session_id",
+  "step",
+  "model",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_input_tokens",
+  "cache_creation_input_tokens",
+  "cost_usd",
+  "duration_ms",
+] as const;
+
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type AssertTrue<T extends true> = T;
+
+/**
+ * Compile-time guard: adding a field to {@link UsageRow} (a content field, say)
+ * without adding it to {@link USAGE_ROW_KEYS} fails `pnpm typecheck`, and
+ * adding it to both fails the row-shape test and the migration's column list.
+ */
+export type UsageRowKeysAreExactlyTheFixedList = AssertTrue<
+  Equal<keyof UsageRow, (typeof USAGE_ROW_KEYS)[number]>
+>;
+
+/** Where usage rows go. Implementations must never receive anything else. */
+export interface UsageSink {
+  record(row: UsageRow): Promise<void>;
+}
+
+/** In-memory sink for tests and scripts. */
+export function memoryUsageSink(): UsageSink & { rows: UsageRow[] } {
+  const rows: UsageRow[] = [];
+  return {
+    rows,
+    record(row: UsageRow): Promise<void> {
+      rows.push(row);
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * The real sink: an anonymous insert through the anon key, which RLS allows to
+ * INSERT `llm_usage` and nothing else.
+ */
+export function supabaseUsageSink(): UsageSink {
+  return {
+    async record(row: UsageRow): Promise<void> {
+      const { error } = await anonClient().from("llm_usage").insert(row);
+      if (error !== null) {
+        throw new LlmError(`llm_usage insert failed (${error.code})`);
+      }
+    },
+  };
+}
+
+/** An error's code — never its message, which could quote request content. */
+function errorCode(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && code !== "") return code;
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number") return String(status);
+    const name = (error as { name?: unknown }).name;
+    if (typeof name === "string" && name !== "") return name;
+  }
+  return "unknown";
+}
+
+/**
+ * Fire and forget. Telemetry must never cost the user their turn, so a failure
+ * is a `console.warn` with the error code only and nothing else.
+ */
+function recordUsage(sink: UsageSink, row: UsageRow): void {
+  const warn = (error: unknown): void => {
+    console.warn(`llm_usage row not written (${errorCode(error)}); the turn was unaffected`);
+  };
+  try {
+    void Promise.resolve(sink.record(row)).catch(warn);
+  } catch (error) {
+    warn(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Client
+// ---------------------------------------------------------------------------
+
+/** The streaming surface this module uses (`Anthropic.MessageStream` fits). */
+export interface LlmStream extends AsyncIterable<Anthropic.MessageStreamEvent> {
+  finalMessage(): Promise<Anthropic.Message>;
+}
+
+/** A `messages.parse()` response: a message plus the parsed output. */
+export type LlmParsedMessage = Anthropic.Message & { parsed_output?: unknown };
+
+/**
+ * The two SDK calls this module makes, as an interface so tests can pass a
+ * fake. {@link anthropicClient} is the real implementation.
+ */
+export interface LlmClient {
+  stream(params: Anthropic.MessageCreateParamsNonStreaming): LlmStream;
+  parse(params: Anthropic.MessageCreateParamsNonStreaming): Promise<LlmParsedMessage>;
+}
+
+/**
+ * Builds the SDK client. `ANTHROPIC_API_KEY` is server-only; it is read here
+ * and nowhere else. (The SDK would also accept an `ant auth login` profile,
+ * but production is Vercel, where the env var is the only credential, so we
+ * require it explicitly and fail with a readable message.)
+ */
+function defaultAnthropic(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey === undefined || apiKey.trim() === "") {
+    throw new LlmConfigError(
+      "ANTHROPIC_API_KEY is not set. Copy .env.example to .env.local and add a key; it is " +
+        "server-only and must never reach the client bundle.",
+    );
+  }
+  return new Anthropic({ apiKey, maxRetries: MAX_RETRIES, timeout: REQUEST_TIMEOUT_MS });
+}
+
+/** Adapts the Anthropic SDK to {@link LlmClient}. */
+export function anthropicClient(anthropic: Anthropic = defaultAnthropic()): LlmClient {
+  return {
+    stream: (params) => anthropic.messages.stream(params),
+    parse: (params) => anthropic.messages.parse(params),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Requests and results
+// ---------------------------------------------------------------------------
+
+export interface CallRequest {
+  /** Which lib module is calling; picks the effort level and labels the row. */
+  step: StepName;
+  /** The browser's random, anonymous session id. Groups usage rows only. */
+  sessionId: string;
+  /**
+   * The system prompt. Keep it byte-stable across turns: it is sent as a
+   * cached block, and any change (a timestamp, a re-ordered list) invalidates
+   * the cache for the whole request (`claude-api` skill, prompt caching).
+   */
+  system: string;
+  messages: readonly Anthropic.MessageParam[];
+  /** Server tools, from {@link webTools}. Client-side tools are not supported. */
+  tools?: readonly LlmTool[];
+  maxTokens?: number;
+}
+
+export type StreamTextRequest = CallRequest;
+
+export interface StructuredRequest<S extends z.ZodType> extends CallRequest {
+  schema: S;
+}
+
+/** What every call reports back, whatever the shape of its output. */
+export interface CallMetrics {
+  usage: TokenCounts;
+  costUsd: number;
+  durationMs: number;
+  /** How many `pause_turn` resumes this logical call needed. */
+  continuations: number;
+  stopReason: Anthropic.StopReason | null;
+}
+
+export interface StreamTextResult extends CallMetrics {
+  /** The full assistant text, concatenated across continuations. */
+  text: string;
+  /** The last response, for callers that need blocks (citations, tool results). */
+  message: Anthropic.Message;
+}
+
+export interface StructuredResult<T> extends CallMetrics {
+  value: T;
+  message: Anthropic.Message;
+}
+
+export interface StreamText {
+  /**
+   * Text deltas as they arrive. Consume this to completion (or abandon the
+   * whole call): {@link final} settles when the iterator does.
+   */
+  textDeltas: AsyncIterable<string>;
+  /** Resolves once the stream is drained; rejects with the call's error. */
+  final: Promise<StreamTextResult>;
+}
+
+export interface Llm {
+  streamText(request: StreamTextRequest): StreamText;
+  structured<S extends z.ZodType>(request: StructuredRequest<S>): Promise<StructuredResult<z.infer<S>>>;
+}
+
+export interface CreateLlmOptions {
+  client?: LlmClient;
+  usageSink?: UsageSink;
+  /** Clock, injectable so tests can assert on `duration_ms`. */
+  now?: () => number;
+}
+
+// ---------------------------------------------------------------------------
+// The wrapper
+// ---------------------------------------------------------------------------
+
+function systemBlocks(system: string): Anthropic.TextBlockParam[] {
+  // One cached block: the system prompt is the stable prefix of every turn.
+  return [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
+}
+
+function requestParams(
+  request: CallRequest,
+  messages: Anthropic.MessageParam[],
+  maxTokens: number,
+  format?: Anthropic.Messages.JSONOutputFormat,
+): Anthropic.MessageCreateParamsNonStreaming {
+  const tools = request.tools === undefined ? undefined : [...request.tools];
+  return {
+    model: MODEL,
+    max_tokens: maxTokens,
+    system: systemBlocks(request.system),
+    messages,
+    // Adaptive thinking on every call; `budget_tokens` is rejected by Opus 5.
+    thinking: { type: "adaptive" },
+    output_config: {
+      effort: EFFORT_BY_STEP[request.step],
+      ...(format === undefined ? {} : { format }),
+    },
+    ...(tools === undefined || tools.length === 0 ? {} : { tools }),
+  };
+}
+
+function usageRow(
+  request: CallRequest,
+  counts: TokenCounts,
+  durationMs: number,
+): UsageRow {
+  return {
+    session_id: request.sessionId,
+    step: request.step,
+    model: MODEL,
+    input_tokens: counts.input,
+    output_tokens: counts.output,
+    cache_read_input_tokens: counts.cacheRead,
+    cache_creation_input_tokens: counts.cacheWrite,
+    cost_usd: costUsd(counts),
+    duration_ms: Math.max(0, Math.round(durationMs)),
+  };
+}
+
+/**
+ * Terminal stop reasons are checked after usage is logged, so a refused or
+ * truncated turn still shows up in the cost telemetry.
+ */
+function assertTerminalStopReason(request: CallRequest, message: Anthropic.Message, maxTokens: number): void {
+  if (message.stop_reason === "refusal") {
+    throw new LlmRefusalError(request.step, message.stop_details?.category ?? null);
+  }
+  if (message.stop_reason === "max_tokens") {
+    throw new LlmTruncatedError(request.step, maxTokens);
+  }
+  if (message.stop_reason === "tool_use") {
+    throw new LlmToolPolicyError(
+      `The ${request.step} turn asked to run a client-side tool. This wrapper sends server ` +
+        "tools only (webTools()); nothing in this app executes tools locally.",
+    );
+  }
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  // The caller may only consume `textDeltas` and let it throw; keep the twin
+  // rejection from surfacing as an unhandled rejection.
+  promise.catch(() => {});
+  return { promise, resolve, reject };
+}
+
+/**
+ * Builds the wrapper. Inject `client`/`usageSink`/`now` in tests; the defaults
+ * are the real SDK client and the anonymous Supabase sink.
+ */
+export function createLlm(options: CreateLlmOptions = {}): Llm {
+  if (typeof window !== "undefined") {
+    throw new LlmConfigError(
+      "createLlm() was called in a browser. Model calls happen in route handlers only — the " +
+        "API key is server-only and the browser must never hold it.",
+    );
+  }
+
+  const now = options.now ?? (() => Date.now());
+  const usageSink = options.usageSink ?? supabaseUsageSink();
+  let cachedClient = options.client;
+  const client = (): LlmClient => {
+    cachedClient ??= anthropicClient();
+    return cachedClient;
+  };
+
+  function streamText(request: StreamTextRequest): StreamText {
+    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STREAM;
+    const result = deferred<StreamTextResult>();
+
+    async function* run(): AsyncGenerator<string> {
+      try {
+        if (request.tools !== undefined) assertToolsAllowed(request.tools);
+        const startedAt = now();
+        const messages = [...request.messages];
+        let counts = zeroTokenCounts();
+        let continuations = 0;
+        let text = "";
+
+        for (;;) {
+          const stream = client().stream(requestParams(request, messages, maxTokens));
+          for await (const event of stream) {
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              text += event.delta.text;
+              yield event.delta.text;
+            }
+          }
+          const message = await stream.finalMessage();
+          counts = addUsage(counts, message.usage);
+
+          if (message.stop_reason === "pause_turn") {
+            // A server tool hit its per-request loop limit. Re-send the paused
+            // assistant turn and the server resumes where it left off; do not
+            // add a "continue" message.
+            if (continuations >= MAX_PAUSE_TURN_CONTINUATIONS) {
+              recordUsage(usageSink, usageRow(request, counts, now() - startedAt));
+              throw new LlmPauseLimitError(request.step, continuations);
+            }
+            continuations += 1;
+            messages.push({ role: "assistant", content: message.content });
+            continue;
+          }
+
+          const durationMs = now() - startedAt;
+          recordUsage(usageSink, usageRow(request, counts, durationMs));
+          assertTerminalStopReason(request, message, maxTokens);
+          result.resolve({
+            text,
+            message,
+            usage: counts,
+            costUsd: costUsd(counts),
+            durationMs,
+            continuations,
+            stopReason: message.stop_reason,
+          });
+          return;
+        }
+      } catch (error) {
+        result.reject(error);
+        throw error;
+      }
+    }
+
+    return { textDeltas: run(), final: result.promise };
+  }
+
+  async function structured<S extends z.ZodType>(
+    request: StructuredRequest<S>,
+  ): Promise<StructuredResult<z.infer<S>>> {
+    if (request.tools !== undefined) assertToolsAllowed(request.tools);
+    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STRUCTURED;
+    // `zodOutputFormat` carries the parser the SDK uses to fill
+    // `parsed_output`; we re-validate below so the returned value is typed by
+    // the caller's schema rather than cast.
+    const format = zodOutputFormat(request.schema);
+    const startedAt = now();
+    const messages = [...request.messages];
+    let counts = zeroTokenCounts();
+    let continuations = 0;
+
+    for (;;) {
+      const message = await client().parse(requestParams(request, messages, maxTokens, format));
+      counts = addUsage(counts, message.usage);
+
+      if (message.stop_reason === "pause_turn") {
+        if (continuations >= MAX_PAUSE_TURN_CONTINUATIONS) {
+          recordUsage(usageSink, usageRow(request, counts, now() - startedAt));
+          throw new LlmPauseLimitError(request.step, continuations);
+        }
+        continuations += 1;
+        messages.push({ role: "assistant", content: message.content });
+        continue;
+      }
+
+      const durationMs = now() - startedAt;
+      recordUsage(usageSink, usageRow(request, counts, durationMs));
+      assertTerminalStopReason(request, message, maxTokens);
+
+      const parsed = request.schema.safeParse(message.parsed_output);
+      if (!parsed.success) {
+        // Report the failing path only — never the value, which is model output.
+        const issue = parsed.error.issues[0];
+        const where = issue === undefined ? "no issue reported" : issue.path.map(String).join(".");
+        throw new LlmOutputError(
+          request.step,
+          message.parsed_output === undefined || message.parsed_output === null
+            ? "the response carried no structured output"
+            : `invalid at "${where}"`,
+        );
+      }
+
+      return {
+        value: parsed.data as z.infer<S>,
+        message,
+        usage: counts,
+        costUsd: costUsd(counts),
+        durationMs,
+        continuations,
+        stopReason: message.stop_reason,
+      };
+    }
+  }
+
+  return { streamText, structured };
+}
+
+let cachedLlm: Llm | undefined;
+
+/** The process-wide wrapper for route handlers. Tests use {@link createLlm}. */
+export function llm(): Llm {
+  cachedLlm ??= createLlm();
+  return cachedLlm;
+}

@@ -40,6 +40,12 @@ pnpm seed          # data/*.yaml -> the reference tables (mirror, not append)
 pnpm db:check-rls  # assert anon can read reference data and nothing else
 ```
 
+Every model call goes through `src/lib/llm.ts` — one wrapper that owns the
+model, effort per step, the web tools and their blocked domains, refusal
+handling, and the anonymous usage row. `pnpm smoke:llm` makes one live call and
+reads its `llm_usage` row back; without `ANTHROPIC_API_KEY` it skips and exits
+0.
+
 See [CLAUDE.md](CLAUDE.md) for the full command list, the environment
 variables and which are server-only, the passcode gate, the Supabase
 workflow, and the repo layout.
@@ -60,7 +66,8 @@ workflow, and the repo layout.
 - **No job index, no model training.** The reference collection explains
   roles; it does not power search.
 - **LLM:** Claude Opus 5 via the Anthropic TypeScript SDK, with web search
-  and web fetch for sourcing.
+  and web fetch for sourcing — all of it behind `src/lib/llm.ts`, which is
+  also where the blocked-domain rule is enforced.
 - **Users:** fellows of any technical level, desktop Chrome.
 
 Decisions are recorded in PLAN.md §7, not in any individual's notes or

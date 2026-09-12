@@ -55,6 +55,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm db:types` | Regenerate `src/lib/database.types.ts` from the local schema |
 | `pnpm seed` | `data/*.yaml` → Supabase reference tables (mirror, service role) |
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
+| `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -138,6 +139,74 @@ step with `blocked_domains` in `llm.ts`). Look-alike hosts such as
 in the role does day to day, with no real individual described, named or
 linked (PLAN.md §7.6). No schema can check that — it is a review rule.
 
+## LLM calls (`src/lib/llm.ts`)
+
+**Every model call in this app goes through `src/lib/llm.ts`.** No other module
+constructs an Anthropic client, builds a web tool, or writes an `llm_usage`
+row, and **any new fetch path must go through this module too** (PLAN.md §6) —
+that is what makes the PRD's no-scraping rule enforceable in code rather than
+in prose.
+
+```ts
+import { createLlm, llm, webTools } from "@/lib/llm";
+
+const { textDeltas, final } = llm().streamText({
+  step: "explore",              // picks the effort level and labels the usage row
+  sessionId,                    // random, anonymous; from session.ts
+  system: EXPLORE_SYSTEM,       // keep byte-stable: it is sent as a cached block
+  messages,
+  tools: webTools(),            // the only way to build a web tool
+});
+for await (const delta of textDeltas) { /* pipe to the client */ }
+const { text, usage, costUsd } = await final;   // settles once the stream drains
+
+const { value } = await llm().structured({ step: "cards", sessionId, system, messages, schema });
+```
+
+- **`createLlm({ client, usageSink, now })`** is the injectable form used by
+  tests; `llm()` is the memoized default for route handlers. Both are
+  server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
+- **Model and thinking**: `claude-opus-5` with adaptive thinking on every call
+  (PLAN.md §7.2). `budget_tokens` is rejected by this model; depth is
+  `output_config.effort`.
+- **Effort per step** (`EFFORT_BY_STEP`, PLAN.md §2): chat-like steps `cards`
+  and `elicit` are `medium`; `discover`, `explore`, `queries` and `revise` are
+  `high`. Change the table, not the call sites.
+- **Structured outputs** use `client.messages.parse()` with
+  `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
+  the rest of the app uses (PLAN.md §7.12). The result is re-validated against
+  the schema, so the returned value is typed, not cast.
+- **Web tools**: `webTools()` is the only factory, and every call runs its
+  tools through `assertToolsAllowed()`, which throws `LlmToolPolicyError` on
+  any web tool that does not block all of `BLOCKED_DOMAINS`
+  (linkedin.com, indeed.com, climatebase.org). Keep that list in step with
+  `reference-schema.ts` and the SQL function (PLAN.md §7.13); `llm.test.ts`
+  asserts the two TypeScript lists are identical.
+- **Stop reasons**: `refusal` → `LlmRefusalError` (category only, never the
+  text), `max_tokens` → `LlmTruncatedError`, `pause_turn` → resumed
+  automatically up to `MAX_PAUSE_TURN_CONTINUATIONS`, then
+  `LlmPauseLimitError`. SDK errors (`Anthropic.RateLimitError`, …) pass
+  through untouched — catch the typed classes, never match on message text.
+- **Route handlers** that call this module set
+  `export const maxDuration = MAX_DURATION_SECONDS` (800s, PLAN.md §6).
+- **Never log content.** The module logs no prompt or completion text
+  anywhere, error messages included; a failed usage insert is a
+  `console.warn` with the error *code* only. Keep it that way.
+- **Usage rows** are one per logical call (a `pause_turn` continuation is part
+  of the same call and its tokens are summed), priced from `PRICE_PER_MTOK`,
+  written fire-and-forget through the anon key. `UsageRow` has a fixed key
+  list (`USAGE_ROW_KEYS`) guarded at compile time and in the tests: it holds
+  counters only, and no content field may ever be added.
+
+```bash
+pnpm smoke:llm   # one live structured call, then reads its llm_usage row back
+```
+
+Without `ANTHROPIC_API_KEY` the smoke script prints a skip message and exits 0.
+With a key it needs the local Supabase stack running and
+`SUPABASE_SERVICE_ROLE_KEY` set, because the read-back uses the service role —
+the anon key deliberately cannot read `llm_usage`.
+
 ## Passcode gate
 
 One shared passcode, no accounts (PLAN.md §2 "Access", §7 decision 5).
@@ -192,7 +261,7 @@ src/
     profile.ts      # profile.md schema, parse/serialize  (the contract; done, 0.2)
     session.ts      # browser session state + per-turn payload (done, 0.2)
     __fixtures__/   # canonical profile.md fixtures used by the round-trip tests
-    llm.ts          # client wrapper, model config, usage logging, web tools
+    llm.ts          # client wrapper, model config, usage logging, web tools (done, 0.3)
     supabase.ts     # anonClient() / serviceClient()  (done, 0.4)
     database.types.ts  # GENERATED by `pnpm db:types`; do not hand-edit (0.4)
     reference-schema.ts # data/*.yaml shapes + blocked-source rules (done, 0.4)
@@ -213,6 +282,7 @@ data/                  # climate_fields.yaml, example_roles.yaml, example_job_po
 scripts/
   seed.ts              # data/*.yaml → Supabase (mirror; service role)
   check-rls.ts         # asserts the RLS shape against a live stack
+  smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
 evals/                 # synthetic profiles, structural checks, feedback-loop eval, baseline arm
 ```
 
