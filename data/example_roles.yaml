@@ -1020,3 +1020,300 @@
     - Center for Community Action and Environmental Justice
   sources:
     - https://www.ccaej.org/careers
+- id: ev-marketing-manager
+  field_id: electric-vehicles
+  title: Product marketing manager
+  function: marketing
+  day_to_day: Defines positioning, pricing, and go-to-market messaging for vehicle lines and shapes
+    launch campaigns with sales and design teams. General product-marketing skills (positioning
+    frameworks, launch planning, competitive analysis) transfer directly; the new layer is learning
+    vehicle specs, incentive programs, and range/charging claims.
+  example_companies:
+    - Lucid Motors
+    - Rivian
+  sources:
+    - https://jobs.lever.co/lucidmotors/e2677f72-ebf2-4b59-8356-f265d1551bbe
+- id: distributed-solar-marketing-manager
+  field_id: distributed-solar
+  title: Digital performance marketing manager
+  function: marketing
+  day_to_day: Runs paid digital acquisition and lead-generation campaigns for residential solar,
+    testing channels and creative to lower cost per installed system. Performance-marketing
+    fundamentals (funnel metrics, A/B testing, channel mix) carry over unchanged; new context is the
+    long sales cycle and financing options specific to home solar.
+  example_companies:
+    - Sunnova
+    - Sunrun
+  sources:
+    - https://jobs.lever.co/sunnova/5c2515f6-c3af-4c58-96bb-ef3d98b4e93e
+- id: climate-advocacy-communications-manager
+  field_id: climate-policy-and-advocacy
+  title: Press and communications associate
+  function: communications
+  day_to_day: Writes press releases and talking points, pitches reporters, and coordinates
+    rapid-response messaging around climate legislation and elections. Media-relations and
+    message-discipline skills from any advocacy, corporate, or political communications background
+    apply directly; new is tracking the legislative calendar and policy detail.
+  example_companies:
+    - Climate Power
+  sources:
+    - https://jobs.lever.co/climatepower/888d5b23-b433-4808-ab33-64567323c435
+- id: environmental-justice-communications-associate
+  field_id: environmental-justice-and-community-programs
+  title: Communications assistant
+  function: communications
+  day_to_day: Supports a small comms team with newsletters, social content, and translating campaign
+    wins for affected communities and funders. General comms-support skills (editing, scheduling,
+    channel upkeep) transfer directly; new is learning the environmental-justice framing and
+    building trust with community partners the org represents.
+  example_companies:
+    - Pacific Environment
+  sources:
+    - https://jobs.lever.co/pacific-environment/8d42ffd4-195e-4ea2-86ef-59e65e0399b9
+- id: clean-energy-video-content-creator
+  field_id: climate-communications-and-media
+  title: Video content creator
+  function: video-media
+  day_to_day: Scripts, shoots, and edits short-form video for paid social and organic channels
+    explaining heat pumps, solar, and EVs to consumers. Core video-production and platform-native
+    storytelling skills (TikTok, Instagram, YouTube cuts) transfer as-is; new is the technical
+    accuracy needed around energy products and incentives.
+  example_companies:
+    - Octopus Energy
+  sources:
+    - https://jobs.lever.co/octoenergy/5368ecf2-61fb-4572-89ec-b5111cd0c833
+- id: electric-aviation-video-storyteller
+  field_id: sustainable-aviation-and-shipping
+  title: Lead storyteller, video and visual content
+  function: video-media
+  day_to_day: Owns video and visual storytelling for an electric aircraft company, producing
+    flight-test footage, recruiting content, and executive narrative videos. Directing, shooting,
+    and editing skills transfer unchanged; new is working alongside engineering and flight-test
+    teams to get technical claims right.
+  example_companies:
+    - Pivotal
+  sources:
+    - https://jobs.lever.co/pivotal/a5887446-6c15-4003-b6fa-1c0e533e811b
+- id: home-electrification-product-designer
+  field_id: green-building-design-and-retrofits
+  title: Product designer
+  function: design
+  day_to_day: Designs the customer-facing product for planning and financing home electrification
+    retrofits, owning UX flows from quote to install scheduling. Product-design craft (user
+    research, wireframing, design systems) is unchanged; new is learning the retrofit and financing
+    workflow it has to represent clearly.
+  example_companies:
+    - Zero Homes
+  sources:
+    - https://jobs.lever.co/zerohomes/8b785b74-6b19-4590-bf0e-bfd4549c0bc8
+- id: carbon-accounting-product-designer-ux
+  field_id: carbon-accounting-and-esg-software
+  title: Product designer
+  function: design
+  day_to_day: Designs enterprise workflows that let sustainability teams measure and report carbon
+    footprints and audit-ready ESG metrics. Enterprise B2B design skills (complex data tables,
+    workflow simplification, design systems) carry over directly; new is the accounting and
+    disclosure-framework vocabulary.
+  example_companies:
+    - Watershed
+    - Persefoni
+  sources:
+    - https://jobs.ashbyhq.com/Watershed/bb7b1da5-1e38-48e8-a4d0-e3c8e32a8970
+- id: ev-charging-software-engineer
+  field_id: ev-charging-infrastructure
+  title: Software engineer
+  function: software
+  day_to_day: Builds backend services and APIs connecting EV chargers, energy devices, and digital
+    platforms, from domestic charging to grid-scale batteries. General backend/API and
+    event-driven-systems experience transfers directly; new is learning device-communication
+    protocols and grid operating constraints.
+  example_companies:
+    - Octopus Energy
+    - ChargePoint
+  sources:
+    - https://jobs.lever.co/octoenergy/cc3a8861-c20e-4a5e-b55e-b8f99c7075fb
+- id: grid-storage-software-engineer
+  field_id: grid-scale-storage
+  title: Senior software engineer, full stack
+  function: software
+  day_to_day: Builds full-stack software for monitoring and controlling grid-scale battery systems,
+    working across Python services and cloud infrastructure. Full-stack engineering fundamentals
+    transfer directly; new is learning how batteries and grid-control logic behave in production.
+  example_companies:
+    - Form Energy
+    - Fluence
+  sources:
+    - https://jobs.lever.co/formenergy/7178090d-0bc2-4147-986d-25d3ec6c42e4
+- id: climate-risk-data-scientist
+  field_id: climate-risk-analytics-and-insurance
+  title: Data scientist
+  function: data
+  day_to_day: Builds models assessing flood, heat, wind, and fire risk from climate change for
+    insurers and financial institutions. Statistical modeling and data-pipeline skills from any
+    industry transfer directly; new is learning climate and hazard science well enough to validate
+    outputs.
+  example_companies:
+    - Jupiter Intelligence
+    - First Street
+  sources:
+    - https://jobs.lever.co/jupiterintel/919cc8af-406c-48a3-b6d7-42e9a6a812f6
+- id: regenerative-ag-data-scientist
+  field_id: regenerative-agriculture-and-agtech
+  title: ML data scientist
+  function: data
+  day_to_day: Builds machine-learning models on satellite and field data to identify and verify
+    regenerative farming practices at scale. Applied ML and geospatial-data skills transfer
+    directly; new is learning agronomy and how carbon-credit verification standards constrain the
+    model outputs.
+  example_companies:
+    - Regrow
+    - Indigo Ag
+  sources:
+    - https://jobs.lever.co/regrow.ag/f8fc5e40-d7d0-4c30-839a-73af60533619
+- id: vpp-product-manager
+  field_id: distributed-energy-resources-and-vpp
+  title: Technical product manager, energy storage
+  function: product
+  day_to_day: Owns the roadmap for software that aggregates home batteries, EVs, and thermostats into
+    a virtual power plant dispatched to the grid. Product-management fundamentals (roadmapping,
+    cross-functional alignment, metrics) transfer directly; new is learning grid dispatch economics
+    and utility program rules.
+  example_companies:
+    - Voltus
+    - GoodLeap
+  sources:
+    - https://jobs.lever.co/voltus/fd6c3c35-26d2-41b7-80c3-4aec247dbc82
+- id: carbon-accounting-product-manager
+  field_id: carbon-accounting-and-esg-software
+  title: Senior product manager, methodology
+  function: product
+  day_to_day: Translates evolving carbon-accounting and disclosure standards into product requirements
+    for an enterprise sustainability platform. Core PM skills (spec writing, prioritization, working
+    with engineering) transfer directly; new is tracking regulatory standards like CSRD that the
+    product must stay compliant with.
+  example_companies:
+    - Watershed
+    - Persefoni
+  sources:
+    - https://jobs.ashbyhq.com/Watershed/1e127832-c438-4bd9-bf7c-2e6f42ebf137
+- id: battery-recycling-hr-business-partner
+  field_id: battery-manufacturing-and-recycling
+  title: Senior HR business partner
+  function: people
+  day_to_day: Partners with plant and corporate leaders on org design, workforce planning, and
+    performance management at a battery-materials recycler. HR business-partner skills transfer
+    directly from any industry; new is learning manufacturing shift structures and safety-driven HR
+    policies specific to industrial recycling operations.
+  example_companies:
+    - Redwood Materials
+  sources:
+    - https://job-boards.greenhouse.io/redwoodmaterials/jobs/5988133004?gh_jid=5988133004
+- id: solar-talent-development-specialist
+  field_id: distributed-solar
+  title: Training and development specialist
+  function: people
+  day_to_day: Designs onboarding and ongoing training programs for sales and customer-facing solar
+    teams. Learning-and-development program design transfers directly from any sector; new is
+    building curriculum around solar products, financing options, and compliance requirements.
+  example_companies:
+    - GoodLeap
+    - Sunnova
+  sources:
+    - https://jobs.lever.co/goodleap/90c03475-2916-4868-b0b7-f349dbded08e
+- id: heat-pump-sales-specialist
+  field_id: building-electrification-and-heat-pumps
+  title: Heat pump sales specialist
+  function: sales
+  day_to_day: Consults with homeowners on replacing gas heating with heat pumps, building quotes and
+    closing financed installs. Consultative-sales skills (needs discovery, objection handling,
+    pipeline management) transfer directly; new is learning heat pump sizing, rebates, and
+    electrical-panel constraints.
+  example_companies:
+    - Zero Homes
+    - Sealed
+  sources:
+    - https://jobs.lever.co/zerohomes/6620d296-985b-4d56-8e4c-15202eb6cf34
+- id: climate-risk-account-executive
+  field_id: climate-risk-analytics-and-insurance
+  title: Account executive, climate analytics
+  function: sales
+  day_to_day: Sells climate-risk analytics subscriptions to banks, insurers, and asset managers,
+    running the full enterprise sales cycle. B2B enterprise-sales skills transfer directly from any
+    software sales background; new is learning how financial institutions use physical climate-risk
+    data in underwriting and disclosure.
+  example_companies:
+    - Jupiter Intelligence
+  sources:
+    - https://jobs.lever.co/jupiterintel/ccebd88c-974f-4a59-801c-e179fcc06b9f
+- id: electric-fleet-customer-success-manager
+  field_id: public-transit-and-micromobility
+  title: Customer success manager
+  function: customer-success
+  day_to_day: Manages relationships with school districts and transit agencies through electric bus
+    deployment, from delivery to charging uptime. Account-management and renewal skills transfer
+    directly from any B2B customer-success role; new is learning fleet charging schedules and
+    utility program requirements.
+  example_companies:
+    - Highland Electric Fleets
+  sources:
+    - https://jobs.lever.co/highlandfleets-2/324ccd2c-695e-4059-99c0-cc7d30c8c862
+- id: vpp-customer-success-associate
+  field_id: distributed-energy-resources-and-vpp
+  title: Customer success associate
+  function: customer-success
+  day_to_day: Onboards commercial customers into demand-response programs and helps them maximize
+    payments for shifting or reducing load. Customer-onboarding and account-support skills transfer
+    directly; new is learning how demand-response events and utility tariffs determine customer
+    payouts.
+  example_companies:
+    - Voltus
+  sources:
+    - https://jobs.lever.co/voltus/74788219-f059-4a07-87f2-4dae2fa20c74/apply
+- id: forestry-education-program-manager
+  field_id: forestry-and-nature-based-carbon
+  title: Education and outreach program manager
+  function: education
+  day_to_day: Runs K-12 and community STEM programming connecting students to urban forestry and
+    tree-equity work, and coordinates workforce pipelines into forestry careers. Curriculum design
+    and program management transfer directly from any education role; new is learning urban forestry
+    and tree-equity concepts.
+  example_companies:
+    - American Forests
+  sources:
+    - https://www.americanforests.org/job-opportunities/
+- id: alt-protein-education-outreach-lead
+  field_id: alternative-proteins
+  title: Institutional outreach and education lead
+  function: education
+  day_to_day: Educates grant-makers, corporations, and government bodies on the case for
+    alternative-protein R&D investment, and builds career pathway resources for people entering the
+    field. Stakeholder education and program-building skills transfer directly; new is learning the
+    food-science and climate case for alternative proteins.
+  example_companies:
+    - Good Food Institute
+  sources:
+    - https://gfi.org/vocation/
+- id: agricultural-climate-policy-director
+  field_id: regenerative-agriculture-and-agtech
+  title: Director of agricultural policy
+  function: policy
+  day_to_day: Develops and advances policy positions that would accelerate adoption of regenerative
+    farming practices at the state and federal level. Policy-development and coalition-building
+    skills transfer directly from any advocacy background; new is learning farm-bill mechanics and
+    agricultural-program design.
+  example_companies:
+    - Spark Climate Solutions
+  sources:
+    - https://jobs.lever.co/SparkClimateSolutions/f6eb81e9-cac8-4ae3-a212-b9e62ec39be3
+- id: geothermal-government-affairs-lead
+  field_id: geothermal
+  title: Head of government affairs
+  function: policy
+  day_to_day: Owns political and policy strategy for a geothermal developer, engaging clean-energy
+    coalitions and addressing permitting and regulatory risk with land-development teams.
+    Government-affairs and coalition-management skills transfer directly; new is learning geothermal
+    permitting and subsurface-rights regulation.
+  example_companies:
+    - Zanskar
+  sources:
+    - https://jobs.lever.co/Zanskar/f1274aaf-a209-472f-907b-a6e4cf57292c
