@@ -35,4 +35,623 @@
 #   * `field_id` (and `role_id` when present) must exist; the seed refuses to
 #     run otherwise, and both columns are foreign keys.
 
-[]
+- id: quilt-partner-marketing-manager-2026-09
+  field_id: building-electrification-and-heat-pumps
+  role_id: heat-pump-partner-marketing-manager
+  title: Partner Marketing Manager
+  company: Quilt
+  requirements_summary: Seeks a marketer to build co-marketing programs with contractor and retail
+    partners for Quilt's ductless heat pump systems, owning campaign messaging and lead-gen
+    tracking; wants B2B or channel marketing experience rather than an HVAC background.
+  source_url: https://job-boards.greenhouse.io/quilt/jobs/5218031007
+  retrieved_at: 2026-09-12
+- id: quilt-product-manager-2026-09
+  field_id: building-electrification-and-heat-pumps
+  role_id: heat-pump-product-manager
+  title: Product Manager
+  company: Quilt
+  requirements_summary: Looks for a product manager based in Redwood City to own roadmap decisions for
+    Quilt's heat pump hardware or software, working closely with hardware engineering and
+    manufacturing; prior hardware or connected-device product experience is emphasized.
+  source_url: https://job-boards.greenhouse.io/quilt/jobs/5221801007
+  retrieved_at: 2026-09-12
+- id: quilt-regional-partner-sales-manager-2026-09
+  field_id: building-electrification-and-heat-pumps
+  role_id: heat-pump-regional-partner-sales-manager
+  title: Regional Partner Sales Manager – Northeast
+  company: Quilt
+  requirements_summary: Hires a remote, travel-heavy (50-75%) sales manager to recruit and grow a
+    network of contractor/dealer partners selling Quilt heat pumps across the Northeast; wants
+    channel-sales experience, not necessarily climate-industry background.
+  source_url: https://job-boards.greenhouse.io/quilt/jobs/5176246007
+  retrieved_at: 2026-09-12
+- id: blocpower-market-operations-national-lead-2026-09
+  field_id: green-building-design-and-retrofits
+  role_id: building-decarbonization-market-operations-lead
+  title: Market Operations – National Lead
+  company: BlocPower
+  requirements_summary: Seeks a lead to run commercial execution of BlocPower's national
+    building-electrification programs, requiring 7-15 years across operations, market expansion,
+    logistics, or account management; frames the mission as electrifying tens of thousands of
+    buildings over three years.
+  source_url: https://jobs.lever.co/BlocPower/e26f600b-6498-4c55-8662-bd5e43596c2e
+  retrieved_at: 2026-09-12
+- id: mantisinnovation-sales-executive-energy-smb-2026-09
+  field_id: green-building-design-and-retrofits
+  role_id: energy-efficiency-sales-executive
+  title: Sales Executive, Energy SMB
+  company: Mantis Innovation
+  requirements_summary: Wants a B2B sales professional to sell lighting, HVAC/mechanical, and
+    building-management-system retrofit solutions to small and mid-size businesses, with
+    energy-procurement or electricity/gas sales experience preferred.
+  source_url: https://jobs.lever.co/mantisinnovation/e1497b56-c636-46cb-b4e1-e32bb63f6fda
+  retrieved_at: 2026-09-12
+- id: buildingdecarbonizationcoalition-manager-hr-2026-09
+  field_id: green-building-design-and-retrofits
+  role_id: building-decarbonization-people-operations-manager
+  title: Manager, Human Resources
+  company: Building Decarbonization Coalition
+  requirements_summary: Hires an HR manager to run hiring, onboarding, and compliance for a coalition
+    that aligns industry stakeholders to electrify homes and workspaces; generalist HR/people-ops
+    experience is the core requirement, not a climate background.
+  source_url: https://boards.greenhouse.io/buildingdecarbonizationcoalition/jobs/4073898007
+  retrieved_at: 2026-09-12
+- id: harbingermotors-intern-powertrain-manufacturing-2026-09
+  field_id: electric-vehicles
+  role_id: ev-powertrain-manufacturing-engineer
+  title: Intern, Powertrain Manufacturing
+  company: Harbinger Motors Inc.
+  requirements_summary: Internship supporting development and manufacturing of Harbinger's electric
+    drive unit system for commercial EVs; targets students or early-career candidates studying
+    mechanical or manufacturing engineering.
+  source_url: https://job-boards.greenhouse.io/harbingermotors/jobs/5231838007
+  retrieved_at: 2026-09-12
+- id: zoox-senior-staff-manufacturing-engineer-battery-2026-09
+  field_id: electric-vehicles
+  role_id: ev-powertrain-manufacturing-engineer
+  title: Senior / Staff Manufacturing Engineer - High Voltage Battery Assembly
+  company: Zoox
+  requirements_summary: Seeks a senior manufacturing engineer to define assembly sequences and tooling
+    requirements for high-voltage battery packs and modules on an autonomous-vehicle production
+    line; wants deep automotive or EV battery manufacturing experience.
+  source_url: https://jobs.lever.co/zoox/184994f1-84f6-4d0f-b229-07ae1f404491
+  retrieved_at: 2026-09-12
+- id: lucidmotors-sales-specialist-2026-09
+  field_id: electric-vehicles
+  role_id: ev-sales-specialist
+  title: Sales Specialist
+  company: Lucid Motors
+  requirements_summary: Retail sales role connecting with customers considering an electric vehicle,
+    guiding them through test drives and purchase options; values customer-facing sales experience
+    over automotive-specific background.
+  source_url: https://job-boards.greenhouse.io/lucidmotors/jobs/5220370007
+  retrieved_at: 2026-09-12
+- id: pearceservices-electrician-ev-charging-field-service-2026-09
+  field_id: ev-charging-infrastructure
+  role_id: ev-charging-field-service-electrician
+  title: Electrician, EV Charging Field Service
+  company: Pearce Services
+  requirements_summary: Field-service electrician role installing and repairing EV charging stations
+    at customer sites; requires an electrical license and willingness to travel to job sites, not
+    prior EV-specific experience.
+  source_url: https://job-boards.greenhouse.io/pearceservices/jobs/5169377008
+  retrieved_at: 2026-09-12
+- id: evenergy-business-development-manager-utilities-2026-09
+  field_id: ev-charging-infrastructure
+  role_id: ev-charging-business-development-manager
+  title: Business Development Manager, Utilities - Remote
+  company: ev.energy
+  requirements_summary: Remote business-development role building utility partnerships for a smart
+    EV-charging management platform; wants experience selling into utilities or energy programs
+    rather than an EV background specifically.
+  source_url: https://jobs.ashbyhq.com/ev.energy/4929018b-ca9d-4e4d-8c7e-5ef26ae2ecb2
+  retrieved_at: 2026-09-12
+- id: chargelab-bilingual-technical-support-specialist-2026-09
+  field_id: ev-charging-infrastructure
+  role_id: ev-charging-technical-support-specialist
+  title: Bilingual Technical Support Specialist, EV Charging (French/English)
+  company: ChargeLab
+  requirements_summary: Support role troubleshooting charger connectivity, billing, and hardware
+    issues for drivers and site hosts in both English and French; prioritizes bilingual
+    customer-support experience over EV-specific knowledge.
+  source_url: https://jobs.lever.co/chargelab-inc/a20f39d0-4632-4ecb-a9bb-1e77002d8f82
+  retrieved_at: 2026-09-12
+- id: redwoodmaterials-lead-process-engineer-battery-recycling-2026-09
+  field_id: battery-manufacturing-and-recycling
+  role_id: battery-recycling-process-engineer
+  title: Lead Process Engineer - Battery Recycling
+  company: Redwood Materials
+  requirements_summary: Leads early design of Redwood's next battery-recycling plant, described as a
+    fast-moving effort to build and commission in under a year; wants hands-on chemical or process
+    engineering experience with an aggressive startup pace.
+  source_url: https://job-boards.greenhouse.io/redwoodmaterials/jobs/5602401004
+  retrieved_at: 2026-09-12
+- id: redwoodmaterials-business-development-manager-consumer-technology-2026-09
+  field_id: battery-manufacturing-and-recycling
+  role_id: battery-recycling-business-development-manager
+  title: Business Development Manager, Consumer Technology
+  company: Redwood Materials
+  requirements_summary: Manages relationships with consumer-technology and device companies to source
+    lithium-ion batteries for recycling; wants B2B partnership or supply-sourcing experience rather
+    than a battery-technical background.
+  source_url: https://job-boards.greenhouse.io/redwoodmaterials/jobs/6007938004
+  retrieved_at: 2026-09-12
+- id: redwoodmaterials-production-control-planner-2026-09
+  field_id: battery-manufacturing-and-recycling
+  role_id: battery-production-control-planner
+  title: Production Control Planner
+  company: Redwood Materials
+  requirements_summary: Plans material supply and production readiness for Redwood's Sparks, NV
+    energy-storage operations, spanning inbound logistics, supplier quality, and change management;
+    wants supply-chain or production planning experience.
+  source_url: https://job-boards.greenhouse.io/redwoodmaterials/jobs/6118310004
+  retrieved_at: 2026-09-12
+- id: lime-operations-coordinator-2026-09
+  field_id: public-transit-and-micromobility
+  role_id: micromobility-operations-coordinator
+  title: Operations Coordinator
+  company: Lime
+  requirements_summary: Coordinates fleet deployment and team logistics for Lime's shared
+    e-bike/scooter operations in a city; wants organized, hands-on operations experience rather than
+    a mobility-specific background.
+  source_url: https://jobs.ashbyhq.com/lime/2de30dbc-67a2-42f8-a6c5-bb037248f624
+  retrieved_at: 2026-09-12
+- id: lime-in-field-mechanic-2026-09
+  field_id: public-transit-and-micromobility
+  role_id: micromobility-fleet-mechanic
+  title: In-Field Mechanic
+  company: Lime
+  requirements_summary: Maintains and repairs Lime's fleet of shared electric vehicles in the field;
+    role is described as ideal for mechanically-inclined operations professionals, no formal
+    certification specified.
+  source_url: https://jobs.ashbyhq.com/lime/b2a56e63-879c-451f-bf3e-5e1a1c225897
+  retrieved_at: 2026-09-12
+- id: lime-payroll-manager-2026-09
+  field_id: public-transit-and-micromobility
+  role_id: micromobility-payroll-manager
+  title: Payroll Manager – North America
+  company: Lime
+  requirements_summary: Designs and leads payroll operations across Lime's US and Canada workforce;
+    wants multi-state/provincial payroll compliance experience, not a transportation or climate
+    background.
+  source_url: https://jobs.ashbyhq.com/lime/a1c56f3f-4b3b-41ed-9bdd-502bf34bde6b
+  retrieved_at: 2026-09-12
+- id: airco-product-marketing-manager-2026-09
+  field_id: sustainable-aviation-and-shipping
+  role_id: saf-product-marketing-manager
+  title: Product Marketing Manager
+  company: AIRCO
+  requirements_summary: Owns marketing positioning for AIRCO's synthetic aviation fuel made from
+    captured CO2 and hydrogen, working with airline partners such as the ones already announced;
+    wants B2B or industrial product marketing experience.
+  source_url: https://job-boards.greenhouse.io/aircompany/jobs/4732766005
+  retrieved_at: 2026-09-12
+- id: airco-lead-engineer-process-design-2026-09
+  field_id: sustainable-aviation-and-shipping
+  role_id: saf-process-design-engineer
+  title: Lead Engineer, Process Design
+  company: AIRCO
+  requirements_summary: Leads chemical process design for converting captured CO2 and hydrogen into
+    synthetic fuel at AIRCO's Pennsylvania site; wants chemical or process engineering experience,
+    ideally with scale-up exposure.
+  source_url: https://job-boards.greenhouse.io/aircompany/jobs/4723531005
+  retrieved_at: 2026-09-12
+- id: airco-process-operator-iii-2026-09
+  field_id: sustainable-aviation-and-shipping
+  role_id: saf-process-operator
+  title: Process Operator III
+  company: AIRCO
+  requirements_summary: Runs and monitors production equipment on AIRCO's synthetic-fuel plant floor;
+    wants prior plant/process operator experience and comfort with shift-based manufacturing work.
+  source_url: https://job-boards.greenhouse.io/aircompany/jobs/4596283005
+  retrieved_at: 2026-09-12
+- id: brimstone-senior-plant-engineer-2026-09
+  field_id: industrial-decarbonization-steel-cement
+  role_id: green-steel-plant-engineer
+  title: Senior Plant Engineer
+  company: Brimstone
+  requirements_summary: Supports design and commissioning of Brimstone's low-carbon metal production
+    plant across mechanical, electrical, and process systems; wants industrial plant engineering
+    experience, ideally with a first-of-a-kind facility.
+  source_url: https://jobs.ashbyhq.com/brimstone/2ab5ffda-4106-4b86-bf21-8c38ebb19662
+  retrieved_at: 2026-09-12
+- id: brimstone-head-of-pyrometallurgy-2026-09
+  field_id: industrial-decarbonization-steel-cement
+  role_id: green-steel-pyrometallurgy-lead
+  title: Head of Pyrometallurgy
+  company: Brimstone
+  requirements_summary: Leads high-temperature metal-extraction R&D for Brimstone's low-carbon
+    steelmaking process, from lab through pilot scale; wants deep pyrometallurgy or
+    extractive-metallurgy expertise.
+  source_url: https://jobs.ashbyhq.com/brimstone/5e3fb6c7-0a83-402c-9f19-7692e94d2533
+  retrieved_at: 2026-09-12
+- id: cyclicmaterials-machine-operator-night-shift-2026-09
+  field_id: circular-economy-and-waste
+  role_id: recycling-machine-operator
+  title: Machine Operator - Night Shift
+  company: Cyclic Materials Inc.
+  requirements_summary: Operates sorting and processing equipment at Cyclic Materials' metals
+    recycling plant in Mesa, Arizona on the night shift; wants prior manufacturing or plant-floor
+    experience, no recycling-specific background required.
+  source_url: https://job-boards.greenhouse.io/cyclicmaterialsinc/jobs/4206060009
+  retrieved_at: 2026-09-12
+- id: cyclicmaterials-rd-manager-spoke-technology-2026-09
+  field_id: circular-economy-and-waste
+  role_id: recycling-rd-manager
+  title: R&D Manager (Spoke Technology)
+  company: Cyclic Materials Inc.
+  requirements_summary: Leads R&D on Cyclic Materials' rare-earth recovery "spoke" technology, running
+    lab and pilot trials on new feedstocks; wants materials science or chemical engineering R&D
+    experience.
+  source_url: https://job-boards.greenhouse.io/cyclicmaterialsinc/jobs/4238208009
+  retrieved_at: 2026-09-12
+- id: nexamp-bd-associate-utility-solar-2026-09
+  field_id: utility-scale-solar
+  role_id: utility-solar-bd-associate
+  title: Business Development Associate, Utility Scale Solar
+  company: Nexamp
+  requirements_summary: Entry-to-mid-level role screening land and interconnection opportunities for
+    utility-scale solar projects and supporting deal-team analysis through early development stages.
+  source_url: https://boards.greenhouse.io/nexamp/jobs/7547056002
+  retrieved_at: 2026-09-12
+- id: cimgroup-engineering-manager-solar-storage-2026-09
+  field_id: utility-scale-solar
+  role_id: utility-solar-construction-project-engineer
+  title: Engineering Manager (Utility Scale Solar + Storage Development)
+  company: CIM Group
+  requirements_summary: Seeks an experienced engineer to lead technical due diligence and design
+    review as utility-scale solar-plus-storage projects move from development into construction,
+    requiring solar/BESS engineering background.
+  source_url: https://jobs.lever.co/cimgroup/7a45c5ac-7e21-4de9-b5bb-4a2134b97c10
+  retrieved_at: 2026-09-12
+- id: intersect-pv-performance-engineer-2026-09
+  field_id: utility-scale-solar
+  role_id: utility-solar-pv-performance-engineer
+  title: PV Performance Engineer
+  company: Intersect Power
+  requirements_summary: Looks for an engineer to build energy-yield models and run capacity testing
+    across a utility-scale solar portfolio to diagnose and correct underperformance.
+  source_url: https://jobs.lever.co/intersect/a1a1e115-502b-41c2-9980-8b7d53850359
+  retrieved_at: 2026-09-12
+- id: palmetto-solar-field-service-tech-2026-09
+  field_id: distributed-solar
+  role_id: distributed-solar-field-service-technician
+  title: Solar Field Service Technician
+  company: Palmetto
+  requirements_summary: Field role repairing and inspecting residential solar and battery systems in
+    the Philadelphia area; hands-on electrical troubleshooting experience expected.
+  source_url: https://job-boards.greenhouse.io/palmettocleantech/jobs/5420901008
+  retrieved_at: 2026-09-12
+- id: palmetto-manager-service-operations-2026-09
+  field_id: distributed-solar
+  role_id: distributed-solar-service-operations-manager
+  title: Manager, Service Operations
+  company: Palmetto
+  requirements_summary: Manages a residential solar service team and scheduling operations from
+    Charlotte, NC, with accountability for response-time and repair-quality metrics.
+  source_url: https://job-boards.greenhouse.io/palmettocleantech/jobs/5251651008
+  retrieved_at: 2026-09-12
+- id: palmetto-vp-investor-relations-2026-09
+  field_id: distributed-solar
+  role_id: distributed-solar-investor-relations-lead
+  title: VP, Investor Relations
+  company: Palmetto
+  requirements_summary: Senior finance role leading investor communications and capital-markets
+    relationships for a publicly traded distributed solar and storage company; capital markets
+    background required.
+  source_url: https://job-boards.greenhouse.io/palmettocleantech/jobs/5382929008
+  retrieved_at: 2026-09-12
+- id: invenergy-wind-technician-ii-2026-09
+  field_id: onshore-wind
+  role_id: onshore-wind-turbine-technician
+  title: Wind Technician II
+  company: Invenergy
+  requirements_summary: Field maintenance role servicing onshore wind turbines, requiring comfort
+    working at height and following strict safety protocols.
+  source_url: https://invenergyllc.wd1.myworkdayjobs.com/en-US/invenergycareers/job/Wind-Technician-II_R10442-1
+  retrieved_at: 2026-09-12
+- id: invenergy-wind-availability-engineer-2026-09
+  field_id: onshore-wind
+  role_id: onshore-wind-availability-engineer
+  title: Wind Availability Engineer
+  company: Invenergy
+  requirements_summary: Engineering role analyzing turbine downtime and reliability data across an
+    operating wind fleet and coordinating with OEMs on performance issues.
+  source_url: https://invenergyllc.wd1.myworkdayjobs.com/en-US/invenergyllc/job/Sao-Paulo-SP/Wind-Availability-Engineer_R10183-1
+  posted_date: 2025-12-17
+  retrieved_at: 2026-09-12
+- id: invenergy-associate-renewable-development-2026-09
+  field_id: onshore-wind
+  role_id: onshore-wind-renewable-development-associate
+  title: Associate, Renewable Development
+  company: Invenergy
+  requirements_summary: Supports early-stage development of utility-scale wind projects across the US,
+    including site control, permitting, and landowner outreach.
+  source_url: https://invenergyllc.wd1.myworkdayjobs.com/en-US/invenergyllc/job/Associate--Renewable-Development_R10781
+  posted_date: 2026-06-02
+  retrieved_at: 2026-09-12
+- id: equinor-senior-wind-turbine-technician-2026-09
+  field_id: offshore-wind
+  role_id: offshore-wind-turbine-technician
+  title: Senior Wind Turbine Technician
+  company: Equinor
+  requirements_summary: Brooklyn, NY-based role performing electrical and mechanical maintenance on
+    offshore wind turbines and substations; offshore safety certifications expected.
+  source_url: https://equinor.wd3.myworkdayjobs.com/en-US/EQNR/job/Brooklyn-New-York/Senior-Wind-Turbine-Technician_JR106759
+  retrieved_at: 2026-09-12
+- id: equinor-offshore-om-lead-2026-09
+  field_id: offshore-wind
+  role_id: offshore-wind-om-lead
+  title: Offshore Operations & Maintenance Lead
+  company: Equinor
+  requirements_summary: Coordinates operations and maintenance scheduling and vessel resourcing for an
+    offshore wind farm, ensuring work meets safety and regulatory standards.
+  source_url: https://equinor.wd3.myworkdayjobs.com/en-US/EQNR/job/Offshore-Operations---Maintenance-Lead_JR103496
+  retrieved_at: 2026-09-12
+- id: equinor-wind-turbine-engineer-2026-09
+  field_id: offshore-wind
+  role_id: offshore-wind-turbine-engineer
+  title: Wind Turbine Engineer
+  company: Equinor
+  requirements_summary: Technical engineering role supporting turbine performance and reliability
+    across an offshore wind portfolio, working with OEMs to resolve recurring faults.
+  source_url: https://equinor.wd3.myworkdayjobs.com/en-US/EQNR/job/Wind-Turbine-Engineer_JR105753
+  retrieved_at: 2026-09-12
+- id: fluence-technical-product-manager-2026-09
+  field_id: grid-scale-storage
+  role_id: storage-technical-product-manager
+  title: Technical Product Manager, Fluence OS
+  company: Fluence
+  requirements_summary: Product role defining requirements and roadmap for the software platform that
+    dispatches grid-scale battery storage assets, working across engineering and customer teams.
+  source_url: https://builtin.com/job/technical-product-manager-fluence-os/3550665
+  retrieved_at: 2026-09-12
+- id: fluence-service-ops-maintenance-supervisor-2026-09
+  field_id: grid-scale-storage
+  role_id: storage-service-operations-supervisor
+  title: Service Operations & Maintenance Supervisor
+  company: Fluence
+  requirements_summary: Supervises field service teams commissioning and maintaining battery storage
+    systems, based in Amsterdam with hybrid work arrangement.
+  source_url: https://builtin.com/job/service-operations-maintenance-supervisor/3398555
+  retrieved_at: 2026-09-12
+- id: fluence-preventative-maintenance-lead-2026-09
+  field_id: grid-scale-storage
+  role_id: storage-preventative-maintenance-lead
+  title: Preventative Maintenance Lead, Services
+  company: Fluence
+  requirements_summary: Plans and leads scheduled preventative-maintenance work across a fleet of
+    deployed battery storage sites and documents findings for the reliability team.
+  source_url: https://builtin.com/job/preventative-maintenance-lead-services/2274567
+  retrieved_at: 2026-09-12
+- id: gevernova-software-engineer-transmission-2026-09
+  field_id: transmission-and-grid-modernization
+  role_id: grid-transmission-software-engineer
+  title: Software Engineer, Transmission
+  company: GE Vernova
+  requirements_summary: Entry-level software engineering role building and testing the Advanced Energy
+    Management System used by 230+ utilities to run real-time transmission grid operations.
+  source_url: https://careers.gevernova.com/ge-vernova-software-engineer-transmission/job/R5048311
+  retrieved_at: 2026-09-12
+- id: gevernova-service-specialist-2026-09
+  field_id: transmission-and-grid-modernization
+  role_id: grid-systems-integration-specialist
+  title: Service Specialist
+  company: GE Vernova
+  requirements_summary: Owns end-to-end delivery of software system-integration work on large utility
+    transmission, distribution, and market-management IT projects.
+  source_url: https://careers.gevernova.com/service-specialist/job/R5027911
+  retrieved_at: 2026-09-12
+- id: leap-market-development-specialist-2026-09
+  field_id: distributed-energy-resources-and-vpp
+  role_id: der-vpp-market-development-specialist
+  title: Market Development Specialist
+  company: Leap
+  requirements_summary: Builds relationships with grid operators and utilities to grow virtual power
+    plant programs that call on batteries, EV chargers, and smart thermostats to support the grid.
+  source_url: https://apply.workable.com/leapfrog-power-inc/j/539E5A3765/
+  retrieved_at: 2026-09-12
+- id: leap-market-development-associate-2026-09
+  field_id: distributed-energy-resources-and-vpp
+  role_id: der-vpp-market-development-specialist
+  title: Market Development Associate
+  company: Leap
+  requirements_summary: Remote, full-time associate role supporting market development for Leap's
+    virtual power plant platform, open to candidates in EST/CST/MST time zones.
+  source_url: https://apply.workable.com/leapfrog-power-inc/j/F1394DF750
+  retrieved_at: 2026-09-12
+- id: leap-senior-technical-implementation-manager-2026-09
+  field_id: distributed-energy-resources-and-vpp
+  role_id: der-vpp-technical-implementation-manager
+  title: Senior Technical Implementation Manager
+  company: Leap
+  requirements_summary: Leads technical onboarding of device manufacturers and aggregators onto Leap's
+    VPP platform, managing integration projects through go-live.
+  source_url: https://jobs.ashbyhq.com/leap/9baa1841-f61b-4d5f-9876-649a6e8e14ab
+  retrieved_at: 2026-09-12
+- id: marble-founding-engineer-geothermal-2026-09
+  field_id: geothermal
+  role_id: geothermal-next-gen-drilling-engineer
+  title: Founding Engineer, Next-Gen Geothermal
+  company: Marble
+  requirements_summary: Early engineering hire at an enhanced-geothermal-systems startup, designing
+    and iterating on subsurface drilling and heat-extraction systems alongside field operations.
+  source_url: https://jobs.ashbyhq.com/marble/4aa33ad4-fbcc-45af-a059-5e6ea4b4b613
+  retrieved_at: 2026-09-12
+- id: plugpower-hydrogen-plant-operator-2026-09
+  field_id: green-hydrogen
+  role_id: hydrogen-plant-operator
+  title: Plant Operator, Hydrogen
+  company: Plug Power
+  requirements_summary: Operates and monitors equipment at a hydrogen production plant in Woodbine,
+    GA, responding to alarms and performing routine operational checks.
+  source_url: https://plugpower.wd5.myworkdayjobs.com/plug_power_inc/job/hydrogen-plant-woodbine-ga/hydrogen-operator_r7003/apply
+  retrieved_at: 2026-09-12
+- id: plugpower-project-manager-hydrogen-systems-2026-09
+  field_id: green-hydrogen
+  role_id: hydrogen-systems-project-manager
+  title: Project Manager, Hydrogen Systems
+  company: Plug Power
+  requirements_summary: Manages timelines, budgets, and vendor coordination for hydrogen production
+    and delivery infrastructure projects from design through commissioning.
+  source_url: https://plugpower.wd5.myworkdayjobs.com/en-US/Plug_Power_Inc/job/Project-Manager--Hydrogen-Systems_R6858
+  retrieved_at: 2026-09-12
+- id: plugpower-fuel-cell-test-engineer-2026-09
+  field_id: green-hydrogen
+  role_id: hydrogen-fuel-cell-systems-engineer
+  title: Engineer I, Fuel Cell System Test & Validation
+  company: Plug Power
+  requirements_summary: Designs and executes test protocols validating fuel cell system performance
+    and durability, feeding results back into product engineering.
+  source_url: https://plugpower.wd5.myworkdayjobs.com/en-US/Plug_Power_Inc/job/Engineer-I--Fuel-Cell-System-Test---Validation_R6885
+  retrieved_at: 2026-09-12
+- id: blocpower-building-energy-analyst-2026-09
+  field_id: energy-efficiency-and-demand-response
+  role_id: efficiency-building-energy-analyst
+  title: Building Energy Analyst (entry-level)
+  company: BlocPower
+  requirements_summary: Entry-level analyst role reviewing building energy-use data to identify
+    efficiency and electrification retrofit opportunities for BlocPower's project pipeline.
+  source_url: https://jobs.lever.co/BlocPower/845e78ff-61a3-4c60-aaef-8d3181e0c051
+  retrieved_at: 2026-09-12
+- id: blocpower-hvac-engineer-2026-09
+  field_id: energy-efficiency-and-demand-response
+  role_id: efficiency-hvac-engineer
+  title: HVAC Engineer (mid-level)
+  company: BlocPower
+  requirements_summary: Mid-level engineer designing and reviewing HVAC and heat-pump systems for
+    building electrification retrofits, supporting commissioning on a cross-disciplinary team.
+  source_url: https://jobs.lever.co/BlocPower/377b1595-ad37-4307-aa72-36cd17d57415
+  retrieved_at: 2026-09-12
+- id: blocpower-program-manager-2026-09
+  field_id: energy-efficiency-and-demand-response
+  role_id: efficiency-retrofit-program-manager
+  title: Program Manager
+  company: BlocPower
+  requirements_summary: New York City-based program manager coordinating contractors, financing
+    partners, and building owners across a portfolio of retrofit projects.
+  source_url: https://jobs.lever.co/BlocPower/1f9a8184-856e-40a2-9f58-4e1607a2d77d
+  retrieved_at: 2026-09-12
+- id: gfi-corporate-engagement-intern-2026-09
+  field_id: alternative-proteins
+  role_id: altprotein-corporate-engagement-manager
+  title: Corporate Engagement Intern
+  company: Good Food Institute
+  requirements_summary: Entry-level internship supporting GFI's corporate engagement team in tracking
+    food-industry adoption of alternative proteins and preparing briefings for corporate partners;
+    no prior industry experience required.
+  source_url: https://job-boards.greenhouse.io/thegoodfoodinstitute80/jobs/8716799002
+  retrieved_at: 2026-09-12
+- id: chestnutcarbon-forestry-technician-2026-09
+  field_id: forestry-and-nature-based-carbon
+  role_id: forestry-technician
+  title: Forestry Technician
+  company: Chestnut Carbon
+  requirements_summary: Field-based role collecting forest inventory and site data across Chestnut
+    Carbon's reforestation properties, paid per day worked and requiring comfort with variable
+    terrain, travel, and outdoor conditions.
+  source_url: https://jobs.lever.co/chestnutcarbon/08e04ff9-1adc-47c1-9172-ec7a1ebd62c6
+  retrieved_at: 2026-09-12
+- id: chestnutcarbon-forest-technician-seasonal-2026-09
+  field_id: forestry-and-nature-based-carbon
+  role_id: forestry-technician
+  title: Forest Technician, Seasonal
+  company: Chestnut Carbon
+  requirements_summary: Seasonal field position supporting forest establishment and monitoring work on
+    Chestnut Carbon's reforestation sites, with compensation scaled to terrain, project size, and
+    remoteness.
+  source_url: https://jobs.lever.co/chestnutcarbon/c2f7de3f-63a0-4923-b980-7bc6a86bbd4d
+  retrieved_at: 2026-09-12
+- id: moodys-catastrophe-modeller-tropical-cyclones-2026-09
+  field_id: climate-risk-analytics-and-insurance
+  role_id: climate-risk-catastrophe-modeler
+  title: Catastrophe Modeller - Tropical Cyclones
+  company: Moody's
+  requirements_summary: Builds and refines Moody's RMS tropical-cyclone catastrophe models, requiring
+    an advanced degree in atmospheric science, statistics, or a related quantitative field and
+    experience in hazard or risk modeling.
+  source_url: https://careers.moodys.com/en/job/london/catastrophe-modeller-tropical-cyclones/49841/95041826560
+  retrieved_at: 2026-09-12
+- id: watershed-customer-success-manager-2026-09
+  field_id: carbon-accounting-and-esg-software
+  role_id: carbon-accounting-customer-success-manager
+  title: Customer Success Manager, Enterprise
+  company: Watershed
+  requirements_summary: Manages enterprise customer relationships post-sale, guiding companies through
+    emissions measurement and reduction planning on Watershed's platform; based in London.
+  source_url: https://watershed.com/careers
+  retrieved_at: 2026-09-12
+- id: watershed-account-executive-2026-09
+  field_id: carbon-accounting-and-esg-software
+  role_id: carbon-accounting-account-executive
+  title: Account Executive, Enterprise, Northern Europe
+  company: Watershed
+  requirements_summary: Owns the enterprise sales cycle for Northern Europe customers evaluating
+    carbon accounting software, from pitch through contract; based in London.
+  source_url: https://watershed.com/careers
+  retrieved_at: 2026-09-12
+- id: watershed-product-designer-2026-09
+  field_id: carbon-accounting-and-esg-software
+  role_id: carbon-accounting-product-designer
+  title: Product Designer
+  company: Watershed
+  requirements_summary: Designs customer-facing workflows for emissions data upload and disclosure
+    reporting on Watershed's platform; based in San Francisco.
+  source_url: https://watershed.com/careers
+  retrieved_at: 2026-09-12
+- id: evergreenaction-senior-director-policy-2026-09
+  field_id: climate-policy-and-advocacy
+  role_id: climate-policy-director
+  title: Senior Director, Policy Team
+  company: Evergreen Action
+  requirements_summary: Leads a policy issue area for Evergreen Action, setting the substantive agenda
+    and representing the organization to legislators and agency staff; fully remote within the
+    United States.
+  source_url: https://job-boards.greenhouse.io/evergreenaction/jobs/5405225008
+  retrieved_at: 2026-09-12
+- id: evergreenaction-midwest-regional-advocate-2026-09
+  field_id: climate-policy-and-advocacy
+  role_id: climate-policy-regional-advocate
+  title: Midwest Regional Advocate (MI)
+  company: Evergreen Action
+  requirements_summary: Builds relationships with Michigan state legislators and coalition partners to
+    advance state-level clean-energy policy; remote, based in the region.
+  source_url: https://job-boards.greenhouse.io/evergreenaction/jobs/5405196008
+  retrieved_at: 2026-09-12
+- id: evergreenaction-senior-regional-advocate-energy-2026-09
+  field_id: climate-policy-and-advocacy
+  role_id: climate-policy-regional-advocate
+  title: Senior Regional Advocate (Energy Markets)
+  company: Evergreen Action
+  requirements_summary: Advocates on state energy-market policy and regulatory proceedings,
+    coordinating with regional coalition partners; fully remote within the United States.
+  source_url: https://job-boards.greenhouse.io/evergreenaction/jobs/5405212008
+  retrieved_at: 2026-09-12
+- id: grist-climate-solutions-fellow-2026-09
+  field_id: climate-communications-and-media
+  role_id: climate-comms-journalist-fellow
+  title: Climate Solutions Fellow
+  company: Grist
+  requirements_summary: Twelve-month fellowship reporting and writing climate-solutions journalism at
+    Grist, aimed at early-career and underrepresented journalists new to the climate beat.
+  source_url: https://job-boards.greenhouse.io/grist/jobs/4599614007
+  retrieved_at: 2026-09-12
+- id: grist-climate-news-fellow-2026-09
+  field_id: climate-communications-and-media
+  role_id: climate-comms-journalist-fellow
+  title: Climate News Fellow
+  company: Grist
+  requirements_summary: Fellowship covering climate news at Grist, producing daily and enterprise
+    reporting alongside staff editors as part of a early-career journalist training program.
+  source_url: https://job-boards.greenhouse.io/grist/jobs/4599973007
+  retrieved_at: 2026-09-12
+- id: cleanwateraction-ej-program-coordinator-2026-09
+  field_id: environmental-justice-and-community-programs
+  role_id: ej-program-coordinator
+  title: Environmental Justice Program Coordinator
+  company: Clean Water Action
+  requirements_summary: Coordinates community programs on food access, green space, and pollution
+    reduction in Philadelphia and southeast Pennsylvania, including workshops and youth engagement;
+    hybrid, $52,000-$55,000.
+  source_url: https://cleanwater.org/jobs/environmental-justice-program-coordinator-hybrid-philadelphia-pa
+  retrieved_at: 2026-09-12
