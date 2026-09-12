@@ -1,0 +1,82 @@
+:root {
+  --background: #ffffff;
+  --foreground: #16181d;
+  --muted: #5d6470;
+  --border: #d7dbe2;
+  --accent: #12603f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1115;
+    --foreground: #eceef2;
+    --muted: #9aa2af;
+    --border: #2b2f38;
+    --accent: #4fbf8b;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+main {
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 4rem 1.5rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.75rem;
+}
+
+p {
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.875rem;
+  margin-bottom: 0.35rem;
+}
+
+input[type="password"] {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  width: 100%;
+}
+
+button {
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  margin-top: 1rem;
+  padding: 0.55rem 1.1rem;
+}

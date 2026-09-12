@@ -87,7 +87,7 @@ src/
   app/
     api/            # streaming route handlers, one per lib module
     (app)/          # the single-page workspace
-    middleware.ts   # passcode gate
+  proxy.ts          # passcode gate (Next 16's name for middleware.ts; see §7.7)
 supabase/migrations/   # reference tables, llm_usage, RLS (select-only anon)
 data/                  # climate_fields.yaml, example_roles.yaml, example_job_posts.yaml
 scripts/seed.ts        # data/*.yaml → Supabase
@@ -105,7 +105,7 @@ orchestrator runs before marking `[DONE]`. Every step ends in one commit.
 
 | # | Step | Model | Acceptance |
 |---|---|---|---|
-| 0.1 `[TODO]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
+| 0.1 `[DONE]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
 | 0.2 `[TODO]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
 | 0.3 `[TODO]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
 | 0.4 `[TODO]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
@@ -263,3 +263,13 @@ integrates, and commits.
 6. "Example profiles" in the reference collection means role profiles (what
    someone in the role does day to day), never personal profiles, per the
    PRD's consent rule.
+7. The passcode gate lives in `src/proxy.ts`, not `src/middleware.ts`:
+   Next.js 16 deprecated and renamed the `middleware` file convention to
+   `proxy` (the exported function is `proxy` too). Same feature, current
+   spelling. Unauthenticated `/api/*` requests get a `401` JSON body instead
+   of a redirect, so `fetch()` callers see the failure rather than silently
+   re-POSTing to an HTML page.
+8. The session cookie is an HMAC-SHA-256 token `v1.<expiry>.<sig>` signed with
+   `PASSCODE_COOKIE_SECRET` and carrying no user data — only a format version
+   and an expiry. Signing and verification use the Web Crypto API so the gate
+   stays portable to the Edge runtime.
