@@ -110,7 +110,7 @@ orchestrator runs before marking `[DONE]`. Every step ends in one commit.
 | 0.3 `[DONE]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
 | 0.4 `[DONE]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
 
-Gate 0: orchestrator runs tests, `/code-review` at medium, commits. User skims
+Gate 0: orchestrator runs tests, `/code-review` at medium (Opus workers, §4), commits. User skims
 the `profile.md` schema (the one design decision worth a human look).
 
 ### Phase 1 — Stage 1: discovery (1.1–1.3 in parallel worktrees, then 1.4)
@@ -119,8 +119,21 @@ the `profile.md` schema (the one design decision worth a human look).
 |---|---|---|---|
 | 1.1 `[TODO]` | `cards.ts`: pasted text → 3–6 experience cards with candidate skills; confirm/correct flow | Opus | Runs on 3 synthetic resumes; every card has S/A/R and ≥1 skill |
 | 1.2 `[TODO]` | `elicit.ts`: progressive preference policy (what is missing, what to ask next, one question per turn, skip when inferable) and the answer-pill schema | Fable | Scripted 5-turn transcript never asks two things at once; stops once enough is known |
-| 1.3 `[TODO]` | Reference collection: 3 Opus agents each cover ~10 sectors (energy/grid/storage; built environment/transport/industry; nature/food/finance/policy/software). Per sector: description, climate link, transferable functions, example roles per function, example companies, 2–3 example job posts as title + company + requirements summary + source URL + date (company career pages and boards that permit access only), source URLs. Fable consolidates and seeds | 3× Opus, 1× Fable | Seed validates; every field has ≥2 sources and ≥2 example posts; no LinkedIn/Indeed/Climatebase URLs; no personal profiles |
+| 1.3 `[TODO]` | Reference collection: 3 Sonnet 5 agents at `effort: low` each cover ~10 sectors (energy/grid/storage; built environment/transport/industry; nature/food/finance/policy/software). Per sector: description, climate link, transferable functions, example roles per function, example companies, 2–3 example job posts as title + company + requirements summary + source URL + date (company career pages and boards that permit access only), source URLs. Fable consolidates and seeds | 3× Sonnet 5 (low), 1× Fable | Seed validates; every field has ≥2 sources and ≥2 example posts; no LinkedIn/Indeed/Climatebase URLs; no personal profiles |
 | 1.4 `[TODO]` | `discover.ts`: profile + reference data + web search → ranked fields and roles, each with fit reasoning citing card IDs, sector-move vs adjacent vs retraining label, uncertainties, sourced examples | Fable | On 3 synthetic profiles: every recommendation cites ≥1 card and ≥1 source; the videographer profile gets non-generic fields |
+
+**Phase 1 resume state (2026-09-12).** The first Phase 1 session hit its limit
+mid-run (§7.28) and nothing was committed. Two workers left finished but
+unverified output in orphaned worktrees, still on the phase-1 branch:
+
+- `.claude/worktrees/agent-a2c1addb38157cf7d` — `src/lib/cards.ts` (530 lines)
+  plus `src/lib/__fixtures__/resumes/{videographer,web-designer,data-scientist}.txt`
+- `.claude/worktrees/agent-a8df69952de383e70` — `src/lib/elicit.ts` (692 lines)
+
+Neither has tests and neither ran its §3 acceptance check. Salvage them —
+review, add the tests, run the check, commit — before starting 1.3. Do not
+re-run 1.1 and 1.2 from scratch. Remove both worktrees once merged
+(`git worktree remove`).
 
 Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resume.
 
@@ -134,7 +147,7 @@ Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resu
 | 2.4 `[TODO]` | Fields and Queries tabs: field board with accept/reject/unsure and explore; query cards with copy, alert steps, "Tried it" feedback that posts a feedback turn and updates the Queries section of the profile | Opus | after 2.1 | Feedback on a query changes the profile text and triggers a revision turn |
 | 2.5 `[TODO]` | Integration: wire 1.x and 2.x into route handlers and the page; end-to-end run on a Vercel preview deploy; fix seams | Orchestrator (Fable) | after all | Full loop on the builder's own resume, on a preview URL |
 
-Gate 2: `/code-review` high, `/security-review` (passcode, input handling,
+Gate 2: `/code-review` high and `/security-review` on Opus workers (§4) — passcode, input handling,
 RLS, no user content reaching Supabase). User does one full run including two
 real job-board searches and files feedback as issues.
 
@@ -179,19 +192,52 @@ integrates, and commits.
 - Memory: decisions not in the repo get saved to the orchestrator's project
   memory so future sessions do not relitigate them.
 
-**Model policy (quality over tokens; adjust only if limits are hit):**
-- **Fable** orchestrates, and owns every step where quality is the product:
-  the profile schema, elicitation, discovery, exploration, query revision,
-  reference-collection consolidation, evaluation, integration, and gate
-  reviews.
-- **Opus** does the coding: scaffold, wrappers, Supabase, UI, seed scripts,
-  research fan-out, deployment, docs.
-- **Escalate to Fable** when an Opus worker reports a blocker or a bug it
-  could not fix in one attempt. The orchestrator re-briefs the same task to
-  a Fable worker rather than retrying Opus.
-- Sonnet and Haiku are not used unless the user asks to cut cost.
-- Rough cost shape: Fable ~2× Opus per token. Worker reports flow back
-  through the orchestrator, so short reports still matter.
+**Model policy (revised 2026-09-12 after the Gate 0 measurement, §7.28):**
+- **Fable** orchestrates, and owns the steps where prompt quality *is* the
+  product — the ones whose Model column in §3 says Fable: the profile schema,
+  elicitation, discovery, exploration, query revision, reference-collection
+  consolidation, evaluation, and integration. Nothing else.
+- **Opus** does the coding *and every gate review*: scaffold, wrappers,
+  Supabase, UI, seed scripts, deployment, docs, `/code-review` fan-out,
+  `/security-review`. Gate reviews were on Fable and cost 28% of a whole
+  session window for findings Opus produces just as well.
+- **Sonnet 5 at `effort: low`** for data-gathering workers that read the web
+  and report facts back — the §3 step 1.3 sector research. They summarise
+  sources; they do not write product prose or code.
+- **Escalate to Fable** when a worker reports a blocker or a bug it could not
+  fix in one attempt. The orchestrator re-briefs the same task to a Fable
+  worker rather than retrying at the same tier.
+- Cost shape per token: Fable $10/$50 per MTok, Opus $5/$25, Sonnet 5 $2/$10.
+  Fable is 2× Opus and 5× Sonnet, so a Fable worker has to be earning it.
+
+**Worker budget (the cost is context × turns, not tool calls):**
+
+Cache reads were 93% of the input tokens in the measured window: every turn
+re-bills the whole accumulated context, so a worker's cost grows with the
+square of how long it runs. Brief accordingly.
+
+- **Scope every worker to finish in ≤20 turns and stay under ~80K context.**
+  Past that the tail turns dominate: one Phase 0 worker spent 40 turns at a
+  median 144K context — 5.5M input tokens for a single file. If a step cannot
+  fit, split it into two workers with disjoint file ownership rather than
+  letting one run long.
+- **The orchestrator states the turn budget in the brief** ("this should take
+  under 20 tool calls; if it will not, stop and report why") and treats a
+  worker that blows through it as a briefing bug, not a worker failure.
+- **Never read a whole file into context.** No `cat file.ts`, no `Read`
+  without `offset`/`limit` on anything over ~200 lines, no multi-file
+  `cat -n a.ts b.ts c.ts`. Use `grep -n -C5`, `sed -n 'A,Bp'`, or a
+  ranged `Read`. In the measured window 480K tokens of tool results were
+  almost entirely whole-file dumps, several of the same file 5× over.
+- **Do not send workers to PLAN.md.** The orchestrator pastes the step row,
+  the acceptance check and the relevant §7 decisions into the brief. PLAN.md
+  is 30KB and was read in full four times in one window.
+- **One verification pass per step, filtered:**
+  `pnpm test && pnpm lint && pnpm typecheck 2>&1 | tail -30`, then `pnpm build`
+  once before the commit — not a full run after every edit.
+- **Do not run a gate review and a phase execution in the same session
+  window.** The Gate 0 review fan-out alone was 80% of a five-hour budget,
+  which is why the Phase 1 session ran out with three steps left.
 
 ---
 
@@ -432,3 +478,19 @@ integrates, and commits.
     asserts `(MAX_RETRIES + 1) × REQUEST_TIMEOUT_MS < MAX_DURATION_SECONDS ×
     1000`, so a stalled attempt plus its retry cannot outlive the Vercel
     function and lose the usage row for tokens already billed.
+28. **Worker model and worker budget are set by measurement, not by taste
+    (2026-09-12).** The Gate 0 session and the Phase 1 session shared one
+    five-hour limit window; Phase 1 ran out with steps 1.3 and 1.4 unfinished.
+    Reconstructing both transcripts: 35.9M input tokens over 391 model
+    messages, ~$52 cost-weighted. The Gate 0 session was 80.6% of it and the
+    Phase 1 session 18.6%. Within that, the `/code-review` fan-out — eight
+    Fable workers — was 28%, long-lived coding workers ~33%, and web research
+    2.5%. 93% of all input was cache reads, i.e. re-billed context, so cost
+    tracks context × turns rather than tool-call count; the worst worker ran
+    40 turns at a median 144K context. Whole-file `cat`s were ~480K tokens of
+    that context, the same file re-dumped up to 5×. The three changes in §4 —
+    gate reviews and research off Fable, a ≤20-turn / ~80K budget per worker,
+    and no whole-file reads — target 1, 2 and 3 in that order. Web-search
+    volume was *not* the problem and is not capped; the research fan-out moved
+    to Sonnet 5 because it summarises sources rather than writing product
+    prose, not to save the 2.5%.

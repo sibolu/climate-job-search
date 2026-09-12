@@ -9,12 +9,32 @@
   decisions or constraints go into PLAN.md §7 (and README.md if they affect
   contributors) in the same commit as the change. Do not rely on Claude's
   private memory for anything another contributor would need.
-- **Model policy** (PLAN.md §4): Fable orchestrates and owns quality-critical
-  steps; Opus does the coding; escalate a blocked Opus task to Fable.
+- **Model policy** (PLAN.md §4): Fable orchestrates and owns only the steps
+  whose §3 Model column says Fable; Opus does the coding *and every gate
+  review*; Sonnet 5 at `effort: low` does web data-gathering; escalate a
+  blocked worker to Fable.
 - **Prompts** live as plain template strings in `src/lib/*.ts`, one module
   each, so they can be edited without touching React.
 - **Reporting** follows the user's global CLAUDE.md: action line first, 1–3
   sentence summary, gotchas under `FYI (no action needed):`.
+
+## Context budget (PLAN.md §4, §7.28)
+
+Cost is context × turns: 93% of input tokens in the measured window were cache
+reads, so every token you pull into context is re-billed on every later turn.
+
+- **Never read a whole file.** No `cat file.ts`, no multi-file `cat -n a b c`,
+  no `Read` without `offset`/`limit` above ~200 lines. Use `grep -n -C5` or
+  `sed -n 'A,Bp'`. `profile.ts` is 49KB and `PLAN.md` is 30KB — neither is ever
+  read whole.
+- **Workers finish in ≤20 turns / ~80K context.** Over that, split the task.
+  The orchestrator puts the turn budget in the brief and pastes the step row,
+  the acceptance check and the relevant §7 decisions in — it does not send a
+  worker to read PLAN.md.
+- **Verify once per step, filtered:**
+  `pnpm test && pnpm lint && pnpm typecheck 2>&1 | tail -30`, then `pnpm build`
+  before the commit. Not after every edit.
+- **Never run a gate review and a phase execution in the same session.**
 
 ## Hard constraints (PRD.md — these bind every change)
 
