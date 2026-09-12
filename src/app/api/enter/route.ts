@@ -14,23 +14,29 @@ import {
  * never logged (PRD: no user data stored server-side).
  */
 
+/**
+ * Never throws. A body that is neither JSON nor a form (`text/plain`, no body
+ * at all) makes `request.json()` / `request.formData()` throw a `TypeError`;
+ * that is treated as an empty passcode, so the caller gets the same 401 as a
+ * wrong passcode rather than a 500 that reveals how the endpoint parses.
+ */
 async function readPasscode(request: Request): Promise<string> {
   const contentType = request.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    try {
+  try {
+    if (contentType.includes("application/json")) {
       const body: unknown = await request.json();
       const passcode =
         typeof body === "object" && body !== null
           ? (body as Record<string, unknown>).passcode
           : undefined;
       return typeof passcode === "string" ? passcode : "";
-    } catch {
-      return "";
     }
+    const form = await request.formData();
+    const passcode = form.get("passcode");
+    return typeof passcode === "string" ? passcode : "";
+  } catch {
+    return "";
   }
-  const form = await request.formData();
-  const passcode = form.get("passcode");
-  return typeof passcode === "string" ? passcode : "";
 }
 
 function wantsJson(request: Request): boolean {

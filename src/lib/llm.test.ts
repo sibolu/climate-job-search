@@ -8,9 +8,13 @@ import {
   LlmOutputError,
   LlmPauseLimitError,
   LlmRefusalError,
+  LlmSessionIdError,
   LlmToolPolicyError,
   LlmTruncatedError,
+  MAX_DURATION_SECONDS,
+  MAX_RETRIES,
   MODEL,
+  REQUEST_TIMEOUT_MS,
   USAGE_ROW_KEYS,
   assertToolsAllowed,
   costUsd,
@@ -23,7 +27,7 @@ import {
   type UsageSink,
 } from "./llm";
 import { BLOCKED_SOURCE_DOMAINS } from "./reference-schema";
-import { StepNameSchema } from "./session";
+import { StepNameSchema, newSessionId } from "./session";
 
 // ---------------------------------------------------------------------------
 // Fake client
@@ -33,11 +37,12 @@ interface FakeTurn {
   text?: string;
   stopReason: Anthropic.StopReason;
   usage?: Partial<Anthropic.Usage>;
-  parsedOutput?: unknown;
   category?: string;
+  /** Reject the request with this error instead of answering. */
+  error?: Error;
 }
 
-function fakeMessage(turn: FakeTurn): Anthropic.Message & { parsed_output?: unknown } {
+function fakeMessage(turn: FakeTurn): Anthropic.Message {
   return {
     id: "msg_fake",
     type: "message",
@@ -61,21 +66,29 @@ function fakeMessage(turn: FakeTurn): Anthropic.Message & { parsed_output?: unkn
       output_tokens_details: null,
       ...turn.usage,
     } as Anthropic.Usage,
-    parsed_output: turn.parsedOutput,
-  } as Anthropic.Message & { parsed_output?: unknown };
+  } as Anthropic.Message;
 }
 
-function fakeStream(turn: FakeTurn): LlmStream {
+/** Splits at word boundaries so a multi-word answer streams as several deltas. */
+function chunks(text: string): string[] {
+  return text.split(/(?= )/);
+}
+
+function fakeStream(turn: FakeTurn, onDelta?: () => void): LlmStream {
   const message = fakeMessage(turn);
   return {
     async *[Symbol.asyncIterator](): AsyncIterator<Anthropic.MessageStreamEvent> {
+      if (turn.error !== undefined) throw turn.error;
       if (turn.text !== undefined) {
-        for (const chunk of turn.text.split(/(?= )/)) {
+        for (const chunk of chunks(turn.text)) {
+          onDelta?.();
           yield {
             type: "content_block_delta",
             index: 0,
             delta: { type: "text_delta", text: chunk },
           } as Anthropic.MessageStreamEvent;
+          // Yield to the event loop between deltas, like a real socket would.
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
       }
     },
@@ -86,11 +99,14 @@ function fakeStream(turn: FakeTurn): LlmStream {
 interface Fake {
   client: LlmClient;
   params: Anthropic.MessageCreateParamsNonStreaming[];
+  /** How many deltas the fake stream has produced so far, across requests. */
+  deltasProduced: () => number;
 }
 
 /** Replays `turns` one per request, so a `pause_turn` test can script both. */
 function fakeClient(turns: FakeTurn[]): Fake {
   const params: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  let produced = 0;
   const next = (p: Anthropic.MessageCreateParamsNonStreaming): FakeTurn => {
     params.push(p);
     const turn = turns[params.length - 1];
@@ -99,9 +115,13 @@ function fakeClient(turns: FakeTurn[]): Fake {
   };
   return {
     params,
+    deltasProduced: () => produced,
     client: {
-      stream: (p) => fakeStream(next(p)),
-      parse: (p) => Promise.resolve(fakeMessage(next(p))),
+      stream: (p) => fakeStream(next(p), () => (produced += 1)),
+      create: (p) => {
+        const turn = next(p);
+        return turn.error === undefined ? Promise.resolve(fakeMessage(turn)) : Promise.reject(turn.error);
+      },
     },
   };
 }
@@ -112,9 +132,11 @@ async function drain(deltas: AsyncIterable<string>): Promise<string[]> {
   return out;
 }
 
+const SESSION_ID = "0123456789abcdef0123456789abcdef";
+
 const REQUEST = {
   step: "elicit",
-  sessionId: "session-abcdef12",
+  sessionId: SESSION_ID,
   system: "You are a careers assistant.",
   messages: [{ role: "user", content: "hello" }],
 } as const;
@@ -159,13 +181,15 @@ describe("blocked domains", () => {
     expect(() => assertToolsAllowed(webTools())).not.toThrow();
   });
 
-  it("is the same list as reference-schema.ts (PLAN.md §7.13)", () => {
-    expect([...BLOCKED_DOMAINS]).toEqual([...BLOCKED_SOURCE_DOMAINS]);
+  it("is the one list owned by reference-schema.ts, not a copy (PLAN.md §7.13)", () => {
+    expect(BLOCKED_DOMAINS).toBe(BLOCKED_SOURCE_DOMAINS);
+    expect(BLOCKED_DOMAINS).toEqual(["linkedin.com", "indeed.com", "climatebase.org"]);
   });
 
-  it("refuses a call whose tools break the policy", async () => {
-    const { client } = fakeClient([{ text: "hi", stopReason: "end_turn" }]);
-    const llm = createLlm({ client, usageSink: memoryUsageSink() });
+  it("refuses a call whose tools break the policy, before any request", async () => {
+    const { client, params } = fakeClient([{ text: "hi", stopReason: "end_turn" }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink });
     const bad = [
       { type: "web_search_20260209", name: "web_search", blocked_domains: [] },
     ] as unknown as ReturnType<typeof webTools>;
@@ -176,6 +200,8 @@ describe("blocked domains", () => {
     const streamed = llm.streamText({ ...REQUEST, tools: bad });
     await expect(drain(streamed.textDeltas)).rejects.toThrow(LlmToolPolicyError);
     await expect(streamed.final).rejects.toThrow(LlmToolPolicyError);
+    expect(params).toHaveLength(0);
+    expect(sink.rows).toHaveLength(0);
   });
 });
 
@@ -192,6 +218,15 @@ describe("effort", () => {
   });
 });
 
+describe("timeouts", () => {
+  it("keeps every attempt of one logical call inside the Vercel maxDuration", () => {
+    // The SDK retries a timed-out attempt, so the worst case is attempts × timeout.
+    expect((MAX_RETRIES + 1) * REQUEST_TIMEOUT_MS).toBeLessThan(MAX_DURATION_SECONDS * 1000);
+    // Discovery turns with web search legitimately run 1–3 minutes (PLAN.md §6).
+    expect(REQUEST_TIMEOUT_MS).toBeGreaterThanOrEqual(3 * 60 * 1000);
+  });
+});
+
 describe("cost", () => {
   it("prices a known usage object", () => {
     // 1M in + 1M out + 1M cache read + 1M cache write = 5 + 25 + 0.5 + 6.25
@@ -204,6 +239,45 @@ describe("cost", () => {
       6,
     );
     expect(costUsd({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session id
+// ---------------------------------------------------------------------------
+
+describe("session id", () => {
+  const badIds = ["session-abcdef12", "someone@example.com", "0123456789ABCDEF0123456789ABCDEF", "", "x".repeat(32)];
+
+  it("refuses anything but 32 lowercase hex before any request, and writes no row", async () => {
+    for (const sessionId of badIds) {
+      const { client, params } = fakeClient([{ text: "{}", stopReason: "end_turn" }]);
+      const sink = memoryUsageSink();
+      const llm = createLlm({ client, usageSink: sink });
+
+      const error = await llm
+        .structured({ ...REQUEST, sessionId, schema: z.object({}) })
+        .then(() => undefined, (e: unknown) => e);
+      expect(error).toBeInstanceOf(LlmSessionIdError);
+      // The offending value is never quoted.
+      if (sessionId !== "") expect((error as Error).message).not.toContain(sessionId);
+
+      const streamed = llm.streamText({ ...REQUEST, sessionId });
+      await expect(streamed.final).rejects.toThrow(LlmSessionIdError);
+      await expect(drain(streamed.textDeltas)).rejects.toThrow(LlmSessionIdError);
+
+      expect(params).toHaveLength(0);
+      expect(sink.rows).toHaveLength(0);
+    }
+  });
+
+  it("accepts what newSessionId() mints", async () => {
+    const { client } = fakeClient([{ text: "{}", stopReason: "end_turn" }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink });
+    const sessionId = newSessionId();
+    await llm.structured({ ...REQUEST, sessionId, schema: z.object({}) });
+    expect(sink.rows[0]?.session_id).toBe(sessionId);
   });
 });
 
@@ -253,6 +327,116 @@ describe("streamText", () => {
     ]);
   });
 
+  it("starts the request eagerly: final resolves without textDeltas ever being read", async () => {
+    const { client, params } = fakeClient([
+      { text: "never read", stopReason: "end_turn", usage: { input_tokens: 7, output_tokens: 3 } },
+    ]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+
+    const call = llm.streamText(REQUEST);
+    expect(params).toHaveLength(1); // the request was made synchronously
+    const result = await call.final;
+
+    expect(result.text).toBe("never read");
+    expect(result.usage).toEqual({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0 });
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.output_tokens).toBe(3);
+    // The deltas are still there for a late reader.
+    expect(await drain(call.textDeltas)).toEqual(["never", " read"]);
+  });
+
+  it("keeps going when the consumer breaks after the first delta; final settles and one row lands", async () => {
+    const { client, deltasProduced } = fakeClient([
+      {
+        text: "one two three four",
+        stopReason: "end_turn",
+        usage: { input_tokens: 20, output_tokens: 12 },
+      },
+    ]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+
+    const call = llm.streamText(REQUEST);
+    const seen: string[] = [];
+    for await (const delta of call.textDeltas) {
+      seen.push(delta);
+      break; // e.g. ReadableStream.cancel() → iterator.return()
+    }
+    expect(seen).toEqual(["one"]);
+
+    const result = await call.final;
+    // The call ran to completion (design choice: complete, do not abort).
+    expect(deltasProduced()).toBe(4);
+    expect(result.text).toBe("one two three four");
+    expect(result.stopReason).toBe("end_turn");
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.output_tokens).toBe(12);
+    // An abandoned iterable stays finished; it neither replays nor throws.
+    expect(await drain(call.textDeltas)).toEqual([]);
+  });
+
+  it("settles final and one row when the consumer bails out of a pause_turn continuation", async () => {
+    const { client } = fakeClient([
+      { text: "first half", stopReason: "pause_turn", usage: { input_tokens: 10, output_tokens: 5 } },
+      { text: "second half", stopReason: "end_turn", usage: { input_tokens: 15, output_tokens: 6 } },
+    ]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+
+    const call = llm.streamText(REQUEST);
+    // What ReadableStream.cancel() does to the iterator: one pull, then return().
+    const iterator = call.textDeltas[Symbol.asyncIterator]();
+    await iterator.next();
+    await iterator.return?.();
+
+    const result = await call.final;
+    expect(result.text).toBe("first halfsecond half");
+    expect(result.continuations).toBe(1);
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.input_tokens).toBe(25);
+    expect(sink.rows[0]?.output_tokens).toBe(11);
+  });
+
+  it("rejects final even when nobody reads textDeltas, without an unhandled rejection", async () => {
+    const { client } = fakeClient([{ stopReason: "refusal", category: "cyber" }]);
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), now: () => 0 });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const call = llm.streamText(REQUEST);
+      await expect(call.final).rejects.toThrow(LlmRefusalError);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+
+  it("propagates an SDK error to both textDeltas and final, and logs nothing without usage", async () => {
+    const { client } = fakeClient([{ stopReason: "end_turn", error: new Error("socket hang up") }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+    const call = llm.streamText(REQUEST);
+    await expect(drain(call.textDeltas)).rejects.toThrow("socket hang up");
+    await expect(call.final).rejects.toThrow("socket hang up");
+    expect(sink.rows).toHaveLength(0);
+  });
+
+  it("still records the tokens of a completed continuation when the next request fails", async () => {
+    const { client } = fakeClient([
+      { text: "first", stopReason: "pause_turn", usage: { input_tokens: 10, output_tokens: 5 } },
+      { stopReason: "end_turn", error: new Error("socket hang up") },
+    ]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+    const call = llm.streamText(REQUEST);
+    await expect(call.final).rejects.toThrow("socket hang up");
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.input_tokens).toBe(10);
+    expect(sink.rows[0]?.output_tokens).toBe(5);
+  });
+
   it("resumes a pause_turn and logs one row with summed tokens", async () => {
     const { client, params } = fakeClient([
       {
@@ -285,13 +469,16 @@ describe("streamText", () => {
     expect(params[1]?.messages[1]?.role).toBe("assistant");
   });
 
-  it("gives up after too many pause_turns", async () => {
-    const paused: FakeTurn = { text: "x", stopReason: "pause_turn" };
+  it("gives up after too many pause_turns and logs one row", async () => {
+    const paused: FakeTurn = { text: "x", stopReason: "pause_turn", usage: { input_tokens: 1 } };
     const { client } = fakeClient(Array.from({ length: 10 }, () => paused));
-    const llm = createLlm({ client, usageSink: memoryUsageSink(), now: () => 0 });
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
     const call = llm.streamText(REQUEST);
     await expect(drain(call.textDeltas)).rejects.toThrow(LlmPauseLimitError);
     await expect(call.final).rejects.toThrow(LlmPauseLimitError);
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.input_tokens).toBe(6);
   });
 
   it("maps a refusal to LlmRefusalError and still logs the row", async () => {
@@ -363,7 +550,7 @@ describe("structured", () => {
     const { client, params } = fakeClient([
       {
         stopReason: "end_turn",
-        parsedOutput: { greeting: "hello" },
+        text: JSON.stringify({ greeting: "hello" }),
         usage: { input_tokens: 40, output_tokens: 8 },
       },
     ]);
@@ -378,12 +565,94 @@ describe("structured", () => {
     expect(Object.keys(sink.rows[0] ?? {})).toEqual([...USAGE_ROW_KEYS]);
     expect(params[0]?.output_config?.effort).toBe("high");
     expect(params[0]?.output_config?.format?.type).toBe("json_schema");
+    expect(params[0]?.output_config?.format?.schema).toMatchObject({ type: "object" });
   });
 
-  it("rejects output that does not match the schema", async () => {
-    const { client } = fakeClient([{ stopReason: "end_turn", parsedOutput: { greeting: 7 } }]);
+  it("maps JSON truncated at max_tokens to LlmTruncatedError and still logs the row", async () => {
+    const { client } = fakeClient([
+      {
+        stopReason: "max_tokens",
+        text: '{"greeting": "hel',
+        usage: { input_tokens: 40, output_tokens: 64 },
+      },
+    ]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+
+    const error = await llm
+      .structured({ ...REQUEST, schema, maxTokens: 64 })
+      .then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(LlmTruncatedError);
+    expect((error as Error).message).toMatch(/max_tokens \(64\)/);
+    expect((error as Error).message).not.toContain("greeting");
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.output_tokens).toBe(64);
+  });
+
+  it("maps malformed JSON at end_turn to LlmOutputError without quoting the model text", async () => {
+    const modelText = "Sure! Here is the greeting: {greeting: hello@example.com}";
+    const { client } = fakeClient([{ stopReason: "end_turn", text: modelText }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+
+    const error = await llm.structured({ ...REQUEST, schema }).then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(LlmOutputError);
+    const message = (error as Error).message;
+    expect(message).toContain("invalid JSON");
+    expect(message).not.toContain("Sure");
+    expect(message).not.toContain("hello@example.com");
+    expect(message).not.toContain("{");
+    expect(sink.rows).toHaveLength(1);
+  });
+
+  it("rejects output that does not match the schema, naming the path and code only", async () => {
+    const { client } = fakeClient([
+      { stopReason: "end_turn", text: JSON.stringify({ greeting: "secret text 42" , extra: 7 }) },
+    ]);
     const llm = createLlm({ client, usageSink: memoryUsageSink(), now: () => 0 });
-    await expect(llm.structured({ ...REQUEST, schema })).rejects.toThrow(LlmOutputError);
+    const strict = z.object({ greeting: z.number(), name: z.string() });
+
+    const error = await llm.structured({ ...REQUEST, schema: strict }).then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(LlmOutputError);
+    const message = (error as Error).message;
+    expect(message).toMatch(/greeting: invalid_type/);
+    expect(message).toMatch(/name: invalid_type/);
+    expect(message).not.toContain("secret");
+    expect(message).not.toContain("42");
+  });
+
+  it("does not echo record keys from the model into the error message", async () => {
+    const { client } = fakeClient([
+      { stopReason: "end_turn", text: JSON.stringify({ "jane@example.com": "x" }) },
+    ]);
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), now: () => 0 });
+    const error = await llm
+      .structured({ ...REQUEST, schema: z.record(z.string(), z.number()) })
+      .then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(LlmOutputError);
+    expect((error as Error).message).not.toContain("jane");
+    expect((error as Error).message).toMatch(/\?: invalid_type/);
+  });
+
+  it("parses the last text block when an earlier one precedes tool use", async () => {
+    const { client } = fakeClient([{ stopReason: "end_turn", text: "ignored" }]);
+    // Hand-build a two-block message: prose first, then the JSON answer.
+    const twoBlocks: LlmClient = {
+      stream: client.stream,
+      create: async (p) => {
+        const message = await client.create(p);
+        return {
+          ...message,
+          content: [
+            { type: "text", text: "Let me search.", citations: null },
+            { type: "text", text: JSON.stringify({ greeting: "hi" }), citations: null },
+          ],
+        };
+      },
+    };
+    const llm = createLlm({ client: twoBlocks, usageSink: memoryUsageSink(), now: () => 0 });
+    const result = await llm.structured({ ...REQUEST, schema });
+    expect(result.value.greeting).toBe("hi");
   });
 
   it("rejects a missing structured output without quoting the response", async () => {
@@ -394,10 +663,18 @@ describe("structured", () => {
     );
   });
 
+  it("maps a refusal to LlmRefusalError before trying to parse", async () => {
+    const { client } = fakeClient([{ stopReason: "refusal", category: "bio", text: "" }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+    await expect(llm.structured({ ...REQUEST, schema })).rejects.toMatchObject({ category: "bio" });
+    expect(sink.rows).toHaveLength(1);
+  });
+
   it("resumes a pause_turn", async () => {
     const { client } = fakeClient([
       { stopReason: "pause_turn", usage: { input_tokens: 10 } },
-      { stopReason: "end_turn", parsedOutput: { greeting: "hi" }, usage: { output_tokens: 4 } },
+      { stopReason: "end_turn", text: JSON.stringify({ greeting: "hi" }), usage: { output_tokens: 4 } },
     ]);
     const sink = memoryUsageSink();
     const llm = createLlm({ client, usageSink: sink, now: () => 0 });

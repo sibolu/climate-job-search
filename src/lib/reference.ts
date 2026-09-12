@@ -133,7 +133,9 @@ export async function searchFields(terms: string[]): Promise<ClimateFieldRow[]> 
     .join(",");
 
   const rows = unwrap(
-    `searchFields(${cleaned.join(", ")})`,
+    // A term count, never the terms: in Phase 1 they are drawn from the user's
+    // profile, and this string ends up in an error message and a stack trace.
+    `searchFields(${cleaned.length} term${cleaned.length === 1 ? "" : "s"})`,
     await anonClient().from("climate_fields").select("*").or(filter),
   );
 

@@ -4,7 +4,9 @@ import {
   DEFAULT_KEEP_LAST_N,
   SESSION_STORAGE_KEY,
   SESSION_VERSION,
+  SessionIdSchema,
   SessionStateSchema,
+  TurnRequestSchema,
   TurnResponseSchema,
   appendMessage,
   browserStore,
@@ -12,6 +14,7 @@ import {
   clearSession,
   exportSession,
   importSession,
+  isSessionId,
   loadSession,
   memoryStore,
   newSessionId,
@@ -72,6 +75,46 @@ describe("session state", () => {
     if (!badMessage.ok) expect(badMessage.error).toMatch(/messages\.0\.role/);
   });
 
+  it("only accepts 32 lowercase hex as a session id", () => {
+    expect(isSessionId(newSessionId())).toBe(true);
+    for (const bad of [
+      "someone@example.com",
+      "short",
+      "0123456789ABCDEF0123456789ABCDEF",
+      "0123456789abcdef0123456789abcde",
+      "0123456789abcdef0123456789abcdef0",
+      "session-abcdef12",
+      42,
+      null,
+    ]) {
+      expect(isSessionId(bad)).toBe(false);
+      expect(SessionIdSchema.safeParse(bad).success).toBe(false);
+      expect(SessionStateSchema.safeParse({ ...newSessionState(), sessionId: bad }).success).toBe(false);
+    }
+  });
+
+  it("import replaces a tampered session id with a fresh one and keeps the profile", () => {
+    const state = populated();
+    const tampered = { ...state, sessionId: "someone@example.com" };
+    const result = importSession(JSON.stringify(tampered));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sessionId).toMatch(/^[0-9a-f]{32}$/);
+    expect(result.value.sessionId).not.toBe("someone@example.com");
+    expect(result.value.profileMd).toBe(state.profileMd);
+    expect(result.value.messages).toEqual(state.messages);
+    // The same applies to what loadSession reads back from storage.
+    const store = memoryStore({ [SESSION_STORAGE_KEY]: JSON.stringify(tampered) });
+    const loaded = loadSession(store);
+    expect(loaded.sessionId).toMatch(/^[0-9a-f]{32}$/);
+    expect(loaded.profileMd).toBe(state.profileMd);
+    // A missing or non-string id is still a malformed export.
+    const missing = importSession(JSON.stringify({ ...state, sessionId: undefined }));
+    expect(missing.ok).toBe(false);
+    const numeric = importSession(JSON.stringify({ ...state, sessionId: 12345 }));
+    expect(numeric.ok).toBe(false);
+  });
+
   it("trimMessages keeps the last N and is a no-op when already short", () => {
     let s = newSessionState();
     for (let i = 0; i < 10; i++) s = appendMessage(s, { role: i % 2 ? "assistant" : "user", content: `m${i}` });
@@ -126,6 +169,8 @@ describe("turn payload", () => {
       { ...good, input: { kind: "feedback", feedback: { queryId: "C1", verdict: "good", reason: "" } } },
       { ...good, input: { kind: "feedback", feedback: { queryId: "Q1", verdict: "meh", reason: "" } } },
       { ...good, sessionId: "short" },
+      { ...good, sessionId: "someone@example.com" },
+      { ...good, sessionId: "0123456789ABCDEF0123456789ABCDEF" },
       { ...good, messages: [{ role: "user", content: "x" }] },
     ];
     for (const c of cases) {
@@ -133,6 +178,19 @@ describe("turn payload", () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error).toMatch(/^Invalid turn request: /);
     }
+  });
+
+  it("the wire schema never accepts a session id the browser could not have minted", () => {
+    const good = buildTurnRequest(populated(), "cards", { kind: "message", content: "paste" });
+    const r = parseTurnRequest({ ...good, sessionId: "someone@example.com" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/sessionId/);
+      // The rejected value is not echoed back.
+      expect(r.error).not.toContain("someone@example.com");
+    }
+    expect(TurnRequestSchema.shape.sessionId).toBe(SessionIdSchema);
+    expect(SessionStateSchema.shape.sessionId).toBe(SessionIdSchema);
   });
 
   it("TurnResponse schema accepts the minimal and the full shape", () => {

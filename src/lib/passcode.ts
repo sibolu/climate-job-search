@@ -56,14 +56,30 @@ function toBase64Url(bytes: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function hmac(secret: string, payload: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
+/**
+ * Imported `CryptoKey`s, one per secret. The proxy verifies a cookie on every
+ * non-static request, and `importKey` is not free; the secret comes from the
+ * environment, so this map holds at most one entry in practice. The promise
+ * itself is cached so concurrent requests share a single import.
+ */
+const keyCache = new Map<string, Promise<CryptoKey>>();
+
+function signingKey(secret: string): Promise<CryptoKey> {
+  const cached = keyCache.get(secret);
+  if (cached !== undefined) return cached;
+  const key = crypto.subtle.importKey(
     "raw",
     encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
+  keyCache.set(secret, key);
+  return key;
+}
+
+async function hmac(secret: string, payload: string): Promise<string> {
+  const key = await signingKey(secret);
   return toBase64Url(await crypto.subtle.sign("HMAC", key, encoder.encode(payload)));
 }
 

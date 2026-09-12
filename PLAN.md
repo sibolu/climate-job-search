@@ -54,7 +54,7 @@ per session is logged anonymously.
 | Grounding | Supabase reference collection first, then server-side `web_search_20260209` and `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Sources without scraping; hard constraint enforced in code |
 | Session state | `profile.md` text + chat messages + query feedback, in `localStorage`. Sent to the route handler on every turn. Export, import, and "start over" buttons | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
-| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, step name. No content, no identity | Per-session spend cap and evidence for a later Sonnet 5 decision. See §7 |
+| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Per-session spend cap and evidence for a later Sonnet 5 decision. See §7 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
 | Tests | `vitest`; prompt behaviors covered by evals, not unit tests | Unit tests for parsers and pure logic only |
@@ -255,8 +255,8 @@ integrates, and commits.
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
    not fellows' transcripts, unless a fellow exports and shares one.
-4. Anonymous usage rows (random session id, tokens, cost, step) are written
-   to Supabase for spend caps and model-choice evidence. Nothing else leaves
+4. Anonymous usage rows (random session id, model, tokens, cost, duration,
+   step) are written to Supabase for spend caps and model-choice evidence. Nothing else leaves
    the browser except the API request itself. If even this is too much, the
    cap moves client-side and the table is dropped.
 5. Access by a single shared passcode given to invited fellows.
@@ -339,16 +339,20 @@ integrates, and commits.
     remote project from a development machine; the production project is set
     up in Phase 3.3 and seeded from the same `data/*.yaml`.
 18. **`@anthropic-ai/sdk` 0.125.0, non-beta endpoints only.** Structured
-    outputs use the documented stable path — `client.messages.parse()` with
+    outputs use `client.messages.create()` with
     `output_config.format = zodOutputFormat(schema)` from
     `@anthropic-ai/sdk/helpers/zod` (which targets `zod/v4`, matching the
     repo's zod 4) — and streaming uses `client.messages.stream()` +
     `finalMessage()`. No beta header is needed for structured outputs, effort,
     adaptive thinking, prompt caching or the web tools, so `llm.ts` never
     touches `client.beta.*`; that keeps the app off surfaces that can change
-    shape under us. `structured()` re-validates `parsed_output` with the
-    caller's zod schema instead of casting, so a schema change can never be
-    silently wrong at runtime.
+    shape under us. `structured()` deliberately does not use
+    `client.messages.parse()`: the SDK parser throws before usage can be
+    recorded when a response is truncated at `max_tokens`, and its error
+    message quotes the model's text. The wrapper instead records usage, maps
+    the stop reason (`LlmTruncatedError`, `LlmRefusalError`), then parses the
+    final text block with the caller's zod schema; a failure is
+    `LlmOutputError` carrying only issue paths and codes.
 19. **Web tool type strings are `web_search_20260209` and
     `web_fetch_20260209`** (the dynamic-filtering variants; `claude-opus-5`
     supports them, confirmed against the `claude-api` skill's server-tool
@@ -374,4 +378,57 @@ integrates, and commits.
     leaks. Refused and truncated turns are logged before the error is thrown,
     so the cost telemetry stays complete. `UsageRow`'s key set is fixed by
     `USAGE_ROW_KEYS` and guarded both at compile time and in `llm.test.ts`, so
-    adding a content field fails the build.
+    adding a content field fails the build. `streamText` starts the call
+    eagerly and lets it complete even if the consumer stops reading deltas
+    (the API reports output tokens only in the final `message_delta`), so
+    `final` always settles and the row is exact.
+22. **`llm_usage`'s shape is a CHECK constraint, not a comment.** The anon key
+    is public and INSERT on that table is open by design, so "counters and
+    identifiers only" has to be something the database enforces rather than
+    something the app promises: `session_id` must match `^[0-9a-f]{32}$` (the
+    exact shape `newSessionId()` produces) and `step` must be one of the six
+    `StepName` values. Neither column can then carry a name, an email, a
+    resume line or any other free text, whatever calls the endpoint.
+    `pnpm db:check-rls` asserts both rejections (`23514`) with the service
+    role, so the constraints cannot be quietly dropped. Changing `StepName` in
+    `session.ts` means changing the CHECK in the same commit.
+23. **Supabase auth signs nobody up.** `enable_signup` is `false` in both
+    `[auth]` and `[auth.email]` in `supabase/config.toml`, and
+    `enable_anonymous_sign_ins` stays `false`. There are no accounts (§7.5):
+    access is the shared passcode checked in `src/proxy.ts`, and Supabase auth
+    must not be a second, open door that creates users in a project whose anon
+    key ships to the browser. **The hosted project in Phase 3.3 must mirror
+    this** — a Supabase project is created with signups enabled, so turning
+    them off is an explicit setup step there, not something the committed
+    `config.toml` does for us.
+24. **`profile.ts` parses in linear time.** `profile.md` is user-controlled
+    input, re-parsed on every turn in a route handler, so a parser that
+    backtracks is a denial-of-service hole with a friendly face. The original
+    bold-key regex took 55 seconds on `"**" + " ".repeat(800) + "x"`; the
+    trailing-whitespace strips (`/\s+$/`) and the `(inferred)` tag regex were
+    quadratic on a long run of spaces. They are now a hand-written scan,
+    `trimEnd()`, and an unanchored-head regex respectively, and
+    `profile.test.ts` parses a hostile document (5 KB of unterminated `**`,
+    80 KB of trailing spaces) with an assertion that it finishes in under
+    500 ms. Any new pattern in this module gets the same treatment: no nested
+    quantifier that can match the same text two ways.
+25. **The blocked-domain list has one TypeScript owner and a pinned SQL copy.**
+    `BLOCKED_SOURCE_DOMAINS` in `reference-schema.ts` is the list; `llm.ts`
+    re-exports it as `BLOCKED_DOMAINS`. The only other copy is
+    `private.blocked_source_domains()` in the reference-tables migration, and
+    `reference-schema.test.ts` reads the migration file, extracts the SQL
+    array literal and asserts it equals `BLOCKED_SOURCE_DOMAINS`. So the SQL
+    copy cannot drift without a test failing (§7.13, §7.19). Prose alone was not enough: the list is the PRD's
+    no-scraping rule, and it has to fail loudly rather than silently.
+26. **Session ids are `^[0-9a-f]{32}$` end to end.** `newSessionId()` mints
+    them, `SessionStateSchema` and `TurnRequestSchema` accept nothing else,
+    `llm.ts` throws `LlmSessionIdError` before any request if the id is
+    malformed, and the `llm_usage` CHECK (§7.22) is the last line. An
+    imported session file with a malformed id gets a fresh id and keeps the
+    profile, so a tampered export cannot smuggle an identifier into
+    telemetry.
+27. **Request timeout × retries stays under `maxDuration`.**
+    `REQUEST_TIMEOUT_MS = 300_000` and `MAX_RETRIES = 1`, and `llm.test.ts`
+    asserts `(MAX_RETRIES + 1) × REQUEST_TIMEOUT_MS < MAX_DURATION_SECONDS ×
+    1000`, so a stalled attempt plus its retry cannot outlive the Vercel
+    function and lose the usage row for tokens already billed.

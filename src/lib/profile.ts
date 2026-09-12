@@ -523,12 +523,57 @@ const QUERY_STATUS_ALIASES: Record<string, QueryStatus> = {
 // ---------------------------------------------------------------------------
 
 const HEADING_RE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
-/** `- **Key:** value`, `**Key**: value`, `* **Key:** value`. */
-const BOLD_KEY_RE = /^\s{0,1}(?:[-*+]\s+)?\*\*\s*([^*]+?)\s*:?\s*\*\*\s*:?\s*(.*)$/;
+/** Optional list marker in front of a `**Key:**` label. */
+const BULLET_PREFIX_RE = /^[-*+]\s+/;
+const SPACE_RE = /\s/;
 /** `- Key: value` without bold; only accepted for known keys. */
 const PLAIN_KEY_RE = /^\s{0,1}[-*+]\s+([A-Za-z][A-Za-z ]{0,40}?)\s*:\s*(.*)$/;
 const ITEM_HEADING_RE = /^([A-Za-z])\s*[-.]?\s*(\d+)\s*(?:[:\-–—.]\s*|\s+|$)(.*)$/;
-const SOURCE_TAG_RE = /\s*\((stated|inferred)\)\s*$/i;
+// No leading `\s*`: it makes the scan quadratic on a long run of spaces, and
+// `splitSource` trims the head anyway.
+const SOURCE_TAG_RE = /\((stated|inferred)\)\s*$/i;
+
+function isSpace(ch: string | undefined): boolean {
+  return ch !== undefined && SPACE_RE.test(ch);
+}
+
+/**
+ * `- **Key:** value`, `**Key**: value`, `* **Key:** value`.
+ *
+ * Hand-written rather than a regex on purpose. The natural pattern
+ * (`^\s?(?:[-*+]\s+)?\*\*\s*([^*]+?)\s*:?\s*\*\*\s*:?\s*(.*)$`) backtracks
+ * cubically on a line that opens `**` and never closes it — seconds of CPU for
+ * a kilobyte of input. This runs on every non-indented line of a document the
+ * user controls, so it has to be linear (PLAN.md §7.24).
+ */
+function matchBoldKey(line: string): { label: string; value: string } | null {
+  const start = isSpace(line[0]) ? 1 : 0;
+  const bullet = BULLET_PREFIX_RE.exec(line.slice(start));
+  // The marker is optional and matched greedily, as in the regex this replaces:
+  // try with it first, then without.
+  if (bullet !== null) {
+    const withMarker = boldKeyAt(line, start + bullet[0].length);
+    if (withMarker !== null) return withMarker;
+  }
+  return boldKeyAt(line, start);
+}
+
+/** Reads `**Label:** value` starting at `open`, or returns null. */
+function boldKeyAt(line: string, open: number): { label: string; value: string } | null {
+  if (line[open] !== "*" || line[open + 1] !== "*") return null;
+  // A label may not contain `*`, so the closing `**` is the very next `*`.
+  const close = line.indexOf("*", open + 2);
+  if (close < open + 3 || line[close + 1] !== "*") return null;
+
+  let label = line.slice(open + 2, close).trim();
+  if (label.length > 1 && label.endsWith(":")) label = label.slice(0, -1).trimEnd();
+
+  let i = close + 2;
+  while (isSpace(line[i])) i++;
+  if (line[i] === ":") i++;
+  while (isSpace(line[i])) i++;
+  return { label, value: line.slice(i) };
+}
 
 type RawItem = {
   id: string | null;
@@ -576,7 +621,7 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
     s !== null && (s.kind === "notes" || s.kind === null);
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].replace(/\s+$/, "");
+    const line = lines[i].trimEnd();
     const heading = HEADING_RE.exec(line);
 
     if (heading && heading[1].length === 1 && section === null) {
@@ -640,10 +685,10 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
     let label: string | null = null;
     let value = "";
     if (!indented) {
-      const bold = BOLD_KEY_RE.exec(line);
+      const bold = matchBoldKey(line);
       if (bold) {
-        label = bold[1].trim();
-        value = bold[2];
+        label = bold.label;
+        value = bold.value;
       } else {
         const plain = PLAIN_KEY_RE.exec(line);
         if (plain && isKnownLabel(section, plain[1])) {
@@ -787,6 +832,21 @@ function splitSource(value: string): { value: string; source: PreferenceSource }
   };
 }
 
+/**
+ * A list-valued preference (Climate interests). Accepts both documented forms —
+ * an inline comma list and one item per indented `-` line — exactly like
+ * `Skills` and `Companies`, and picks up an `(inferred)` tag wherever it sits.
+ */
+function listPreferenceValue(lines: string[]): { values: string[]; source: PreferenceSource } {
+  let source: PreferenceSource = "stated";
+  const stripped = lines.map((line) => {
+    const tagged = splitSource(line);
+    if (tagged.source === "inferred") source = "inferred";
+    return tagged.value;
+  });
+  return { values: listValue(stripped), source };
+}
+
 function addExtra(extra: Extra, label: string, value: string, where: string, warnings: string[]): void {
   if (label in extra) {
     warnings.push(`${where}: duplicate key "${label}"; values were joined.`);
@@ -796,31 +856,44 @@ function addExtra(extra: Extra, label: string, value: string, where: string, war
   }
 }
 
+const DIGITS_RE = /^\d+$/;
+
+/** The number in `C12` for prefix `C`, or 0 when `id` is not of that shape. */
+function idNumber(prefix: string, id: string | null): number {
+  if (id === null || !id.startsWith(prefix)) return 0;
+  const rest = id.slice(prefix.length);
+  return DIGITS_RE.test(rest) ? Number(rest) : 0;
+}
+
 function nextFreeId(prefix: string, used: Set<string>): string {
   let max = 0;
-  for (const id of used) {
-    const m = new RegExp(`^${prefix}(\\d+)$`).exec(id);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
+  for (const id of used) max = Math.max(max, idNumber(prefix, id));
   return `${prefix}${max + 1}`;
 }
 
-/** Assigns IDs to items that lack one or collide, keeping declared IDs stable. */
+/**
+ * Assigns IDs to items that lack one or collide, keeping declared IDs stable.
+ * Carries a running max instead of rescanning the used set per item, so a
+ * profile with many cards stays linear.
+ */
 function assignIds(items: RawItem[], prefix: string, warnings: string[]): void {
   const used = new Set<string>();
+  let max = 0;
   for (const it of items) {
     if (it.id && !used.has(it.id)) {
       used.add(it.id);
-    } else {
-      const id = nextFreeId(prefix, used);
-      warnings.push(
-        it.id
-          ? `Line ${it.line}: duplicate ID ${it.id}; renamed to ${id}.`
-          : `Line ${it.line}: "### ${it.title}" had no ID; assigned ${id}.`,
-      );
-      it.id = id;
-      used.add(id);
+      max = Math.max(max, idNumber(prefix, it.id));
+      continue;
     }
+    max += 1;
+    const id = `${prefix}${max}`;
+    warnings.push(
+      it.id
+        ? `Line ${it.line}: duplicate ID ${it.id}; renamed to ${id}.`
+        : `Line ${it.line}: "### ${it.title}" had no ID; assigned ${id}.`,
+    );
+    it.id = id;
+    used.add(id);
   }
 }
 
@@ -831,12 +904,12 @@ function parsePreferences(section: RawSection | undefined, warnings: string[]): 
     const key = PREFERENCE_ALIASES[norm(label)];
     const { value, source } = splitSource(textValue(lines));
     if (key === "climateInterests") {
-      const values = listValue([value]);
+      const { values, source: listSource } = listPreferenceValue(lines);
       if (prefs.climateInterests) {
         warnings.push(`Preferences: duplicate "${label}"; values were merged.`);
         prefs.climateInterests.values.push(...values);
       } else {
-        prefs.climateInterests = { values, source };
+        prefs.climateInterests = { values, source: listSource };
       }
     } else if (key) {
       if (prefs[key]) warnings.push(`Preferences: duplicate "${label}"; the last one wins.`);
@@ -1075,6 +1148,20 @@ function bulletListLine(label: string, items: string[]): string {
   return [`- **${label}:**`, ...clean.map((s) => `  - ${s}`)].join("\n");
 }
 
+/**
+ * A list-valued preference. Inline comma list, or one item per bullet line when
+ * an item contains a comma — otherwise `parse(serialize(p))` would split that
+ * item in two. The `(inferred)` tag rides on the label line in bullet form.
+ */
+function listPreferenceLine(label: string, pref: ListPreference): string {
+  const clean = pref.values.map((s) => s.trim()).filter((s) => s !== "");
+  if (!clean.some((s) => s.includes(","))) {
+    return keyLine(label, withSource(clean.join(", "), pref.source));
+  }
+  const head = pref.source === "inferred" ? `- **${label}:** (inferred)` : `- **${label}:**`;
+  return [head, ...clean.map((s) => `  - ${s}`)].join("\n");
+}
+
 /** Item heading: `### C1: Title` on one line. */
 function itemHeading(id: string, title: string): string {
   const oneLine = title.replace(/\s+/g, " ").trim();
@@ -1099,7 +1186,7 @@ function withSource(value: string, source: PreferenceSource): string {
 function verbatimBody(body: string): string {
   return normalizeNewlines(body)
     .split("\n")
-    .map((l) => l.replace(/\s+$/, ""))
+    .map((l) => l.trimEnd())
     .map((l) => (l.startsWith("#") ? ` ${l}` : l))
     .join("\n")
     .replace(/^\n+/, "")
@@ -1111,7 +1198,7 @@ function serializePreferences(p: Preferences): string[] {
   for (const key of KNOWN_PREFERENCE_KEYS) {
     if (key === "climateInterests") {
       const pref = p.climateInterests;
-      if (pref) out.push(keyLine(LABELS[key], withSource(pref.values.join(", "), pref.source)));
+      if (pref) out.push(listPreferenceLine(LABELS[key], pref));
     } else {
       const pref = p[key];
       if (pref) out.push(keyLine(LABELS[key], withSource(pref.value, pref.source)));

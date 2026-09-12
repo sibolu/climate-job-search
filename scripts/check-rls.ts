@@ -11,8 +11,10 @@
  *     back. That table is the single server-side write in the product, and it
  *     must not be usable to fetch anything about anyone.
  *
- * It also checks that the blocked-domain CHECK constraint rejects a LinkedIn
- * source even for the service role, which bypasses RLS.
+ * It also checks the CHECK constraints that keep the shape honest, using the
+ * service role so RLS is out of the picture: the blocked-domain constraint
+ * rejects a LinkedIn source, and `llm_usage` rejects a session_id that is not
+ * 32 hex chars or a step outside the StepName vocabulary.
  *
  * Run it after every migration:
  *
@@ -31,7 +33,8 @@ import { SupabaseConfigError, anonClient, serviceClient } from "../src/lib/supab
 
 const REFERENCE_TABLES = ["climate_fields", "example_roles", "example_job_posts"] as const;
 
-const SESSION_ID = `rlscheck-${randomUUID().slice(0, 20)}`;
+/** 32 hex chars, the shape `llm_usage.session_id` is constrained to. */
+const SESSION_ID = randomUUID().replace(/-/g, "");
 
 /**
  * A real column per table, so an anon UPDATE is refused for the right reason
@@ -127,9 +130,49 @@ async function checkLlmUsageNotReadable(): Promise<void> {
   record(
     "a",
     "anon SELECT llm_usage (1 row exists)",
-    "error, or zero rows",
+    "refused",
     read.error !== null ? `refused: ${describeError(read.error)}` : `returned ${rows.length} row(s)`,
-    isPermissionDenied(read.error) || (read.error === null && rows.length === 0),
+    // 42501, not "zero rows": a SELECT merely filtered by a policy returns an
+    // empty list, which would pass while the table stayed readable the moment a
+    // policy changed. This is the same standard the UPDATE and DELETE checks use.
+    isPermissionDenied(read.error),
+  );
+}
+
+/**
+ * (a2) The table's own shape refuses anything that is not a counter or the
+ * anonymous id: a session_id that is not 32 hex chars, and a step outside the
+ * StepName vocabulary. Checked with the service role, so it is the CHECK
+ * constraint answering (23514) and not RLS.
+ */
+async function checkLlmUsageShapeEnforced(): Promise<void> {
+  const service = serviceClient();
+  const base = { model: "claude-opus-5", input_tokens: 1, output_tokens: 1 };
+
+  const badSession = await service
+    .from("llm_usage")
+    .insert({ ...base, session_id: "not-a-session-id", step: "cards" });
+  record(
+    "a",
+    "service role INSERT llm_usage with a non-32-hex session_id",
+    "rejected by CHECK constraint",
+    badSession.error === null
+      ? "ACCEPTED — the constraint is missing"
+      : `rejected: ${describeError(badSession.error)}`,
+    badSession.error !== null && badSession.error.code === "23514",
+  );
+
+  const badStep = await service
+    .from("llm_usage")
+    .insert({ ...base, session_id: SESSION_ID, step: "resume text goes here" });
+  record(
+    "a",
+    "service role INSERT llm_usage with a step outside the vocabulary",
+    "rejected by CHECK constraint",
+    badStep.error === null
+      ? "ACCEPTED — the constraint is missing"
+      : `rejected: ${describeError(badStep.error)}`,
+    badStep.error !== null && badStep.error.code === "23514",
   );
 }
 
@@ -156,7 +199,8 @@ async function checkLlmUsageInsertable(): Promise<void> {
 /** llm_usage is insert-only: no updates, no deletes either. */
 async function checkLlmUsageNotMutable(): Promise<void> {
   const anon = anonClient();
-  const updated = await anon.from("llm_usage").update({ step: "tampered" }).eq("session_id", SESSION_ID);
+  // A valid step, so the only thing this check can fail on is the permission.
+  const updated = await anon.from("llm_usage").update({ step: "revise" }).eq("session_id", SESSION_ID);
   record(
     "b",
     "anon UPDATE llm_usage",
@@ -291,6 +335,7 @@ function printTable(): void {
 async function main(): Promise<void> {
   try {
     await checkLlmUsageNotReadable();
+    await checkLlmUsageShapeEnforced();
     await checkLlmUsageInsertable();
     await checkLlmUsageNotMutable();
     await checkReferenceTablesNotWritable();

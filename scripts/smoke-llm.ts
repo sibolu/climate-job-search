@@ -16,14 +16,29 @@
  */
 
 import process from "node:process";
-import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
 import { MODEL, createLlm, supabaseUsageSink } from "../src/lib/llm";
+import { newSessionId } from "../src/lib/session";
 import { serviceClient } from "../src/lib/supabase";
 
-const SESSION_ID = `smoke-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+/**
+ * Wiring-check prompts, not product prompts. The product prompts live as
+ * template strings in `src/lib/*.ts`, one module each (CLAUDE.md); these two
+ * exist only to get a tiny, cheap, schema-shaped answer back.
+ */
+const SMOKE_SYSTEM_PROMPT = "You are a smoke test. Answer in as few tokens as possible.";
+const SMOKE_USER_PROMPT = "Reply with a two-word greeting.";
+
+/**
+ * Adaptive thinking at medium effort spends output tokens before the JSON is
+ * emitted; 1k was enough to hit `max_tokens` on a bad day, so give it room.
+ */
+const SMOKE_MAX_TOKENS = 4_096;
+
+/** The same 32-hex id shape the browser mints; anything else is refused. */
+const SESSION_ID = newSessionId();
 const READBACK_ATTEMPTS = 10;
 const READBACK_DELAY_MS = 500;
 
@@ -47,10 +62,10 @@ async function main(): Promise<number> {
   const result = await llm.structured({
     step: "elicit",
     sessionId: SESSION_ID,
-    system: "You are a smoke test. Answer in as few tokens as possible.",
-    messages: [{ role: "user", content: "Reply with a two-word greeting." }],
+    system: SMOKE_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: SMOKE_USER_PROMPT }],
     schema: GreetingSchema,
-    maxTokens: 1_024,
+    maxTokens: SMOKE_MAX_TOKENS,
   });
 
   console.log(

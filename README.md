@@ -44,7 +44,9 @@ Every model call goes through `src/lib/llm.ts` — one wrapper that owns the
 model, effort per step, the web tools and their blocked domains, refusal
 handling, and the anonymous usage row. `pnpm smoke:llm` makes one live call and
 reads its `llm_usage` row back; without `ANTHROPIC_API_KEY` it skips and exits
-0.
+0. That read-back needs `SUPABASE_SERVICE_ROLE_KEY`, so the service-role key
+belongs to three scripts — `seed.ts`, `check-rls.ts` and `smoke-llm.ts` — and
+to no app code.
 
 See [CLAUDE.md](CLAUDE.md) for the full command list, the environment
 variables and which are server-only, the passcode gate, the Supabase

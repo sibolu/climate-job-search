@@ -29,8 +29,14 @@
  *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call;
  *     `budget_tokens` is rejected by `claude-opus-5`.
  *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
- *   * Structured outputs use `client.messages.parse()` with
- *     `output_config.format = zodOutputFormat(schema)` — no beta header.
+ *   * Structured outputs use `client.messages.create()` with
+ *     `output_config.format = zodOutputFormat(schema)` — no beta header. The
+ *     SDK's `messages.parse()` is deliberately NOT used: it JSON-parses every
+ *     text block before we can look at `stop_reason` or `usage`, so a
+ *     `max_tokens`-truncated answer threw a generic `AnthropicError` whose
+ *     message quoted the model's text, and the usage row was never written.
+ *     Parsing happens here instead, after the row is recorded and the stop
+ *     reason is checked, and failures report zod issue paths/codes only.
  *   * Web search / web fetch are the `_20260209` dynamic-filtering variants,
  *     which `claude-opus-5` supports on the non-beta endpoint.
  */
@@ -39,7 +45,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 
-import type { StepName } from "./session";
+import { BLOCKED_SOURCE_DOMAINS } from "./reference-schema";
+import { isSessionId, type StepName } from "./session";
 import { anonClient } from "./supabase";
 
 // ---------------------------------------------------------------------------
@@ -81,11 +88,21 @@ export const DEFAULT_MAX_TOKENS_STREAM = 32_000;
 /** Structured calls are not streamed, so keep them under the HTTP timeout. */
 export const DEFAULT_MAX_TOKENS_STRUCTURED = 16_000;
 
-/** TypeScript SDK timeouts are milliseconds. Sized for a 1–3 minute turn. */
-export const REQUEST_TIMEOUT_MS = 600_000;
+/**
+ * Per-attempt HTTP timeout (TypeScript SDK timeouts are milliseconds). Sized
+ * for a 1–3 minute discovery turn with headroom. The SDK retries a timed-out
+ * attempt, so one logical call can take up to
+ * `(MAX_RETRIES + 1) * REQUEST_TIMEOUT_MS`; `llm.test.ts` asserts that stays
+ * under {@link MAX_DURATION_SECONDS}, otherwise Vercel would kill the function
+ * mid-retry and the usage row would never be written.
+ */
+export const REQUEST_TIMEOUT_MS = 300_000;
 
-/** SDK default; retries 408/409/429/5xx and connection errors. */
-export const MAX_RETRIES = 2;
+/**
+ * One retry (the SDK default is 2) so two timed-out attempts still fit in
+ * `maxDuration`. Retries cover 408/409/429/5xx and connection errors.
+ */
+export const MAX_RETRIES = 1;
 
 // ---------------------------------------------------------------------------
 // Blocked domains — the enforcement point
@@ -97,13 +114,13 @@ export const MAX_RETRIES = 2;
  * tool, so the server-side tools never search or fetch these hosts (or their
  * subdomains) at all.
  *
- * The same three domains are also enforced on stored reference data, twice:
- * `BLOCKED_SOURCE_DOMAINS` in `reference-schema.ts` and
- * `private.blocked_source_domains()` in `supabase/migrations/`. All three
- * lists must stay in step — `llm.test.ts` asserts this one equals the
- * TypeScript one, and `pnpm db:check-rls` covers the SQL one.
+ * The list has one TypeScript owner, `BLOCKED_SOURCE_DOMAINS` in
+ * `reference-schema.ts` (which also guards stored reference data); this is
+ * the same array under the name web-tool callers use. The SQL twin is
+ * `private.blocked_source_domains()` in `supabase/migrations/`, covered by
+ * `pnpm db:check-rls`.
  */
-export const BLOCKED_DOMAINS = ["linkedin.com", "indeed.com", "climatebase.org"] as const;
+export const BLOCKED_DOMAINS = BLOCKED_SOURCE_DOMAINS;
 
 /** Server-tool type strings for `claude-opus-5` (dynamic filtering variants). */
 export const WEB_SEARCH_TOOL_TYPE = "web_search_20260209";
@@ -215,6 +232,10 @@ export function addUsage(counts: TokenCounts, usage: Anthropic.Usage | undefined
   };
 }
 
+function hasAnyUsage(counts: TokenCounts): boolean {
+  return counts.input + counts.output + counts.cacheRead + counts.cacheWrite > 0;
+}
+
 /** Cost of one logical call, rounded to the `numeric(10, 6)` column. */
 export function costUsd(counts: TokenCounts): number {
   const dollars =
@@ -281,6 +302,24 @@ export class LlmPauseLimitError extends LlmError {
 /** A web tool that does not block all three domains was passed to a call. */
 export class LlmToolPolicyError extends LlmError {}
 
+/**
+ * `sessionId` is not a 32-character lowercase hex id from `newSessionId()`.
+ * Thrown before any request is made, so a tampered browser session can never
+ * put arbitrary text (an email address, say) into `llm_usage.session_id`,
+ * the only server-side table. The offending value is never quoted.
+ */
+export class LlmSessionIdError extends LlmError {
+  readonly step: StepName;
+
+  constructor(step: StepName) {
+    super(
+      `The ${step} request carried a malformed sessionId. Session ids come from ` +
+        "newSessionId() in session.ts and are 32 lowercase hex characters.",
+    );
+    this.step = step;
+  }
+}
+
 /** Structured output was missing or did not match the schema. */
 export class LlmOutputError extends LlmError {
   readonly step: StepName;
@@ -305,6 +344,7 @@ export class LlmConfigError extends LlmError {}
  * `supabase/migrations/*_llm_usage.sql` say the same thing in SQL.
  */
 export interface UsageRow {
+  /** Always 32 lowercase hex characters; the runner refuses anything else. */
   session_id: string;
   step: StepName;
   model: string;
@@ -411,16 +451,13 @@ export interface LlmStream extends AsyncIterable<Anthropic.MessageStreamEvent> {
   finalMessage(): Promise<Anthropic.Message>;
 }
 
-/** A `messages.parse()` response: a message plus the parsed output. */
-export type LlmParsedMessage = Anthropic.Message & { parsed_output?: unknown };
-
 /**
  * The two SDK calls this module makes, as an interface so tests can pass a
  * fake. {@link anthropicClient} is the real implementation.
  */
 export interface LlmClient {
   stream(params: Anthropic.MessageCreateParamsNonStreaming): LlmStream;
-  parse(params: Anthropic.MessageCreateParamsNonStreaming): Promise<LlmParsedMessage>;
+  create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
 }
 
 /**
@@ -444,7 +481,7 @@ function defaultAnthropic(): Anthropic {
 export function anthropicClient(anthropic: Anthropic = defaultAnthropic()): LlmClient {
   return {
     stream: (params) => anthropic.messages.stream(params),
-    parse: (params) => anthropic.messages.parse(params),
+    create: (params) => anthropic.messages.create(params),
   };
 }
 
@@ -455,7 +492,11 @@ export function anthropicClient(anthropic: Anthropic = defaultAnthropic()): LlmC
 export interface CallRequest {
   /** Which lib module is calling; picks the effort level and labels the row. */
   step: StepName;
-  /** The browser's random, anonymous session id. Groups usage rows only. */
+  /**
+   * The browser's random, anonymous session id from `newSessionId()`. Groups
+   * usage rows only. Anything but 32 lowercase hex characters is refused
+   * with {@link LlmSessionIdError} before a request is made.
+   */
   sessionId: string;
   /**
    * The system prompt. Keep it byte-stable across turns: it is sent as a
@@ -499,11 +540,16 @@ export interface StructuredResult<T> extends CallMetrics {
 
 export interface StreamText {
   /**
-   * Text deltas as they arrive. Consume this to completion (or abandon the
-   * whole call): {@link final} settles when the iterator does.
+   * Text deltas as they arrive. Single consumer. Drain it, stop early
+   * (`break` out of `for await`, or `ReadableStream.cancel`), or never touch
+   * it — the API call runs to completion regardless and {@link final} settles
+   * either way. Throws the call's error if the call fails while draining.
    */
   textDeltas: AsyncIterable<string>;
-  /** Resolves once the stream is drained; rejects with the call's error. */
+  /**
+   * Settles once the API call ends: resolves with the full text and metrics,
+   * rejects with the call's error. Independent of {@link textDeltas}.
+   */
   final: Promise<StreamTextResult>;
 }
 
@@ -587,23 +633,94 @@ function assertTerminalStopReason(request: CallRequest, message: Anthropic.Messa
   }
 }
 
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (error: unknown) => void;
+/**
+ * A single-consumer async queue for streamed deltas. The producer `push`es as
+ * events arrive and then `close`s or `fail`s it; the consumer may drain it,
+ * stop early (`return()`, which `for await` calls on `break`), or never start.
+ * Nothing the consumer does reaches the producer: once abandoned, further
+ * pushes are dropped instead of buffered.
+ */
+class DeltaQueue<T> implements AsyncIterable<T> {
+  private buffer: T[] = [];
+  private done = false;
+  private failure: { error: unknown } | undefined;
+  private abandoned = false;
+  private wake: (() => void) | undefined;
+
+  push(value: T): void {
+    if (this.done || this.abandoned) return;
+    this.buffer.push(value);
+    this.notify();
+  }
+
+  close(): void {
+    if (this.done) return;
+    this.done = true;
+    this.notify();
+  }
+
+  fail(error: unknown): void {
+    if (this.done) return;
+    this.failure = { error };
+    this.done = true;
+    this.notify();
+  }
+
+  private notify(): void {
+    const wake = this.wake;
+    this.wake = undefined;
+    wake?.();
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return {
+      next: async (): Promise<IteratorResult<T>> => {
+        for (;;) {
+          if (this.abandoned) return { done: true, value: undefined };
+          if (this.buffer.length > 0) return { done: false, value: this.buffer.shift() as T };
+          if (this.done) {
+            if (this.failure !== undefined) throw this.failure.error;
+            return { done: true, value: undefined };
+          }
+          await new Promise<void>((resolve) => {
+            this.wake = resolve;
+          });
+        }
+      },
+      return: (): Promise<IteratorResult<T>> => {
+        this.abandoned = true;
+        this.buffer = [];
+        return Promise.resolve({ done: true, value: undefined });
+      },
+    };
+  }
 }
 
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  // The caller may only consume `textDeltas` and let it throw; keep the twin
-  // rejection from surfacing as an unhandled rejection.
-  promise.catch(() => {});
-  return { promise, resolve, reject };
+/** Performs one HTTP request and returns its final message. */
+type Turn = (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
+
+interface RunOutcome {
+  message: Anthropic.Message;
+  metrics: CallMetrics;
+}
+
+/**
+ * Sanitized zod issue list: paths and codes only. Path segments are model
+ * output when the schema is a `z.record` (the keys), so they are clipped to a
+ * short identifier shape; the values themselves are never included.
+ */
+function describeIssues(error: z.ZodError): string {
+  const segment = (part: PropertyKey): string => {
+    const text = String(part);
+    return /^[A-Za-z0-9_]{1,40}$/.test(text) ? text : "?";
+  };
+  return error.issues
+    .slice(0, 5)
+    .map((issue) => {
+      const path = issue.path.length === 0 ? "(root)" : issue.path.map(segment).join(".");
+      return `${path}: ${issue.code}`;
+    })
+    .join("; ");
 }
 
 /**
@@ -626,121 +743,155 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
     return cachedClient;
   };
 
-  function streamText(request: StreamTextRequest): StreamText {
-    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STREAM;
-    const result = deferred<StreamTextResult>();
+  /**
+   * The one runner behind both call shapes. Owns, in order: the session-id
+   * and tool-policy checks (before any request), the `pause_turn`
+   * continuation loop, token accumulation, duration, the single
+   * `recordUsage` per logical call, and the terminal stop-reason check.
+   * `turn` is the only thing that differs between streaming and structured.
+   */
+  async function runCall(
+    request: CallRequest,
+    maxTokens: number,
+    turn: Turn,
+    format?: Anthropic.Messages.JSONOutputFormat,
+  ): Promise<RunOutcome> {
+    if (!isSessionId(request.sessionId)) throw new LlmSessionIdError(request.step);
+    if (request.tools !== undefined) assertToolsAllowed(request.tools);
 
-    async function* run(): AsyncGenerator<string> {
-      try {
-        if (request.tools !== undefined) assertToolsAllowed(request.tools);
-        const startedAt = now();
-        const messages = [...request.messages];
-        let counts = zeroTokenCounts();
-        let continuations = 0;
-        let text = "";
+    const startedAt = now();
+    const messages = [...request.messages];
+    let counts = zeroTokenCounts();
+    let continuations = 0;
+    let recorded = false;
+    const recordOnce = (durationMs: number): void => {
+      if (recorded) return;
+      recorded = true;
+      recordUsage(usageSink, usageRow(request, counts, durationMs));
+    };
 
-        for (;;) {
-          const stream = client().stream(requestParams(request, messages, maxTokens));
-          for await (const event of stream) {
-            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              text += event.delta.text;
-              yield event.delta.text;
-            }
+    try {
+      for (;;) {
+        const message = await turn(requestParams(request, messages, maxTokens, format));
+        counts = addUsage(counts, message.usage);
+
+        if (message.stop_reason === "pause_turn") {
+          // A server tool hit its per-request loop limit. Re-send the paused
+          // assistant turn and the server resumes where it left off; do not
+          // add a "continue" message.
+          if (continuations >= MAX_PAUSE_TURN_CONTINUATIONS) {
+            recordOnce(now() - startedAt);
+            throw new LlmPauseLimitError(request.step, continuations);
           }
-          const message = await stream.finalMessage();
-          counts = addUsage(counts, message.usage);
+          continuations += 1;
+          messages.push({ role: "assistant", content: message.content });
+          continue;
+        }
 
-          if (message.stop_reason === "pause_turn") {
-            // A server tool hit its per-request loop limit. Re-send the paused
-            // assistant turn and the server resumes where it left off; do not
-            // add a "continue" message.
-            if (continuations >= MAX_PAUSE_TURN_CONTINUATIONS) {
-              recordUsage(usageSink, usageRow(request, counts, now() - startedAt));
-              throw new LlmPauseLimitError(request.step, continuations);
-            }
-            continuations += 1;
-            messages.push({ role: "assistant", content: message.content });
-            continue;
-          }
-
-          const durationMs = now() - startedAt;
-          recordUsage(usageSink, usageRow(request, counts, durationMs));
-          assertTerminalStopReason(request, message, maxTokens);
-          result.resolve({
-            text,
-            message,
+        const durationMs = now() - startedAt;
+        recordOnce(durationMs);
+        assertTerminalStopReason(request, message, maxTokens);
+        return {
+          message,
+          metrics: {
             usage: counts,
             costUsd: costUsd(counts),
             durationMs,
             continuations,
             stopReason: message.stop_reason,
-          });
-          return;
-        }
-      } catch (error) {
-        result.reject(error);
-        throw error;
+          },
+        };
       }
+    } catch (error) {
+      // An SDK error after a completed continuation still cost tokens; keep
+      // the telemetry complete. Nothing is written if no response arrived.
+      if (hasAnyUsage(counts)) recordOnce(now() - startedAt);
+      throw error;
     }
+  }
 
-    return { textDeltas: run(), final: result.promise };
+  function streamText(request: StreamTextRequest): StreamText {
+    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STREAM;
+    const deltas = new DeltaQueue<string>();
+    let text = "";
+
+    const turn: Turn = async (params) => {
+      const stream = client().stream(params);
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          text += event.delta.text;
+          deltas.push(event.delta.text);
+        }
+      }
+      return stream.finalMessage();
+    };
+
+    // The request starts now, not when `textDeltas` is first pulled, and it
+    // runs to completion even if the consumer stops listening. Design choice:
+    // COMPLETE rather than abort on early consumer exit. The API reports
+    // output tokens only in the final `message_delta`, so aborting would lose
+    // the cost of everything generated so far and turn "one row per logical
+    // call" into a special case; completing keeps the row exact and lets
+    // `final` still resolve with the full text. The price is at most one
+    // response's worth of tokens after a disconnect.
+    const final = runCall(request, maxTokens, turn).then(
+      ({ message, metrics }) => {
+        deltas.close();
+        return { ...metrics, text, message };
+      },
+      (error: unknown) => {
+        deltas.fail(error);
+        throw error;
+      },
+    );
+    // A caller may consume only `textDeltas` (which throws the same error);
+    // keep the twin rejection from surfacing as an unhandled rejection.
+    final.catch(() => {});
+
+    return { textDeltas: deltas, final };
+  }
+
+  /**
+   * Parses the structured answer ourselves, after the runner has recorded
+   * usage and checked the stop reason. The last text block is the answer (an
+   * earlier one can precede server-tool use). Error messages carry only
+   * "invalid JSON" or zod paths/codes — never the model's text.
+   */
+  function parseStructuredOutput<S extends z.ZodType>(
+    request: StructuredRequest<S>,
+    message: Anthropic.Message,
+  ): z.infer<S> {
+    const block = message.content.filter((b) => b.type === "text").at(-1);
+    if (block === undefined) {
+      throw new LlmOutputError(request.step, "the response carried no structured output");
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(block.text);
+    } catch {
+      throw new LlmOutputError(request.step, "invalid JSON");
+    }
+    const parsed = request.schema.safeParse(raw);
+    if (!parsed.success) {
+      throw new LlmOutputError(request.step, `invalid at ${describeIssues(parsed.error)}`);
+    }
+    return parsed.data as z.infer<S>;
   }
 
   async function structured<S extends z.ZodType>(
     request: StructuredRequest<S>,
   ): Promise<StructuredResult<z.infer<S>>> {
-    if (request.tools !== undefined) assertToolsAllowed(request.tools);
     const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STRUCTURED;
-    // `zodOutputFormat` carries the parser the SDK uses to fill
-    // `parsed_output`; we re-validate below so the returned value is typed by
-    // the caller's schema rather than cast.
+    // `zodOutputFormat` is used for its JSON schema only; the parser it
+    // attaches is what `messages.parse()` would run, and we do not call that.
     const format = zodOutputFormat(request.schema);
-    const startedAt = now();
-    const messages = [...request.messages];
-    let counts = zeroTokenCounts();
-    let continuations = 0;
-
-    for (;;) {
-      const message = await client().parse(requestParams(request, messages, maxTokens, format));
-      counts = addUsage(counts, message.usage);
-
-      if (message.stop_reason === "pause_turn") {
-        if (continuations >= MAX_PAUSE_TURN_CONTINUATIONS) {
-          recordUsage(usageSink, usageRow(request, counts, now() - startedAt));
-          throw new LlmPauseLimitError(request.step, continuations);
-        }
-        continuations += 1;
-        messages.push({ role: "assistant", content: message.content });
-        continue;
-      }
-
-      const durationMs = now() - startedAt;
-      recordUsage(usageSink, usageRow(request, counts, durationMs));
-      assertTerminalStopReason(request, message, maxTokens);
-
-      const parsed = request.schema.safeParse(message.parsed_output);
-      if (!parsed.success) {
-        // Report the failing path only — never the value, which is model output.
-        const issue = parsed.error.issues[0];
-        const where = issue === undefined ? "no issue reported" : issue.path.map(String).join(".");
-        throw new LlmOutputError(
-          request.step,
-          message.parsed_output === undefined || message.parsed_output === null
-            ? "the response carried no structured output"
-            : `invalid at "${where}"`,
-        );
-      }
-
-      return {
-        value: parsed.data as z.infer<S>,
-        message,
-        usage: counts,
-        costUsd: costUsd(counts),
-        durationMs,
-        continuations,
-        stopReason: message.stop_reason,
-      };
-    }
+    const { message, metrics } = await runCall(
+      request,
+      maxTokens,
+      (params) => client().create(params),
+      format,
+    );
+    return { ...metrics, value: parseStructuredOutput(request, message), message };
   }
 
   return { streamText, structured };

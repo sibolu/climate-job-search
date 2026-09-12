@@ -6,8 +6,11 @@
  *   `supabase/migrations/*_rls_policies.sql`). Safe in the browser; that is
  *   the whole point of the RLS shape.
  * - {@link serviceClient} — the service role key. Bypasses RLS, so it is
- *   restricted to `scripts/seed.ts` and `scripts/check-rls.ts`. It throws if
- *   it is ever reached from a browser bundle.
+ *   restricted to the repo's three scripts: `scripts/seed.ts`,
+ *   `scripts/check-rls.ts` and `scripts/smoke-llm.ts` (which reads back the
+ *   usage row the anon key cannot read). It throws if it is ever reached from
+ *   a browser bundle. Both clients read `NEXT_PUBLIC_SUPABASE_URL`, so a
+ *   script and the app can never be pointed at different databases.
  *
  * Supabase holds the reference collection and the anonymous `llm_usage` rows
  * and nothing else: no profiles, no transcripts, no user content of any kind
@@ -50,6 +53,7 @@ const NO_PERSISTENCE = {
 } as const;
 
 let cachedAnon: TypedSupabaseClient | undefined;
+let cachedService: TypedSupabaseClient | undefined;
 
 /**
  * Read-only client for the reference collection, plus the one allowed write
@@ -79,10 +83,12 @@ export function serviceClient(): TypedSupabaseClient {
         "never reach the client bundle; use anonClient() instead.",
     );
   }
-  const url = required(
-    "NEXT_PUBLIC_SUPABASE_URL",
-    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL,
-  );
+  if (cachedService !== undefined) return cachedService;
+  // The same URL variable `anonClient` reads, deliberately: a second,
+  // script-only override would let `pnpm seed` and the app write and read
+  // different databases without anyone noticing.
+  const url = required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
   const key = required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
-  return createClient<Database>(url, key, NO_PERSISTENCE);
+  cachedService = createClient<Database>(url, key, NO_PERSISTENCE);
+  return cachedService;
 }

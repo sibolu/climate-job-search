@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -231,5 +234,42 @@ describe("validateReferenceCollection", () => {
     expect(() => validateReferenceCollection({ fields: {}, roles: [], posts: [] })).toThrowError(
       ReferenceDataError,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The SQL copy of the blocked list
+// ---------------------------------------------------------------------------
+
+describe("blocked domains stay in step with SQL", () => {
+  const MIGRATIONS = join(__dirname, "..", "..", "supabase", "migrations");
+
+  function referenceTablesSql(): string {
+    const file = readdirSync(MIGRATIONS).find(
+      (name) => name.includes("reference_tables") && name.endsWith(".sql"),
+    );
+    if (file === undefined) throw new Error(`no *reference_tables*.sql in ${MIGRATIONS}`);
+    return readFileSync(join(MIGRATIONS, file), "utf8");
+  }
+
+  /** The `array[...]` literal returned by `private.blocked_source_domains()`. */
+  function sqlBlockedDomains(sql: string): string[] {
+    const literal = /\barray\s*\[([^\]]*)\]\s*::\s*text\[\]/i.exec(sql);
+    if (literal === null) throw new Error("blocked_source_domains() array literal not found");
+    return literal[1]
+      .split(",")
+      .map((part) => part.trim().replace(/^'(.*)'$/, "$1"))
+      .filter((part) => part !== "");
+  }
+
+  /**
+   * A banned domain has to be added in three places: this module's list, the
+   * `blocked_domains` the web tools get in `llm.ts` (which imports this list,
+   * so that one is free), and the SQL function. `llm.test.ts` pins the two
+   * TypeScript lists together; this pins the SQL copy, so the lists cannot
+   * drift apart without a test failing (PLAN.md §7.13, §7.25).
+   */
+  it("the SQL function lists exactly BLOCKED_SOURCE_DOMAINS", () => {
+    expect(sqlBlockedDomains(referenceTablesSql())).toEqual([...BLOCKED_SOURCE_DOMAINS]);
   });
 });

@@ -33,8 +33,8 @@
 - **No user data stored server-side.** Route handlers are stateless. Profile,
   chat, and query feedback live in the browser's `localStorage` and are resent
   each turn. The only server-side write is the anonymous `llm_usage` row
-  (random session id, model, tokens, cost, step name — no content, no
-  identity). Never log request bodies or the passcode.
+  (random session id, model, tokens, cost, duration, step name — no content,
+  no identity). Never log request bodies or the passcode.
 
 ## Commands
 
@@ -79,7 +79,7 @@ and must never be imported into a client component.
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Anon key: select-only on reference tables, insert-only on `llm_usage` |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`); bypasses RLS |
+| `SUPABASE_SERVICE_ROLE_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`); bypasses RLS |
 
 ## Supabase: the reference collection and `llm_usage`
 
@@ -105,12 +105,17 @@ path writes anything to Supabase, ever. Concretely:
 
 - `src/lib/supabase.ts` exports exactly two clients. `anonClient()` is the only
   one app code may use; `serviceClient()` bypasses RLS, throws in the browser,
-  and belongs to the two scripts.
+  and belongs to the three scripts that need it: `seed.ts`, `check-rls.ts` and
+  `smoke-llm.ts` (which reads its own usage row back — anon cannot). Both
+  clients read `NEXT_PUBLIC_SUPABASE_URL`, so a script and the app can never be
+  pointed at different databases.
 - `src/lib/reference.ts` is read-only and throws `ReferenceReadError` rather
   than swallowing a Supabase error into an empty list.
 - `llm_usage` has no content columns and none may be added — no prompts, no
-  completions, no resume or chat text, no identifiers. Length caps on
-  `session_id`, `step` and `model` are there to keep it that way.
+  completions, no resume or chat text, no identifiers. CHECK constraints keep
+  it that way: `session_id` must be exactly the 32 hex chars `newSessionId()`
+  produces and `step` must be one of the six `StepName` values, so neither
+  column can carry free text (PLAN.md §7.22).
 
 ### Changing the schema
 
@@ -131,8 +136,10 @@ is written, and a failure aborts the whole run with nothing written.
 Blocked domains — linkedin.com, indeed.com, climatebase.org and their
 subdomains — are rejected in **two** places on purpose: by the zod schemas at
 seed time, and by a CHECK constraint calling
-`private.is_blocked_source_host()` in SQL. Keep the two lists in step (and in
-step with `blocked_domains` in `llm.ts`). Look-alike hosts such as
+`private.is_blocked_source_host()` in SQL. Adding one means editing both
+copies (`llm.ts` re-exports `BLOCKED_SOURCE_DOMAINS` as `BLOCKED_DOMAINS`, so
+there is one TypeScript owner); `reference-schema.test.ts` asserts the SQL
+array equals `BLOCKED_SOURCE_DOMAINS`, so a half-done edit fails a test. Look-alike hosts such as
 `notlinkedin.com` are deliberately unaffected.
 
 `example_roles` holds **role profiles, never personal profiles**: what someone
@@ -158,7 +165,7 @@ const { textDeltas, final } = llm().streamText({
   tools: webTools(),            // the only way to build a web tool
 });
 for await (const delta of textDeltas) { /* pipe to the client */ }
-const { text, usage, costUsd } = await final;   // settles once the stream drains
+const { text, usage, costUsd } = await final;   // settles once the call ends, whether or not deltas are read
 
 const { value } = await llm().structured({ step: "cards", sessionId, system, messages, schema });
 ```
@@ -172,16 +179,20 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
 - **Effort per step** (`EFFORT_BY_STEP`, PLAN.md §2): chat-like steps `cards`
   and `elicit` are `medium`; `discover`, `explore`, `queries` and `revise` are
   `high`. Change the table, not the call sites.
-- **Structured outputs** use `client.messages.parse()` with
+- **Structured outputs** use `client.messages.create()` with
   `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
-  the rest of the app uses (PLAN.md §7.12). The result is re-validated against
-  the schema, so the returned value is typed, not cast.
+  the rest of the app uses (PLAN.md §7.12). The wrapper records usage and
+  checks the stop reason first, then parses the final text block with the
+  schema; a parse failure is `LlmOutputError` carrying issue paths only,
+  never model text (PLAN.md §7.18).
 - **Web tools**: `webTools()` is the only factory, and every call runs its
   tools through `assertToolsAllowed()`, which throws `LlmToolPolicyError` on
   any web tool that does not block all of `BLOCKED_DOMAINS`
-  (linkedin.com, indeed.com, climatebase.org). Keep that list in step with
-  `reference-schema.ts` and the SQL function (PLAN.md §7.13); `llm.test.ts`
-  asserts the two TypeScript lists are identical.
+  (linkedin.com, indeed.com, climatebase.org). The list lives in two places —
+  `BLOCKED_SOURCE_DOMAINS` in `reference-schema.ts` (re-exported here as
+  `BLOCKED_DOMAINS`) and `private.blocked_source_domains()` in the
+  reference-tables migration — and `reference-schema.test.ts` reads the
+  migration and asserts the SQL array matches (PLAN.md §7.13, §7.25).
 - **Stop reasons**: `refusal` → `LlmRefusalError` (category only, never the
   text), `max_tokens` → `LlmTruncatedError`, `pause_turn` → resumed
   automatically up to `MAX_PAUSE_TURN_CONTINUATIONS`, then

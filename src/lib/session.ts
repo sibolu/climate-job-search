@@ -36,6 +36,23 @@ export const SESSION_VERSION = 1;
 export const StepNameSchema = z.enum(["cards", "elicit", "discover", "explore", "queries", "revise"]);
 export type StepName = z.infer<typeof StepNameSchema>;
 
+/**
+ * The only shape a session id may have: 32 lowercase hex characters, as
+ * minted by `newSessionId()`. The id is the one value from the browser that
+ * reaches the only server-side table (`llm_usage.session_id`, which carries
+ * the same CHECK), so it is constrained here, on the wire (`TurnRequestSchema`)
+ * and again in `llm.ts` before any request — a tampered `localStorage` or
+ * import file can never smuggle free text (an email, say) into that column.
+ */
+export const SESSION_ID_PATTERN = /^[0-9a-f]{32}$/;
+export const SessionIdSchema = z
+  .string()
+  .regex(SESSION_ID_PATTERN, { message: "must be 32 lowercase hex characters" });
+
+export function isSessionId(value: unknown): value is string {
+  return typeof value === "string" && SESSION_ID_PATTERN.test(value);
+}
+
 /** A clickable answer the assistant offered; clicking sends `value` as the user message. */
 export const AnswerPillSchema = z.object({
   label: z.string().min(1).max(200),
@@ -57,7 +74,7 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const SessionStateSchema = z.object({
   version: z.literal(SESSION_VERSION),
   /** Random, anonymous; only ever sent as the `llm_usage` session id. */
-  sessionId: z.string().min(8).max(64),
+  sessionId: SessionIdSchema,
   /** The `profile.md` text; parse with `profile.ts` when structure is needed. */
   profileMd: z.string().max(MAX_PROFILE_MD_CHARS),
   messages: z.array(ChatMessageSchema),
@@ -81,7 +98,7 @@ export type TurnInput = z.infer<typeof TurnInputSchema>;
 
 /** What the browser POSTs each turn. Route handlers validate with `parseTurnRequest`. */
 export const TurnRequestSchema = z.object({
-  sessionId: z.string().min(8).max(64),
+  sessionId: SessionIdSchema,
   step: StepNameSchema,
   profileMd: z.string().max(MAX_PROFILE_MD_CHARS),
   /** Already trimmed by the browser (see `trimMessages`). */
@@ -147,7 +164,10 @@ export function exportSession(state: SessionState): string {
   return JSON.stringify(state, null, 2);
 }
 
-/** Validates an exported file. Never throws; unknown versions are refused. */
+/**
+ * Validates an exported file. Never throws; unknown versions are refused.
+ * A malformed `sessionId` is replaced, not refused — see `validateSession`.
+ */
 export function importSession(json: string): Result<SessionState> {
   let raw: unknown;
   try {
@@ -158,7 +178,16 @@ export function importSession(json: string): Result<SessionState> {
   return validateSession(raw);
 }
 
-/** Validates an already-parsed value (from `JSON.parse` or storage). */
+/**
+ * Validates an already-parsed value (from `JSON.parse` or storage).
+ *
+ * Decision: a `sessionId` that is present but not 32 lowercase hex is
+ * replaced with a fresh one rather than refused. The id is only a telemetry
+ * grouping key, while the rest of the file is the user's profile and chat;
+ * refusing would make `loadSession` discard all of it over a value the user
+ * never sees. The bad id itself never leaves the browser: the server rejects
+ * it in `parseTurnRequest` and `llm.ts` refuses it before any request.
+ */
 export function validateSession(raw: unknown): Result<SessionState> {
   if (typeof raw !== "object" || raw === null) {
     return { ok: false, error: "Not a session export." };
@@ -170,7 +199,12 @@ export function validateSession(raw: unknown): Result<SessionState> {
       error: `Unsupported session version ${String(version)} (expected ${SESSION_VERSION}).`,
     };
   }
-  const parsed = SessionStateSchema.safeParse(raw);
+  const sessionId = (raw as { sessionId?: unknown }).sessionId;
+  const candidate =
+    typeof sessionId === "string" && !isSessionId(sessionId)
+      ? { ...(raw as object), sessionId: newSessionId() }
+      : raw;
+  const parsed = SessionStateSchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, error: `Session is malformed: ${firstIssue(parsed.error)}` };
   return { ok: true, value: parsed.data };
 }
