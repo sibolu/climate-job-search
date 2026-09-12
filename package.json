@@ -16,7 +16,8 @@
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "db:check-rls": "tsx --env-file-if-exists=.env.local scripts/check-rls.ts",
     "smoke:llm": "tsx --env-file-if-exists=.env.local scripts/smoke-llm.ts",
-    "try:cards": "tsx --env-file-if-exists=.env.local scripts/try-cards.ts"
+    "try:cards": "tsx --env-file-if-exists=.env.local scripts/try-cards.ts",
+    "try:discover": "tsx --env-file-if-exists=.env.local scripts/try-discover.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

@@ -120,20 +120,12 @@ the `profile.md` schema (the one design decision worth a human look).
 | 1.1 `[DONE]` | `cards.ts`: pasted text → 3–6 experience cards with candidate skills; confirm/correct flow | Opus | Runs on 3 synthetic resumes; every card has S/A/R and ≥1 skill |
 | 1.2 `[DONE]` | `elicit.ts`: progressive preference policy (what is missing, what to ask next, one question per turn, skip when inferable) and the answer-pill schema | Fable | Scripted 5-turn transcript never asks two things at once; stops once enough is known |
 | 1.3 `[DONE]` | Reference collection: 3 Sonnet 5 agents at `effort: low` each cover ~10 sectors (energy/grid/storage; built environment/transport/industry; nature/food/finance/policy/software). Per sector: description, climate link, transferable functions, example roles per function, example companies, 2–3 example job posts as title + company + requirements summary + source URL + date (company career pages and boards that permit access only), source URLs. Fable consolidates and seeds | 3× Sonnet 5 (low), 1× Fable | Seed validates; every field has ≥2 sources and ≥2 example posts; no LinkedIn/Indeed/Climatebase URLs; no personal profiles |
-| 1.4 `[TODO]` | `discover.ts`: profile + reference data + web search → ranked fields and roles, each with fit reasoning citing card IDs, sector-move vs adjacent vs retraining label, uncertainties, sourced examples | Fable | On 3 synthetic profiles: every recommendation cites ≥1 card and ≥1 source; the videographer profile gets non-generic fields |
+| 1.4 `[DONE]` | `discover.ts`: profile + reference data + web search → ranked fields and roles, each with fit reasoning citing card IDs, sector-move vs adjacent vs retraining label, uncertainties, sourced examples | Fable | On 3 synthetic profiles: every recommendation cites ≥1 card and ≥1 source; the videographer profile gets non-generic fields |
 
-**Phase 1 resume state (2026-09-12).** The first Phase 1 session hit its limit
-mid-run (§7.28) and nothing was committed. Two workers left finished but
-unverified output in orphaned worktrees, still on the phase-1 branch:
-
-- `.claude/worktrees/agent-a2c1addb38157cf7d` — `src/lib/cards.ts` (530 lines)
-  plus `src/lib/__fixtures__/resumes/{videographer,web-designer,data-scientist}.txt`
-- `.claude/worktrees/agent-a8df69952de383e70` — `src/lib/elicit.ts` (692 lines)
-
-Neither has tests and neither ran its §3 acceptance check. Salvage them —
-review, add the tests, run the check, commit — before starting 1.3. Do not
-re-run 1.1 and 1.2 from scratch. Remove both worktrees once merged
-(`git worktree remove`).
+**Phase 1 status (2026-09-12).** The first session ran out mid-phase (§7.28)
+leaving 1.1 and 1.2 in orphaned worktrees; the second session salvaged them,
+ran 1.3 and 1.4, and committed all four steps on `phase-1`. The worktrees are
+removed. Gate 1 has not been run.
 
 Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resume.
 
@@ -494,3 +486,26 @@ square of how long it runs. Brief accordingly.
     volume was *not* the problem and is not capped; the research fan-out moved
     to Sonnet 5 because it summarises sources rather than writing product
     prose, not to save the 2.5%.
+
+29. **Reference-collection function vocabulary.** `example_roles.function`
+    and `climate_fields.transferable_functions` take values only from a fixed
+    list (software, data, product, design, marketing, communications, sales,
+    business-development, customer-success, operations, project-management,
+    finance, accounting, legal, policy, people, research, engineering,
+    field-technician, video-media, education, supply-chain) so `discover.ts`
+    can match a person's function to fields without fuzzy matching. It is a
+    review rule in `data/*.yaml` and CLAUDE.md, not a CHECK constraint, so a
+    new function is one edit to both.
+
+30. **Discovery is one structured call with server web tools, and re-runs
+    are stable.** `discover.ts` calls `structured({ step: "discover" })` with
+    `webTools()` in the same request (the API accepts both together); a 400
+    falls back to a two-call design (research via `streamText`, then shape
+    via `structured`) inside the same module. Every field and role written to
+    the profile carries the reference-collection id in `extra.Ref`
+    (`- **Ref:** offshore-wind`), which is how a re-run updates in place
+    rather than adding an `F7` duplicate, and a re-run never moves a field the
+    user set to accepted/rejected/unsure back to candidate. Recommendations
+    that cite no active card or carry no non-blocked source are dropped and
+    counted, never silently kept. Measured cost: ~$0.50 and ~3 minutes per
+    profile at `high` effort, roughly half of it the cached catalogue block.
