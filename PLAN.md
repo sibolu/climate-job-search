@@ -54,7 +54,7 @@ per session is logged anonymously.
 | Grounding | Supabase reference collection first, then server-side `web_search_20260209` and `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Sources without scraping; hard constraint enforced in code |
 | Session state | `profile.md` text + chat messages + query feedback, in `localStorage`. Sent to the route handler on every turn. Export, import, and "start over" buttons | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
-| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, step name. No content, no identity | Per-session spend cap and evidence for a later Sonnet 5 decision. See §7 |
+| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Per-session spend cap and evidence for a later Sonnet 5 decision. See §7 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
 | Tests | `vitest`; prompt behaviors covered by evals, not unit tests | Unit tests for parsers and pure logic only |
@@ -87,7 +87,7 @@ src/
   app/
     api/            # streaming route handlers, one per lib module
     (app)/          # the single-page workspace
-    middleware.ts   # passcode gate
+  proxy.ts          # passcode gate (Next 16's name for middleware.ts; see §7.7)
 supabase/migrations/   # reference tables, llm_usage, RLS (select-only anon)
 data/                  # climate_fields.yaml, example_roles.yaml, example_job_posts.yaml
 scripts/seed.ts        # data/*.yaml → Supabase
@@ -105,10 +105,10 @@ orchestrator runs before marking `[DONE]`. Every step ends in one commit.
 
 | # | Step | Model | Acceptance |
 |---|---|---|---|
-| 0.1 `[TODO]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
-| 0.2 `[TODO]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
-| 0.3 `[TODO]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
-| 0.4 `[TODO]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
+| 0.1 `[DONE]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
+| 0.2 `[DONE]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
+| 0.3 `[DONE]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
+| 0.4 `[DONE]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
 
 Gate 0: orchestrator runs tests, `/code-review` at medium, commits. User skims
 the `profile.md` schema (the one design decision worth a human look).
@@ -255,11 +255,180 @@ integrates, and commits.
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
    not fellows' transcripts, unless a fellow exports and shares one.
-4. Anonymous usage rows (random session id, tokens, cost, step) are written
-   to Supabase for spend caps and model-choice evidence. Nothing else leaves
+4. Anonymous usage rows (random session id, model, tokens, cost, duration,
+   step) are written to Supabase for spend caps and model-choice evidence. Nothing else leaves
    the browser except the API request itself. If even this is too much, the
    cap moves client-side and the table is dropped.
 5. Access by a single shared passcode given to invited fellows.
 6. "Example profiles" in the reference collection means role profiles (what
    someone in the role does day to day), never personal profiles, per the
    PRD's consent rule.
+7. The passcode gate lives in `src/proxy.ts`, not `src/middleware.ts`:
+   Next.js 16 deprecated and renamed the `middleware` file convention to
+   `proxy` (the exported function is `proxy` too). Same feature, current
+   spelling. Unauthenticated `/api/*` requests get a `401` JSON body instead
+   of a redirect, so `fetch()` callers see the failure rather than silently
+   re-POSTing to an HTML page.
+8. The session cookie is an HMAC-SHA-256 token `v1.<expiry>.<sig>` signed with
+   `PASSCODE_COOKIE_SECRET` and carrying no user data — only a format version
+   and an expiry. Signing and verification use the Web Crypto API so the gate
+   stays portable to the Edge runtime.
+9. **`profile.md` format is "labeled-bullet markdown"**, defined once in the
+   header comment of `src/lib/profile.ts`: seven `##` sections in fixed order
+   (Preferences, Experience Cards, Skills, Fields, Role Shortlist, Queries,
+   Session Notes); items are `### <ID>: <title>` headings with
+   `- **Key:** value` lines; lists are comma-separated inline except Sources
+   (one URL per indented `-` line). No YAML or JSON blocks, so a nontechnical
+   user can read and edit it in a textarea. Preferences are stated unless
+   tagged `(inferred)`. Field `explored` is a boolean separate from `status`.
+10. **ID stability rule.** Card/field/role/query IDs (`C1`, `F1`, `R1`, `Q1`)
+    are never renumbered on edit; a new item gets the highest existing number
+    plus one (gaps are never reused). Items that a user adds by hand without
+    an ID, or with a duplicate ID, are assigned the next free one with a
+    warning. Excluded cards stay in the file with `Excluded: yes` rather than
+    being deleted, so fit reasoning that cites them keeps resolving.
+11. **Tolerance rule.** `parseProfile` never throws on a string. Unknown
+    `##` sections and unknown `- **Key:**` lines are preserved and written
+    back by `serializeProfile`; unlabeled text is moved to the nearest
+    free-text slot (`Notes` on the item, else Session Notes) and reported in
+    `warnings`; invalid enum values fall back to the default with a warning.
+    Serialization is canonical (fixed order, every known key present) so
+    `parse(serialize(p))` deep-equals `p` and `serialize(parse(md))` is
+    idempotent, which keeps per-turn diffs small. The fixtures under
+    `src/lib/__fixtures__/` are stored in canonical form and the tests assert
+    that byte-for-byte.
+12. **zod is the shared schema layer.** `profile.ts` and `session.ts` export
+    zod schemas alongside the inferred TS types; route handlers validate
+    request bodies with them (`parseTurnRequest`) and 0.3's structured-outputs
+    helper and the 1.x modules pass the same schemas to the Anthropic SDK.
+    The `profile.md` text, not the parsed object, is the source of truth in
+    `localStorage`; `SessionState` carries only `version`, a random
+    `sessionId`, `profileMd`, and `messages` — no identity fields by design.
+13. **Blocked domains are enforced in SQL, not only in TypeScript.** A CHECK
+    constraint on `climate_fields.sources`, `example_roles.sources` and
+    `example_job_posts.source_url` calls `private.is_blocked_source_host()`,
+    so no code path — seed script, psql, a future admin tool — can store a
+    linkedin.com / indeed.com / climatebase.org URL (or a subdomain) as a
+    source. The host-matching logic is one SQL function so it is testable,
+    and it is mirrored by `isBlockedSourceHost()` in
+    `src/lib/reference-schema.ts` so the seed fails with a readable message
+    before it reaches the database. Look-alikes (`notlinkedin.com`) are not
+    blocked. The same three domains are the `blocked_domains` list the web
+    tools get in `llm.ts`; the three lists must stay in step.
+14. **`pnpm seed` mirrors the repo.** `scripts/seed.ts` upserts every entry in
+    `data/*.yaml` by id and deletes any row whose id is no longer listed, so
+    the tables always equal the files and `git diff data/` is the full
+    changelog of what production contains. Validation of all three files
+    happens first: one bad URL, dangling `field_id` or duplicate id aborts the
+    run with a non-zero exit and nothing written.
+15. **`src/lib/database.types.ts` is generated and committed.**
+    `supabase gen types typescript --local` (wrapped as `pnpm db:types`) is the
+    source of the `Database` type; regenerate and commit it in the same commit
+    as any migration. Hand-writing it would let the types drift from the
+    schema silently.
+16. **The RLS shape has an executable test.** `pnpm db:check-rls` runs against
+    a live stack and asserts, with the anon key, that the three reference
+    tables are readable and not writable, that `llm_usage` is insertable and
+    not readable, and that the blocked-domain CHECK rejects a LinkedIn source
+    even for the service role. It insists on Postgres `42501` rather than "any
+    error", because a write merely filtered by a policy returns a silent
+    success affecting zero rows; the table grants revoked in the RLS migration
+    are what make the refusal unconditional. Run it after every migration.
+17. **Supabase local development only.** `supabase/config.toml` is committed
+    and the CLI stack runs in Docker (`pnpm db:start`). No `supabase link` to a
+    remote project from a development machine; the production project is set
+    up in Phase 3.3 and seeded from the same `data/*.yaml`.
+18. **`@anthropic-ai/sdk` 0.125.0, non-beta endpoints only.** Structured
+    outputs use `client.messages.create()` with
+    `output_config.format = zodOutputFormat(schema)` from
+    `@anthropic-ai/sdk/helpers/zod` (which targets `zod/v4`, matching the
+    repo's zod 4) — and streaming uses `client.messages.stream()` +
+    `finalMessage()`. No beta header is needed for structured outputs, effort,
+    adaptive thinking, prompt caching or the web tools, so `llm.ts` never
+    touches `client.beta.*`; that keeps the app off surfaces that can change
+    shape under us. `structured()` deliberately does not use
+    `client.messages.parse()`: the SDK parser throws before usage can be
+    recorded when a response is truncated at `max_tokens`, and its error
+    message quotes the model's text. The wrapper instead records usage, maps
+    the stop reason (`LlmTruncatedError`, `LlmRefusalError`), then parses the
+    final text block with the caller's zod schema; a failure is
+    `LlmOutputError` carrying only issue paths and codes.
+19. **Web tool type strings are `web_search_20260209` and
+    `web_fetch_20260209`** (the dynamic-filtering variants; `claude-opus-5`
+    supports them, confirmed against the `claude-api` skill's server-tool
+    table on 2026-09-12). Web fetch is configured with citations on, because
+    every recommendation has to cite a real source. Because those tools run
+    code execution under the hood, `code_execution` is never declared
+    separately. `webTools()` in `llm.ts` is the only factory, and every call
+    passes its tools through `assertToolsAllowed()`, which throws unless each
+    web tool blocks all three domains — the belt to §7.13's braces.
+20. **Pricing lives in `PRICE_PER_MTOK` in `llm.ts`**, from the `claude-api`
+    skill's model table and prompt-caching economics, checked 2026-09-12:
+    `claude-opus-5` input $5/MTok, output $25/MTok, cache read 0.1× input
+    ($0.50), 5-minute cache write 1.25× input ($6.25). The comment carries the
+    date; re-check it whenever the skill's numbers move, because `cost_usd` in
+    `llm_usage` is computed here and nowhere else.
+21. **One `llm_usage` row per logical call.** A `pause_turn` continuation is
+    part of the same logical call: the wrapper resumes it (up to
+    `MAX_PAUSE_TURN_CONTINUATIONS = 5`, then `LlmPauseLimitError`), sums the
+    token counters across every continuation, and writes a single row. Rows
+    are written fire-and-forget through the anon key, and a failure is a
+    `console.warn` carrying the error *code* only — telemetry must never cost
+    the user their turn, and must never be a channel through which content
+    leaks. Refused and truncated turns are logged before the error is thrown,
+    so the cost telemetry stays complete. `UsageRow`'s key set is fixed by
+    `USAGE_ROW_KEYS` and guarded both at compile time and in `llm.test.ts`, so
+    adding a content field fails the build. `streamText` starts the call
+    eagerly and lets it complete even if the consumer stops reading deltas
+    (the API reports output tokens only in the final `message_delta`), so
+    `final` always settles and the row is exact.
+22. **`llm_usage`'s shape is a CHECK constraint, not a comment.** The anon key
+    is public and INSERT on that table is open by design, so "counters and
+    identifiers only" has to be something the database enforces rather than
+    something the app promises: `session_id` must match `^[0-9a-f]{32}$` (the
+    exact shape `newSessionId()` produces) and `step` must be one of the six
+    `StepName` values. Neither column can then carry a name, an email, a
+    resume line or any other free text, whatever calls the endpoint.
+    `pnpm db:check-rls` asserts both rejections (`23514`) with the service
+    role, so the constraints cannot be quietly dropped. Changing `StepName` in
+    `session.ts` means changing the CHECK in the same commit.
+23. **Supabase auth signs nobody up.** `enable_signup` is `false` in both
+    `[auth]` and `[auth.email]` in `supabase/config.toml`, and
+    `enable_anonymous_sign_ins` stays `false`. There are no accounts (§7.5):
+    access is the shared passcode checked in `src/proxy.ts`, and Supabase auth
+    must not be a second, open door that creates users in a project whose anon
+    key ships to the browser. **The hosted project in Phase 3.3 must mirror
+    this** — a Supabase project is created with signups enabled, so turning
+    them off is an explicit setup step there, not something the committed
+    `config.toml` does for us.
+24. **`profile.ts` parses in linear time.** `profile.md` is user-controlled
+    input, re-parsed on every turn in a route handler, so a parser that
+    backtracks is a denial-of-service hole with a friendly face. The original
+    bold-key regex took 55 seconds on `"**" + " ".repeat(800) + "x"`; the
+    trailing-whitespace strips (`/\s+$/`) and the `(inferred)` tag regex were
+    quadratic on a long run of spaces. They are now a hand-written scan,
+    `trimEnd()`, and an unanchored-head regex respectively, and
+    `profile.test.ts` parses a hostile document (5 KB of unterminated `**`,
+    80 KB of trailing spaces) with an assertion that it finishes in under
+    500 ms. Any new pattern in this module gets the same treatment: no nested
+    quantifier that can match the same text two ways.
+25. **The blocked-domain list has one TypeScript owner and a pinned SQL copy.**
+    `BLOCKED_SOURCE_DOMAINS` in `reference-schema.ts` is the list; `llm.ts`
+    re-exports it as `BLOCKED_DOMAINS`. The only other copy is
+    `private.blocked_source_domains()` in the reference-tables migration, and
+    `reference-schema.test.ts` reads the migration file, extracts the SQL
+    array literal and asserts it equals `BLOCKED_SOURCE_DOMAINS`. So the SQL
+    copy cannot drift without a test failing (§7.13, §7.19). Prose alone was not enough: the list is the PRD's
+    no-scraping rule, and it has to fail loudly rather than silently.
+26. **Session ids are `^[0-9a-f]{32}$` end to end.** `newSessionId()` mints
+    them, `SessionStateSchema` and `TurnRequestSchema` accept nothing else,
+    `llm.ts` throws `LlmSessionIdError` before any request if the id is
+    malformed, and the `llm_usage` CHECK (§7.22) is the last line. An
+    imported session file with a malformed id gets a fresh id and keeps the
+    profile, so a tampered export cannot smuggle an identifier into
+    telemetry.
+27. **Request timeout × retries stays under `maxDuration`.**
+    `REQUEST_TIMEOUT_MS = 300_000` and `MAX_RETRIES = 1`, and `llm.test.ts`
+    asserts `(MAX_RETRIES + 1) × REQUEST_TIMEOUT_MS < MAX_DURATION_SECONDS ×
+    1000`, so a stalled attempt plus its retry cannot outlive the Vercel
+    function and lose the usage row for tokens already billed.
