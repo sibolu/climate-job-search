@@ -108,7 +108,7 @@ orchestrator runs before marking `[DONE]`. Every step ends in one commit.
 | 0.1 `[DONE]` | Scaffold: Next.js + TypeScript, `pnpm`, `eslint`, `vitest`, `.env.example`, passcode middleware, repo `CLAUDE.md` with conventions and the PRD's hard constraints | Opus | `pnpm test`, `pnpm lint`, `pnpm build` pass; wrong passcode is refused |
 | 0.2 `[DONE]` | `profile.ts` and `session.ts`: the `profile.md` schema (Preferences, Experience Cards, Skills confirmed/inferred/excluded, Fields with status, Role Shortlist, Queries with status untried/good/bad + reason, Session Notes) with parse/serialize; the per-turn payload shape | Fable | Round-trip tests on 3 fixture profiles; hand-editing a card in markdown survives reload |
 | 0.3 `[TODO]` | `llm.ts`: client wrapper (streaming, structured outputs helper, web tools with blocked domains, effort per call type, anonymous usage logging, refusal handling) | Opus + `claude-api` skill | One live smoke call writes a usage row; blocked-domain config unit-tested |
-| 0.4 `[TODO]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
+| 0.4 `[DONE]` | Supabase: migrations for `climate_fields`, `example_roles`, `example_job_posts`, `llm_usage`; select-only RLS for anon on reference tables, insert-only on `llm_usage`; `scripts/seed.ts`; `reference.ts` typed reads; local dev via Supabase CLI | Opus | Seed runs from an empty YAML fixture; anon key cannot read `llm_usage` or write reference tables |
 
 Gate 0: orchestrator runs tests, `/code-review` at medium, commits. User skims
 the `profile.md` schema (the one design decision worth a human look).
@@ -304,3 +304,37 @@ integrates, and commits.
     The `profile.md` text, not the parsed object, is the source of truth in
     `localStorage`; `SessionState` carries only `version`, a random
     `sessionId`, `profileMd`, and `messages` — no identity fields by design.
+13. **Blocked domains are enforced in SQL, not only in TypeScript.** A CHECK
+    constraint on `climate_fields.sources`, `example_roles.sources` and
+    `example_job_posts.source_url` calls `private.is_blocked_source_host()`,
+    so no code path — seed script, psql, a future admin tool — can store a
+    linkedin.com / indeed.com / climatebase.org URL (or a subdomain) as a
+    source. The host-matching logic is one SQL function so it is testable,
+    and it is mirrored by `isBlockedSourceHost()` in
+    `src/lib/reference-schema.ts` so the seed fails with a readable message
+    before it reaches the database. Look-alikes (`notlinkedin.com`) are not
+    blocked. The same three domains are the `blocked_domains` list the web
+    tools get in `llm.ts`; the three lists must stay in step.
+14. **`pnpm seed` mirrors the repo.** `scripts/seed.ts` upserts every entry in
+    `data/*.yaml` by id and deletes any row whose id is no longer listed, so
+    the tables always equal the files and `git diff data/` is the full
+    changelog of what production contains. Validation of all three files
+    happens first: one bad URL, dangling `field_id` or duplicate id aborts the
+    run with a non-zero exit and nothing written.
+15. **`src/lib/database.types.ts` is generated and committed.**
+    `supabase gen types typescript --local` (wrapped as `pnpm db:types`) is the
+    source of the `Database` type; regenerate and commit it in the same commit
+    as any migration. Hand-writing it would let the types drift from the
+    schema silently.
+16. **The RLS shape has an executable test.** `pnpm db:check-rls` runs against
+    a live stack and asserts, with the anon key, that the three reference
+    tables are readable and not writable, that `llm_usage` is insertable and
+    not readable, and that the blocked-domain CHECK rejects a LinkedIn source
+    even for the service role. It insists on Postgres `42501` rather than "any
+    error", because a write merely filtered by a policy returns a silent
+    success affecting zero rows; the table grants revoked in the RLS migration
+    are what make the refusal unconditional. Run it after every migration.
+17. **Supabase local development only.** `supabase/config.toml` is committed
+    and the CLI stack runs in Docker (`pnpm db:start`). No `supabase link` to a
+    remote project from a development machine; the production project is set
+    up in Phase 3.3 and seeded from the same `data/*.yaml`.

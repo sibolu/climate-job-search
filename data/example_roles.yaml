@@ -1,0 +1,38 @@
+# example_roles — ROLE profiles, never personal profiles.
+#
+# Each entry describes what someone in a role does day to day, so a career
+# switcher can tell whether their function transfers. No real individual is
+# described, named or linked (PLAN.md §7.6, PRD "user control over the
+# profile"). Seeded by `pnpm seed` into the Supabase `example_roles` table
+# (upsert by id, delete anything not listed here) after validation by
+# `ExampleRoleSchema` in src/lib/reference-schema.ts.
+#
+# Phase 1.3 fills this file. Until then it is an empty list.
+#
+# Shape: a top-level YAML list. One entry per role.
+#
+#   - id: storage-dispatch-optimization-engineer
+#     field_id: grid-scale-storage    # must match an id in climate_fields.yaml
+#     title: Dispatch optimization engineer
+#     function: software              # marketing | software | video | finance | …
+#     day_to_day: >-                  # what the ROLE involves, not a person
+#       Writes and tunes the models that decide when a battery charges and
+#       discharges against market prices; works with traders and site
+#       operators; most days are Python, backtests and post-mortems.
+#     example_companies:              # employers that hire this role
+#       - Form Energy
+#       - Fluence
+#     sources:                        # public URLs backing the above, >= 1
+#       - https://www.example-company.com/careers/engineering
+#
+# Rules the validator and the database both enforce:
+#
+#   * BLOCKED DOMAINS. No linkedin.com, indeed.com or climatebase.org URL
+#     (or subdomain) in `sources`, ever. Look-alikes like notlinkedin.com are
+#     fine. Enforced by the seed validator AND by a CHECK constraint.
+#   * ROLE PROFILES ONLY. `day_to_day` describes the work, never a person.
+#     No names, no personal pages, no "profile of X at Y".
+#   * `field_id` must exist in climate_fields.yaml; the seed refuses to run
+#     otherwise, and the column is a foreign key.
+
+[]

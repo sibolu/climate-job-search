@@ -30,19 +30,33 @@ pnpm typecheck   # next typegen && tsc --noEmit
 pnpm build       # production build
 ```
 
+The reference collection lives in Supabase and is run locally through the
+Supabase CLI (Docker must be running):
+
+```bash
+pnpm db:start      # local stack; copy its URL and keys into .env.local
+pnpm db:reset      # apply supabase/migrations/
+pnpm seed          # data/*.yaml -> the reference tables (mirror, not append)
+pnpm db:check-rls  # assert anon can read reference data and nothing else
+```
+
 See [CLAUDE.md](CLAUDE.md) for the full command list, the environment
-variables and which are server-only, the passcode gate, and the repo layout.
+variables and which are server-only, the passcode gate, the Supabase
+workflow, and the repo layout.
 
 ## Key decisions and constraints (summary; PLAN.md §2 and §7 are canonical)
 
 - **Stack:** Next.js + TypeScript on Vercel. Supabase Postgres holds only
   the reference collection (climate fields, role profiles, example job
-  posts) plus anonymous usage rows.
+  posts) plus anonymous usage rows. The reference collection is edited as
+  `data/*.yaml` in this repo and mirrored into Supabase by `pnpm seed`, so
+  every row in production is reviewable in a pull request.
 - **No user data server-side.** Profile, chat, and query feedback live in
   the browser's localStorage and are resent each turn. No accounts; access
   is a shared passcode.
 - **No scraping** of LinkedIn, Indeed, or Climatebase. Enforced in code via
-  blocked domains on the web tools.
+  blocked domains on the web tools, and again by a CHECK constraint that
+  refuses to store a URL from those hosts as a source.
 - **No job index, no model training.** The reference collection explains
   roles; it does not power search.
 - **LLM:** Claude Opus 5 via the Anthropic TypeScript SDK, with web search

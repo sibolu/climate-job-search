@@ -1,0 +1,43 @@
+# climate_fields — the reference collection's top level.
+#
+# The repo is the source of truth: `pnpm seed` mirrors this file into the
+# Supabase `climate_fields` table (upsert by id, delete anything not listed
+# here). Validated by `ClimateFieldSchema` in src/lib/reference-schema.ts
+# before a single row is written.
+#
+# Phase 1.3 fills this file. Until then it is an empty list, and the seed is
+# expected to write zero rows.
+#
+# Shape: a top-level YAML list. One entry per field.
+#
+#   - id: grid-scale-storage          # slug, lowercase-hyphenated, stable
+#                                     #   forever: roles and posts refer to it
+#     name: Grid-scale energy storage
+#     sector_group: energy/grid/storage  # coarse grouping used by the UI
+#     description: >-                 # what the work is, plain language
+#       Batteries and other storage connected at transmission or distribution
+#       scale, sized and dispatched to firm up variable generation.
+#     climate_link: >-                # why it matters for climate
+#       Storage is what lets a grid run on wind and solar overnight; without
+#       it, gas peakers set the marginal emissions.
+#     transferable_functions:         # job functions that transfer IN
+#       - software
+#       - finance
+#       - marketing
+#     sources:                        # public URLs backing the above, >= 2
+#       - https://www.eia.gov/todayinenergy/detail.php?id=00000
+#       - https://www.nrel.gov/analysis/storage-futures.html
+#
+# Rules the validator and the database both enforce:
+#
+#   * BLOCKED DOMAINS. No URL anywhere in this collection may point at
+#     linkedin.com, indeed.com or climatebase.org, or any subdomain of them
+#     (PRD hard constraint: no scraping those sites). Look-alike hosts such as
+#     notlinkedin.com are fine. Rejected by the seed validator AND by a CHECK
+#     constraint in the migration, so neither path can let one through.
+#   * ROLE PROFILES, NEVER PERSONAL PROFILES. Nothing in this collection
+#     describes, names or links to a real individual (PLAN.md §7.6).
+#   * NOT A JOB INDEX. This is a small, hand-curated set that explains fields
+#     and roles. It never powers job search (PRD hard constraint).
+
+[]

@@ -49,6 +49,12 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm test` | Unit tests (`vitest run`) |
 | `pnpm lint` | ESLint flat config (`eslint`) — Next 16 removed `next lint` |
 | `pnpm typecheck` | `next typegen && tsc --noEmit` |
+| `pnpm db:start` | Local Supabase stack via the CLI (Docker must be running) |
+| `pnpm db:stop` | Stop the local stack |
+| `pnpm db:reset` | Recreate the local database and apply `supabase/migrations/` |
+| `pnpm db:types` | Regenerate `src/lib/database.types.ts` from the local schema |
+| `pnpm seed` | `data/*.yaml` → Supabase reference tables (mirror, service role) |
+| `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -70,9 +76,67 @@ and must never be imported into a client component.
 | `APP_PASSCODE` | server-only | The shared passcode given to invited fellows |
 | `PASSCODE_COOKIE_SECRET` | server-only | HMAC key that signs the session cookie |
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
-| `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (Phase 0.4) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Anon key, select-only RLS on reference tables |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only | Seeding only (`scripts/seed.ts`); bypasses RLS |
+| `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Anon key: select-only on reference tables, insert-only on `llm_usage` |
+| `SUPABASE_SERVICE_ROLE_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`); bypasses RLS |
+
+## Supabase: the reference collection and `llm_usage`
+
+Local development runs the whole stack in Docker through the Supabase CLI —
+nothing here is ever pointed at a remote project.
+
+```bash
+pnpm db:start        # first run pulls images; takes a few minutes
+pnpm db:reset        # recreate the db and apply supabase/migrations/
+pnpm seed            # data/*.yaml -> the three reference tables
+pnpm db:check-rls    # prove anon can read reference data and nothing else
+```
+
+`pnpm db:start` prints the local URL and keys (`supabase status -o env` prints
+them again): copy `API_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY` into
+`.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+and `SUPABASE_SERVICE_ROLE_KEY`. They are fixed local-only dev keys, so they
+are not secrets, but `.env.local` stays gitignored anyway.
+
+**The only server-side write is the anonymous `llm_usage` row.** The reference
+tables are written only by `scripts/seed.ts` from `data/*.yaml`. No other code
+path writes anything to Supabase, ever. Concretely:
+
+- `src/lib/supabase.ts` exports exactly two clients. `anonClient()` is the only
+  one app code may use; `serviceClient()` bypasses RLS, throws in the browser,
+  and belongs to the two scripts.
+- `src/lib/reference.ts` is read-only and throws `ReferenceReadError` rather
+  than swallowing a Supabase error into an empty list.
+- `llm_usage` has no content columns and none may be added — no prompts, no
+  completions, no resume or chat text, no identifiers. Length caps on
+  `session_id`, `step` and `model` are there to keep it that way.
+
+### Changing the schema
+
+1. Add a new timestamped file under `supabase/migrations/` — never edit an
+   applied one.
+2. `pnpm db:reset && pnpm db:types` and commit the regenerated
+   `src/lib/database.types.ts`.
+3. `pnpm db:check-rls` — new tables need their RLS shape asserted there too.
+
+### Changing the reference data
+
+`data/*.yaml` is the source of truth; `pnpm seed` mirrors it (upsert by id,
+delete anything no longer listed), so `git diff data/` is the full changelog
+of what production contains. Each file's header comment documents its schema.
+`src/lib/reference-schema.ts` validates all three together before a single row
+is written, and a failure aborts the whole run with nothing written.
+
+Blocked domains — linkedin.com, indeed.com, climatebase.org and their
+subdomains — are rejected in **two** places on purpose: by the zod schemas at
+seed time, and by a CHECK constraint calling
+`private.is_blocked_source_host()` in SQL. Keep the two lists in step (and in
+step with `blocked_domains` in `llm.ts`). Look-alike hosts such as
+`notlinkedin.com` are deliberately unaffected.
+
+`example_roles` holds **role profiles, never personal profiles**: what someone
+in the role does day to day, with no real individual described, named or
+linked (PLAN.md §7.6). No schema can check that — it is a review rule.
 
 ## Passcode gate
 
@@ -129,7 +193,10 @@ src/
     session.ts      # browser session state + per-turn payload (done, 0.2)
     __fixtures__/   # canonical profile.md fixtures used by the round-trip tests
     llm.ts          # client wrapper, model config, usage logging, web tools
-    reference.ts    # typed reads from the Supabase reference tables
+    supabase.ts     # anonClient() / serviceClient()  (done, 0.4)
+    database.types.ts  # GENERATED by `pnpm db:types`; do not hand-edit (0.4)
+    reference-schema.ts # data/*.yaml shapes + blocked-source rules (done, 0.4)
+    reference.ts    # typed reads from the Supabase reference tables (done, 0.4)
     cards.ts        # pasted text → experience cards
     elicit.ts       # preference elicitation policy and answer pills
     discover.ts     # fields/roles discovery
@@ -139,9 +206,13 @@ src/
     api/            # streaming route handlers, one per lib module
     (app)/          # the single-page workspace
   proxy.ts          # passcode gate (Next 16 name for middleware.ts)
-supabase/migrations/   # reference tables, llm_usage, RLS (select-only anon)
+supabase/
+  config.toml          # local stack config (supabase init)
+  migrations/          # reference tables, llm_usage, blocked-source CHECK, RLS
 data/                  # climate_fields.yaml, example_roles.yaml, example_job_posts.yaml
-scripts/seed.ts        # data/*.yaml → Supabase
+scripts/
+  seed.ts              # data/*.yaml → Supabase (mirror; service role)
+  check-rls.ts         # asserts the RLS shape against a live stack
 evals/                 # synthetic profiles, structural checks, feedback-loop eval, baseline arm
 ```
 
