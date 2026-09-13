@@ -10,7 +10,8 @@
  * each turn (PRD: no user data server-side). The only request that leaves the
  * page is `POST /api/turn`, whose stream is decoded by `turn-stream.ts`.
  *
- * The Fields and Queries tabs are placeholders until step 2.4.
+ * The Fields and Queries tabs (step 2.4) edit the profile locally through
+ * `workspace.ts` and post their own turns — explore, queries, revise.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,8 +19,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import ChatPane from "@/components/ChatPane";
+import FieldsTab from "@/components/FieldsTab";
 import ProfileTab from "@/components/ProfileTab";
-import type { AnswerPill, SessionState } from "@/lib/session";
+import QueriesTab from "@/components/QueriesTab";
+import type { AnswerPill, QueryFeedback, SessionState, TurnInput } from "@/lib/session";
 import {
   buildTurnRequest,
   clearSession,
@@ -29,17 +32,24 @@ import {
   saveSession,
   startOver,
 } from "@/lib/session";
+import type { Field } from "@/lib/profile";
 import { parseProfile } from "@/lib/profile";
 import { sendTurn } from "@/lib/turn-stream";
 import {
   appendAssistantMessage,
   appendUserMessage,
+  applyQueryFeedback,
   applyTurnResponse,
+  canGenerateQueries,
   confirmProfileSkill,
   EXPORT_FILENAME,
+  exploreChatText,
+  feedbackChatText,
+  GENERATE_QUERIES_TEXT,
   nextStep,
   profileView,
   rejectProfileSkill,
+  setProfileFieldStatus,
   toggleCardExcluded,
   type TurnSource,
 } from "@/lib/workspace";
@@ -84,10 +94,14 @@ export default function Workspace() {
     saveSession(next);
   }, []);
 
+  /**
+   * Posts one turn. `input` is what the server receives (a message or query
+   * feedback); `chatText` is the bubble the user sees for it.
+   */
   const send = useCallback(
-    async (rawText: string, source: TurnSource) => {
+    async (input: TurnInput, source: TurnSource, chatText: string) => {
       const current = stateRef.current;
-      const text = rawText.trim();
+      const text = chatText.trim();
       if (current === null || busy || text === "") return;
 
       const withUser = appendUserMessage(current, text);
@@ -98,7 +112,7 @@ export default function Workspace() {
 
       const { profile } = parseProfile(withUser.profileMd);
       const step = nextStep(profile, { source });
-      const request = buildTurnRequest(withUser, step, { kind: "message", content: text });
+      const request = buildTurnRequest(withUser, step, input);
 
       try {
         const result = await sendTurn(request);
@@ -143,24 +157,24 @@ export default function Workspace() {
   );
 
   const onSend = useCallback(() => {
-    const text = draft;
-    if (text.trim() === "") return;
+    const text = draft.trim();
+    if (text === "") return;
     setDraft("");
-    void send(text, "chat").then(() => undefined);
+    void send({ kind: "message", content: text }, "chat", text);
   }, [draft, send]);
 
   const onPill = useCallback(
     (pill: AnswerPill) => {
-      void send(pill.value, "chat");
+      void send({ kind: "message", content: pill.value }, "chat", pill.value);
     },
     [send],
   );
 
   const onCreateCards = useCallback(() => {
-    const text = pasteText;
-    if (text.trim() === "") return;
+    const text = pasteText.trim();
+    if (text === "") return;
     setPasteText("");
-    void send(text, "paste");
+    void send({ kind: "message", content: text }, "paste", text);
   }, [pasteText, send]);
 
   const editProfile = useCallback(
@@ -170,6 +184,37 @@ export default function Workspace() {
       commit(edit(current));
     },
     [commit],
+  );
+
+  /** Explore a field. The server marks it explored; nothing changes locally. */
+  const onExplore = useCallback(
+    (field: Field) => {
+      const text = exploreChatText(field);
+      void send({ kind: "message", content: text }, "explore", text);
+    },
+    [send],
+  );
+
+  const onGenerateQueries = useCallback(() => {
+    void send(
+      { kind: "message", content: GENERATE_QUERIES_TEXT },
+      "queries",
+      GENERATE_QUERIES_TEXT,
+    );
+  }, [send]);
+
+  /**
+   * "Tried it": the profile text is updated first so the verdict survives a
+   * failed request, then the revision turn is posted.
+   */
+  const onQueryFeedback = useCallback(
+    (feedback: QueryFeedback, board: string) => {
+      const current = stateRef.current;
+      if (current === null || busy) return;
+      commit(applyQueryFeedback(current, feedback));
+      void send({ kind: "feedback", feedback }, "feedback", feedbackChatText(feedback, board));
+    },
+    [busy, commit, send],
   );
 
   const onExport = useCallback(() => {
@@ -272,15 +317,24 @@ export default function Workspace() {
         ) : null}
 
         {tab === "fields" ? (
-          <div className="panel-body">
-            <p className="muted">Fields appear here once discovery runs (step 2.4).</p>
-          </div>
+          <FieldsTab
+            profile={profile}
+            busy={busy}
+            onSetFieldStatus={(fieldId, status) =>
+              editProfile((s) => setProfileFieldStatus(s, fieldId, status))
+            }
+            onExplore={onExplore}
+          />
         ) : null}
 
         {tab === "queries" ? (
-          <div className="panel-body">
-            <p className="muted">Search queries and their feedback appear here (step 2.4).</p>
-          </div>
+          <QueriesTab
+            profile={profile}
+            busy={busy}
+            canGenerate={canGenerateQueries(profile)}
+            onGenerateQueries={onGenerateQueries}
+            onFeedback={onQueryFeedback}
+          />
         ) : null}
       </aside>
     </div>
