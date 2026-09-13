@@ -149,15 +149,83 @@ Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resu
 
 | # | Step | Model | Parallel | Acceptance |
 |---|---|---|---|---|
-| 2.1 `[TODO]` | Workspace shell: passcode screen, chat with streaming and answer pills, Profile tab (paste, cards, export/import/start over), `localStorage` persistence via `session.ts` | Opus | ∥ 2.2, 2.3 | Reload restores state; export file round-trips; "start over" clears everything |
-| 2.2 `[TODO]` | `explore.ts`: field drill-down → titles, companies, example posts (reference collection first, then web), day-to-day description, LinkedIn guidance links built from keywords | Fable | ∥ | Output cites URLs; blocked domains never fetched (assert on usage log) |
-| 2.3 `[TODO]` | `queries.ts`: keyword and boolean queries per board with alert steps; **revise** function that takes query feedback (good/bad + why) and returns updated queries, field status changes, and profile edits with a one-paragraph explanation | Fable | ∥ | Scripted feedback "bad fit: all roles need PE license" removes or narrows those queries and says why |
-| 2.4 `[TODO]` | Fields and Queries tabs: field board with accept/reject/unsure and explore; query cards with copy, alert steps, "Tried it" feedback that posts a feedback turn and updates the Queries section of the profile | Opus | after 2.1 | Feedback on a query changes the profile text and triggers a revision turn |
-| 2.5 `[TODO]` | Integration: wire 1.x and 2.x into route handlers and the page; end-to-end run on a Vercel preview deploy; fix seams | Orchestrator (Fable) | after all | Full loop on the builder's own resume, on a preview URL |
+| 2.1 `[DONE]` | Workspace shell: passcode screen, chat with streaming and answer pills, Profile tab (paste, cards, export/import/start over), `localStorage` persistence via `session.ts` | Opus | ∥ 2.2, 2.3 | Reload restores state; export file round-trips; "start over" clears everything |
+| 2.2 `[DONE]` | `explore.ts`: field drill-down → titles, companies, example posts (reference collection first, then web), day-to-day description, LinkedIn guidance links built from keywords | Fable | ∥ | Output cites URLs; blocked domains never fetched (assert on usage log) |
+| 2.3 `[DONE]` | `queries.ts`: keyword and boolean queries per board with alert steps; **revise** function that takes query feedback (good/bad + why) and returns updated queries, field status changes, and profile edits with a one-paragraph explanation | Fable | ∥ | Scripted feedback "bad fit: all roles need PE license" removes or narrows those queries and says why |
+| 2.4 `[DONE]` | Fields and Queries tabs: field board with accept/reject/unsure and explore; query cards with copy, alert steps, "Tried it" feedback that posts a feedback turn and updates the Queries section of the profile | Opus | after 2.1 | Feedback on a query changes the profile text and triggers a revision turn |
+| 2.5 `[DONE]` | Integration: wire 1.x and 2.x into route handlers and the page; end-to-end run on a Vercel preview deploy; fix seams | Orchestrator (Fable) | after all | Full loop on the builder's own resume, on a preview URL |
+
+**Phase 2 status (2026-09-12).** 2.1–2.4 ran as four worktree workers (2.1
+and 2.4 Opus, 2.2 and 2.3 Fable) and were merged into `phase-2`; 2.5 wired
+them into `src/lib/turn.ts` and `POST /api/turn` (§7.31). Worker live runs:
+explore $0.25 / 107s on the videographer fixture with 48 URLs seen and zero
+blocked hosts; queries $0.08 / 91s (11 queries, four boards); revise $0.09 /
+38s on "bad fit: all roles need PE license" (one query retired, three
+narrowed, three added, one field moved to unsure, explanation quoting the
+reason). The 2.5 end-to-end run is recorded below the Gate 2 line; the
+Vercel preview deploy needs a linked project and is the user's step.
 
 Gate 2: `/code-review` high and `/security-review` on Opus workers (§4) — passcode, input handling,
 RLS, no user content reaching Supabase). User does one full run including two
 real job-board searches and files feedback as issues.
+
+**2.5 end-to-end run (2026-09-12, local `next start`, not a preview URL —
+no Vercel CLI or linked project on this machine).** A driver that uses the
+browser's own modules (`nextStep`, `buildTurnRequest`, `decodeTurnEvents`,
+`applyTurnResponse`, `applyQueryFeedback`) ran the videographer fixture
+resume through `POST /api/turn` behind the passcode cookie: cards (22s,
+$0.04, 4 cards, 3 of 5 preferences inferred) → two elicitation pill clicks
+(0s, no model call) → discover (167s, $0.54, 6 fields, 17 roles) → explore
+F1 (102s, $0.27, +4 roles, day-to-day and keywords on the field) → accept
+F1 locally → queries (79s, $0.06, 12 queries over four boards) → "bad fit"
+feedback on Q1 (33s, $0.08, Q1 marked bad with the reason, 3 queries added,
+explanation quoting the reason). ~6.7 minutes and $1.00 for the loop; 14
+chat messages; profile.md 29KB with zero parse warnings, no blocked hosts,
+and one usage row per call with no content. The server log had nothing but
+the startup lines. Every step's `deltas` count matched its heartbeats plus
+progress lines, so the stream stayed alive through the 167s discovery.
+Seams found and fixed before this run: none in the modules; the only
+failures were in the driver's cookie parsing. Not exercised: the React
+components in a browser (2.1 and 2.4 had no browser run either) — that is
+the user's Gate 2 run.
+
+**Gate 2 security review (2026-09-12).** `/security-review` on Opus over
+`main...phase-2` (the 2.1–2.5 diff: the turn route, `turn.ts`, `turn-stream.ts`,
+the four React components, `cards`/`elicit`/`discover`/`explore`/`queries`/
+`boards`/`workspace`, the four `try-*` scripts, and the config changes)
+returned **no HIGH or MEDIUM findings**. What it confirmed, so a later change
+that breaks one of these is a regression and not a new opinion:
+
+- **The gate covers the new endpoint.** `PUBLIC_PATHS` in `proxy.ts` is still
+  only `/enter` and `/api/enter`, so `/api/turn` gets the `401` JSON body
+  unauthenticated (§7.7). The cookie is `SameSite=Lax` and no state-changing
+  `GET` was added, so a cross-site POST carries no cookie.
+- **No XSS sink.** No `dangerouslySetInnerHTML` anywhere in `src/components/`
+  or `src/app/`; chat text is a React text child, not parsed markdown. The one
+  model-supplied `href` (field sources, `FieldsTab.tsx`) is scheme-guarded with
+  `/^https?:\/\//` — which is what stops a `javascript:` URL the model
+  emitted — and carries `rel="noreferrer"`. `linkedinGuidanceLinks`
+  `encodeURIComponent`s every parameter.
+- **Nothing content-bearing is logged or persisted.** The new code has exactly
+  one `console.*` call: the route's catch, which logs the error *class* and
+  step. `turnErrorMessage` interpolates only regex-constrained ids (`Q\d+`,
+  `F\d+`) and integers — never model text or the request body (§7.31). Every
+  body goes through `parseTurnRequest` before anything else, and `runTurn`
+  holds no state.
+- **The no-scraping enforcement point held.** No `new Anthropic(`, raw
+  `fetch(`, `child_process`, `eval` or `new Function` in any new module; web
+  tools come only from `webTools()`, and `explore.ts` adds a post-hoc
+  `assertNoBlockedFetches` over tool-result and citation URLs on top of it
+  (§7.13, §7.19).
+
+Not vulnerabilities, recorded so they are not re-raised each gate: prompt
+injection from pasted resume text or fetched pages (inherent to the design;
+blast radius is the user's own profile and the output renders as inert text),
+and model-directed `web_fetch` to internal hosts (that fetch runs on
+Anthropic's infrastructure, not ours, so it is not SSRF against this app).
+
+The user's own Gate 2 run — the browser pass over the React components and two
+real job-board searches — is still outstanding.
 
 ### Phase 3 — Evaluation and pilot readiness (3.1 ∥ 3.2 ∥ 3.3, then 3.4)
 
@@ -537,3 +605,67 @@ square of how long it runs. Brief accordingly.
     stored trimmed and compared trimmed on both sides. A draft that
     normalization *rejects* is a malformed answer, never a decision to
     exclude the card it addressed.
+
+31. **One turn endpoint; the browser picks the step; NDJSON back.**
+    `POST /api/turn` takes a `TurnRequest` (`session.ts`); `src/lib/turn.ts`
+    dispatches on `step` and returns `{ message, profileMd, pills }` with the
+    *whole* canonical `profile.md` every turn — the server keeps nothing. The
+    wire format is NDJSON (`turn-stream.ts`): progress `delta`s while a slow
+    step runs, an empty heartbeat delta every 15s so proxies never see an
+    idle stream, then exactly one `final` or one `error`. The browser picks
+    the step in `workspace.ts` (`nextStep`): paste → `cards`; a missing
+    preference → `elicit`; no fields → `discover`; otherwise `explore`, and
+    the Fields/Queries tabs force `explore`, `queries` and `revise`. Message
+    conventions the server parses: `Explore F3: <name>` (first `F\d+` wins;
+    no id → a "which field?" reply with pills, no model call), the
+    `GENERATE_QUERIES_TEXT` sentence (routed to `queries` even on the
+    `explore` step so the pill works after discovery), and "go". An
+    elicitation pill click is applied by `applyPillAnswer` without a model
+    call; free text goes through `interpretAnswer`. Errors reach the user
+    only through `turnErrorMessage`: our own input errors verbatim, every
+    model/SDK error as a fixed sentence, and the route logs the error *class*
+    and step only. Gotcha: Next 16 refuses a route file whose `maxDuration`
+    is an imported constant or that exports anything but segment config and
+    handlers, so `route.ts` says `800` and `route.test.ts` pins it to
+    `MAX_DURATION_SECONDS`.
+
+32. **`boards.ts` is the client-safe owner of job-board text.**
+    `BOARD_LABELS`, `ALERT_STEPS`, `BOARD_NAME_KEY`, `RETIRED_KEY` and
+    `RETIRED_REASON_KEY` live in `src/lib/boards.ts` with no server imports,
+    because client components cannot import `queries.ts`; `queries.ts`
+    re-exports them. Steps 2.3 and 2.4 each wrote an `ALERT_STEPS`; the 2.4
+    copy survived because it is phrased "look for…" so a board's UI change
+    does not make it wrong. A revision never deletes a query: an untried one
+    it retires keeps its id and gets `Retired: yes` plus a reason, and the
+    Queries tab shows it struck through.
+
+33. **Worker worktrees start from `main`, not the phase branch.** The Agent
+    tool's `isolation: worktree` branched every Phase 2 worker from `main`;
+    each had to `git checkout -b <step> phase-N` before starting, so the
+    brief now says so. Those worktrees under `.claude/worktrees/` are full
+    checkouts that ESLint walks (576 phantom errors), so `.claude/**` is in
+    `globalIgnores`, and the orchestrator removes worktrees and their
+    branches right after merging.
+
+34. **One turn is in flight at a time, and the client owns abandoning it.**
+    `Workspace` keeps a turn-generation counter and an `AbortController`: a
+    reply only commits while its turn is still the current one, and "Start
+    over" and import bump the counter and abort first, so a reply in flight
+    cannot re-commit the server's `profileMd` over the session that just
+    replaced it. A turn returns the *whole* `profile.md`, so the local profile
+    edits (field status, card exclude, skill confirm/reject) are disabled
+    while `busy` and refused by `editProfile` behind that; the send paths are
+    guarded before the draft is cleared, so a refused send never eats what the
+    user typed. A mid-stream failure is caught and shown as an error bubble —
+    `send` is called as `void send(...)`, so an uncaught one would be silent.
+
+35. **The blocked-host audit reads every segment of a call, not the last
+    message.** `llm.ts` returns `messages` (each response of one logical call,
+    `pause_turn` continuations included) alongside `message`, and
+    `explore.ts` runs `assertNoBlockedFetches` over all of them: the paused
+    segments are exactly where the server tools ran, so checking only the
+    final response left the PRD guarantee (§7.13, §7.19) half-enforced. A
+    client disconnect now stops the turn at the next step boundary — the
+    route's progress callback throws once the stream is cancelled — but a
+    model call already in flight still completes, which is `llm.ts`'s
+    deliberate choice so the usage row stays exact.

@@ -80,3 +80,400 @@ button {
   margin-top: 1rem;
   padding: 0.55rem 1.1rem;
 }
+
+/* ---------------------------------------------------------------------------
+   Workspace (Phase 2.1): chat on the left, Profile / Fields / Queries panel
+   on the right. Plain CSS, no UI library; desktop-first, usable when narrow.
+   --------------------------------------------------------------------------- */
+
+.workspace-main {
+  max-width: none;
+  padding: 0;
+}
+
+.workspace {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: 2fr 1fr;
+  background: var(--border);
+  height: 100dvh;
+}
+
+.workspace-loading {
+  padding: 2rem;
+}
+
+.chat,
+.panel {
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.chat-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.bubble {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  max-width: 46rem;
+  padding: 0.6rem 0.8rem;
+}
+
+.bubble-user {
+  border-color: var(--accent);
+}
+
+.bubble-error {
+  border-color: #b4432f;
+}
+
+.bubble-role {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.bubble-text {
+  white-space: pre-wrap;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.pill,
+.secondary,
+.tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  margin-top: 0;
+  padding: 0.3rem 0.7rem;
+}
+
+.pill:hover:enabled,
+.secondary:hover:enabled,
+.tab:hover {
+  border-color: var(--accent);
+}
+
+.composer {
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.75rem 1.25rem 1rem;
+}
+
+.composer textarea,
+.paste-box {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.composer button {
+  align-self: flex-end;
+  margin-top: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tabs {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+}
+
+.tab-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.panel-section {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+.panel-section:last-child {
+  border-bottom: 0;
+}
+
+.panel-section h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.panel-section h4 {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.9rem 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.warnings {
+  color: #b4432f;
+  font-size: 0.875rem;
+}
+
+.card-list,
+.skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.card-excluded {
+  opacity: 0.55;
+}
+
+.card-head {
+  align-items: start;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.sar {
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
+}
+
+.sar dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.sar dd {
+  margin: 0 0 0.4rem;
+}
+
+.skill-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  font-size: 0.875rem;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.skill-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.profile-md {
+  margin-top: 1rem;
+}
+
+.profile-md pre {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.6rem;
+  white-space: pre-wrap;
+}
+
+.sr-only {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+/* --- Fields tab ------------------------------------------------------- */
+
+.field-card,
+.query-card {
+  border: 1px solid #d8d8d2;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  background: #fff;
+}
+
+.field-rejected {
+  opacity: 0.6;
+}
+
+.field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.field-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.badge {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.75rem;
+  border: 1px solid #c9c9c2;
+  background: #f3f3ef;
+}
+
+.badge-accepted,
+.badge-query-good {
+  background: #e4f2e2;
+  border-color: #8fbf86;
+}
+
+.badge-rejected,
+.badge-query-bad {
+  background: #f6e3e1;
+  border-color: #c99a94;
+}
+
+.badge-unsure {
+  background: #f6efdc;
+  border-color: #c9b684;
+}
+
+.source-list {
+  list-style: none;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.role-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.role {
+  border-left: 3px solid #e0e0da;
+  padding: 0.2rem 0 0.2rem 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.role-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+/* --- Queries tab ------------------------------------------------------ */
+
+.query-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  background: #f5f5f0;
+  border: 1px solid #e2e2dc;
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.alert-steps {
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+}
+
+.alert-steps summary {
+  cursor: pointer;
+}
+
+.alert-steps ol {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.5rem 0 0;
+}
+
+.alert-steps li {
+  margin-bottom: 0.3rem;
+}
+
+.feedback-box {
+  border-top: 1px solid #e6e6e0;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+}
+
+.feedback-box h4 {
+  margin: 0 0 0.3rem;
+}
+
+.badge-query-retired {
+  background: #eee;
+  color: #666;
+  text-decoration: line-through;
+}

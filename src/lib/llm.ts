@@ -531,11 +531,20 @@ export interface StreamTextResult extends CallMetrics {
   text: string;
   /** The last response, for callers that need blocks (citations, tool results). */
   message: Anthropic.Message;
+  /**
+   * Every response of this logical call in order, `pause_turn` continuations
+   * included — {@link message} is the last of them. Callers that audit tool
+   * use (blocked hosts, citations) must read this, not just the last message:
+   * the tool-heavy segments are the paused ones.
+   */
+  messages: Anthropic.Message[];
 }
 
 export interface StructuredResult<T> extends CallMetrics {
   value: T;
   message: Anthropic.Message;
+  /** Every response of this logical call; see {@link StreamTextResult.messages}. */
+  messages: Anthropic.Message[];
 }
 
 export interface StreamText {
@@ -701,6 +710,8 @@ type Turn = (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthr
 
 interface RunOutcome {
   message: Anthropic.Message;
+  /** Every response of the call, in order; `message` is the last. */
+  messages: Anthropic.Message[];
   metrics: CallMetrics;
 }
 
@@ -761,6 +772,8 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
 
     const startedAt = now();
     const messages = [...request.messages];
+    /** Every response this call produced, continuations included. */
+    const responses: Anthropic.Message[] = [];
     let counts = zeroTokenCounts();
     let continuations = 0;
     let recorded = false;
@@ -774,6 +787,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
       for (;;) {
         const message = await turn(requestParams(request, messages, maxTokens, format));
         counts = addUsage(counts, message.usage);
+        responses.push(message);
 
         if (message.stop_reason === "pause_turn") {
           // A server tool hit its per-request loop limit. Re-send the paused
@@ -793,6 +807,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
         assertTerminalStopReason(request, message, maxTokens);
         return {
           message,
+          messages: responses,
           metrics: {
             usage: counts,
             costUsd: costUsd(counts),
@@ -835,9 +850,9 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
     // `final` still resolve with the full text. The price is at most one
     // response's worth of tokens after a disconnect.
     const final = runCall(request, maxTokens, turn).then(
-      ({ message, metrics }) => {
+      ({ message, messages, metrics }) => {
         deltas.close();
-        return { ...metrics, text, message };
+        return { ...metrics, text, message, messages };
       },
       (error: unknown) => {
         deltas.fail(error);
@@ -885,13 +900,13 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
     // `zodOutputFormat` is used for its JSON schema only; the parser it
     // attaches is what `messages.parse()` would run, and we do not call that.
     const format = zodOutputFormat(request.schema);
-    const { message, metrics } = await runCall(
+    const { message, messages, metrics } = await runCall(
       request,
       maxTokens,
       (params) => client().create(params),
       format,
     );
-    return { ...metrics, value: parseStructuredOutput(request, message), message };
+    return { ...metrics, value: parseStructuredOutput(request, message), message, messages };
   }
 
   return { streamText, structured };

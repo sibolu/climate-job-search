@@ -467,6 +467,10 @@ describe("streamText", () => {
     // The paused assistant turn is re-sent, with no "continue" message added.
     expect(params[1]?.messages).toHaveLength(2);
     expect(params[1]?.messages[1]?.role).toBe("assistant");
+    // Every segment is reported, not just the last: callers auditing tool use
+    // (explore's blocked-host check) need the paused ones, where the tools ran.
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[1]).toBe(result.message);
   });
 
   it("gives up after too many pause_turns and logs one row", async () => {
