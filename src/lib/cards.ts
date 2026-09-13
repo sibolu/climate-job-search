@@ -376,6 +376,14 @@ export interface ReviseCardsResult {
 }
 
 /**
+ * The key an ID is matched on: trimmed and lowercased, so a model that answers
+ * `c3` for `C3` revises that card instead of both duplicating and excluding it.
+ */
+function cardKey(id: string): string {
+  return id.trim().toLowerCase();
+}
+
+/**
  * The user's free-text correction → a rewritten card list.
  *
  * The model sees the active cards and returns the full corrected list keyed by
@@ -401,7 +409,7 @@ export async function reviseCards(
   // Only *active* cards are addressable: an excluded card is the user's
   // decision, is not in the prompt, and an invented ID that happens to match
   // one must create a new card rather than overwrite it.
-  const known = new Map(activeCards(profile).map((c) => [c.id, c]));
+  const known = new Map(activeCards(profile).map((c) => [cardKey(c.id), c]));
   const drafts = normalizeDrafts(value.cards);
 
   // A revision that yields no usable card is a failed call, not an instruction
@@ -411,7 +419,7 @@ export async function reviseCards(
   let next = profile;
   const kept = new Set<string>();
   for (const draft of drafts) {
-    const existing = known.get(draft.id.trim());
+    const existing = known.get(cardKey(draft.id));
     // An unknown ID is treated as a new card rather than trusted blindly:
     // inventing `C9` must not create a gap or overwrite something else.
     const base: Omit<Card, "id"> & { id?: string } = {
@@ -426,8 +434,13 @@ export async function reviseCards(
     kept.add(base.id ?? (next.cards.at(-1)?.id ?? ""));
   }
 
-  // Anything active that the revision left out is excluded, never deleted.
-  const dropped = activeCards(profile).filter((c) => !kept.has(c.id));
+  // Anything active that the revision *left out* is excluded, never deleted.
+  // A draft `normalizeDrafts` rejected is a malformed answer, not a decision to
+  // exclude: the card it addressed stays exactly as the user had it.
+  const addressed = new Set(
+    value.cards.map((d) => known.get(cardKey(d.id))?.id).filter((id) => id !== undefined),
+  );
+  const dropped = activeCards(profile).filter((c) => !kept.has(c.id) && !addressed.has(c.id));
   if (dropped.length > 0) {
     const droppedIds = new Set(dropped.map((c) => c.id));
     next = {

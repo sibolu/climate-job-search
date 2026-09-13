@@ -335,8 +335,24 @@ export interface ValidatedOutput {
   dropped: DroppedCounts;
 }
 
-function fieldKey(ref: string | null, name: string): string {
-  return ref !== null && ref.trim() !== "" ? `ref:${ref.trim()}` : `name:${name.trim().toLowerCase()}`;
+/** A ref, trimmed, or `null` when it is absent or blank. */
+function trimmedRef(ref: string | null | undefined): string | null {
+  const t = ref?.trim() ?? "";
+  return t === "" ? null : t;
+}
+
+/**
+ * The identity keys an item is matched on, in the ref-then-name order
+ * {@link findExistingField} and {@link findExistingRole} use: a ref match wins,
+ * a name match is the fallback. Validation dedupes on the *same* keys, so two
+ * drafts that would collapse onto one profile row never both survive — the
+ * dedupe key and the match key are one thing.
+ */
+function identityKeys(ref: string | null | undefined, name: string): string[] {
+  const keys = [`name:${name.trim().toLowerCase()}`];
+  const r = trimmedRef(ref);
+  if (r !== null) keys.unshift(`ref:${r}`);
+  return keys;
 }
 
 /** Drops (and counts) anything uncited, unsourced or blocked; caps sizes. */
@@ -345,7 +361,8 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
   const fields: ValidatedField[] = [];
   const seen = new Set<string>();
   for (const draft of output.fields) {
-    if (fields.length >= MAX_FIELDS || seen.has(fieldKey(draft.ref, draft.name))) {
+    const keys = identityKeys(draft.ref, draft.name);
+    if (fields.length >= MAX_FIELDS || keys.some((k) => seen.has(k))) {
       dropped.fieldsSurplus += 1;
       continue;
     }
@@ -360,8 +377,11 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
       continue;
     }
     const roles: ValidatedRole[] = [];
+    const seenRoles = new Set<string>();
     for (const r of draft.roles) {
       if (roles.length >= MAX_ROLES_PER_FIELD) break;
+      const rKeys = identityKeys(r.ref, r.title);
+      if (rKeys.some((k) => seenRoles.has(k))) continue;
       if (citedActiveCardIds(r.why, profile).length === 0) {
         dropped.rolesUncited += 1;
         continue;
@@ -372,17 +392,18 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
         dropped.rolesUnsourced += 1;
         continue;
       }
+      for (const k of rKeys) seenRoles.add(k);
       roles.push({
-        ref: r.ref?.trim() === "" ? null : r.ref,
+        ref: trimmedRef(r.ref),
         title: r.title.trim(),
         companies: r.companies.map((c) => c.trim()).filter((c) => c !== ""),
         why: r.why.trim(),
         sources: rs.kept,
       });
     }
-    seen.add(fieldKey(draft.ref, draft.name));
+    for (const k of keys) seen.add(k);
     fields.push({
-      ref: draft.ref?.trim() === "" ? null : draft.ref,
+      ref: trimmedRef(draft.ref),
       name: draft.name.trim(),
       move: draft.move,
       fit: draft.fit.trim(),
@@ -405,7 +426,7 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
 
 function findExistingField(profile: Profile, f: ValidatedField): Field | undefined {
   if (f.ref !== null) {
-    const byRef = profile.fields.find((x) => x.extra[REF_KEY] === f.ref);
+    const byRef = profile.fields.find((x) => x.extra[REF_KEY]?.trim() === f.ref);
     if (byRef !== undefined) return byRef;
   }
   const name = f.name.toLowerCase();
@@ -415,7 +436,7 @@ function findExistingField(profile: Profile, f: ValidatedField): Field | undefin
 function findExistingRole(profile: Profile, fieldId: string, r: ValidatedRole): Role | undefined {
   const inField = profile.roles.filter((x) => x.fieldId === fieldId);
   if (r.ref !== null) {
-    const byRef = inField.find((x) => x.extra[REF_KEY] === r.ref);
+    const byRef = inField.find((x) => x.extra[REF_KEY]?.trim() === r.ref);
     if (byRef !== undefined) return byRef;
   }
   const title = r.title.toLowerCase();

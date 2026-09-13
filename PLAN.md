@@ -130,16 +130,18 @@ removed.
 **Gate 1 run (2026-09-12).** `pnpm test` (199), `pnpm lint`, `pnpm typecheck`
 and `pnpm build` all pass. `/code-review` at medium over `main...phase-1`
 returned four confirmed correctness findings, all in the apply-back paths, all
-open: `cards.ts:430` (a draft card rejected by `normalizeDrafts` silently
+since fixed with one regression test each: `cards.ts:430` (a draft card rejected by `normalizeDrafts` silently
 excludes the user's existing card), `cards.ts:404` (case-sensitive card-id
 match duplicates *and* excludes a card when the model returns `c3`),
 `discover.ts:443` (dedupe by ref-or-name vs. apply by ref-then-name collapses
 two same-named fields and reports a stale id), `discover.ts:385` (refs stored
 untrimmed in `extra.Ref` but compared trimmed, so `" CF12 "` fails to match on
-a later run). They are profile-corruption bugs, not prompt-quality bugs; fix
-them before the 2.1/2.4 UI writes to the same paths. Still outstanding: the
-user's own trial run of `pnpm try:cards` / `pnpm try:discover` on a real
-resume.
+a later run). They were profile-corruption bugs, not prompt-quality bugs, and
+were fixed before the 2.1/2.4 UI starts writing to the same paths. Validation
+now dedupes on the same ref-then-name keys `findExistingField` /
+`findExistingRole` match on, so a dedupe key and a match key can no longer
+disagree (§7.30). Still outstanding: the user's own trial run of
+`pnpm try:cards` / `pnpm try:discover` on a real resume.
 
 Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resume.
 
@@ -523,3 +525,15 @@ square of how long it runs. Brief accordingly.
     that cite no active card or carry no non-blocked source are dropped and
     counted, never silently kept. Measured cost: ~$0.50 and ~3 minutes per
     profile at `high` effort, roughly half of it the cached catalogue block.
+
+    **An identity key is one thing.** Whatever key an apply-back path dedupes
+    on must be the key it matches existing rows on, or two drafts survive
+    validation and then collapse onto one profile row (Gate 1 finding).
+    `identityKeys()` in `discover.ts` is the single owner of that key for
+    fields and roles — ref first, then lowercased name, matching
+    `findExistingField` / `findExistingRole`; `cardKey()` in `cards.ts` is the
+    equivalent for card ids and is case-insensitive, so a model answering `c3`
+    revises `C3` rather than both duplicating and excluding it. Refs are
+    stored trimmed and compared trimmed on both sides. A draft that
+    normalization *rejects* is a malformed answer, never a decision to
+    exclude the card it addressed.

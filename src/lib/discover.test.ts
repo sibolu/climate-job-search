@@ -260,6 +260,54 @@ describe("profile writes", () => {
     expect(applied.fields[1]!.extra[REF_KEY]).toBeUndefined();
   });
 
+  it("dedupes on the same key it matches on: one name, two refs", () => {
+    const profile = fixture("videographer");
+    const base = output().fields[0]!;
+    const cited = base.roles[0]!;
+    const v = validateOutput(
+      {
+        fields: [
+          { ...base, roles: [cited, { ...cited, ref: "role-b" }] },
+          { ...base, ref: "ag-nonprofits-2" },
+        ],
+      },
+      profile,
+    );
+    expect(v.fields).toHaveLength(1);
+    expect(v.dropped.fieldsSurplus).toBe(1);
+    expect(v.fields[0]!.roles).toHaveLength(1);
+
+    const applied = applyDiscovery(profile, v.fields);
+    expect(applied.fields).toHaveLength(1);
+    expect(applied.roles).toHaveLength(1);
+    expect(applied.profile.fields).toHaveLength(1);
+    expect(applied.profile.roles).toHaveLength(1);
+  });
+
+  it("stores refs trimmed so a field and its roles match themselves next run", () => {
+    const profile = fixture("videographer");
+    const base = output().fields[0]!;
+    const cited = base.roles[0]!;
+    const v = validateOutput(
+      {
+        fields: [{ ...base, ref: "  ag-nonprofits  ", roles: [{ ...cited, ref: "  role-a  " }] }],
+      },
+      profile,
+    );
+    expect(v.fields[0]!.ref).toBe("ag-nonprofits");
+    expect(v.fields[0]!.roles[0]!.ref).toBe("role-a");
+
+    const first = applyDiscovery(profile, v.fields);
+    expect(first.profile.fields[0]!.extra[REF_KEY]).toBe("ag-nonprofits");
+    expect(first.profile.roles[0]!.extra[REF_KEY]).toBe("role-a");
+
+    const again = applyDiscovery(first.profile, v.fields);
+    expect(again.profile.fields).toHaveLength(1);
+    expect(again.profile.roles).toHaveLength(1);
+    expect(again.fields[0]!.id).toBe("F1");
+    expect(again.roles[0]!.id).toBe("R1");
+  });
+
   it("refuses a profile without active cards", async () => {
     await expect(
       discoverFields({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]), reference, tools: [] }),

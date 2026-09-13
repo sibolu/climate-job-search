@@ -362,6 +362,46 @@ describe("reviseCards", () => {
     expect(profile.cards.find((c) => c.id === "C4")?.title).toBe("Invented collision");
   });
 
+  it("keeps a card whose revision draft was rejected as malformed", async () => {
+    const before = await seeded();
+    const { profile } = await reviseCards(
+      fakeLlm([
+        {
+          cards: [
+            { ...draft(1), id: "C1" },
+            { ...draft(2), id: "C2", results: "" },
+            { ...draft(3), id: "C3" },
+          ],
+          inferredSkills: [],
+        },
+      ]),
+      { sessionId: SESSION_ID, profile: before, instruction: "reword C2" },
+    );
+    const c2 = profile.cards.find((c) => c.id === "C2");
+    expect(c2?.excluded).toBe(false);
+    expect(c2?.title).toBe("Role 2");
+  });
+
+  it("matches a card ID case-insensitively rather than duplicating it", async () => {
+    const before = await seeded();
+    const { profile } = await reviseCards(
+      fakeLlm([
+        {
+          cards: [
+            { ...draft(1), id: "c1", title: "Lowercased ID" },
+            { ...draft(2), id: "C2" },
+            { ...draft(3), id: "C3" },
+          ],
+          inferredSkills: [],
+        },
+      ]),
+      { sessionId: SESSION_ID, profile: before, instruction: "tighten C1" },
+    );
+    expect(profile.cards.map((c) => c.id)).toEqual(["C1", "C2", "C3"]);
+    expect(profile.cards.find((c) => c.id === "C1")?.title).toBe("Lowercased ID");
+    expect(profile.cards.every((c) => !c.excluded)).toBe(true);
+  });
+
   it("leaves the profile untouched when nothing usable comes back", async () => {
     const before = await seeded();
     const { profile } = await reviseCards(
