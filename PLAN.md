@@ -153,7 +153,7 @@ Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resu
 | 2.2 `[DONE]` | `explore.ts`: field drill-down → titles, companies, example posts (reference collection first, then web), day-to-day description, LinkedIn guidance links built from keywords | Fable | ∥ | Output cites URLs; blocked domains never fetched (assert on usage log) |
 | 2.3 `[DONE]` | `queries.ts`: keyword and boolean queries per board with alert steps; **revise** function that takes query feedback (good/bad + why) and returns updated queries, field status changes, and profile edits with a one-paragraph explanation | Fable | ∥ | Scripted feedback "bad fit: all roles need PE license" removes or narrows those queries and says why |
 | 2.4 `[DONE]` | Fields and Queries tabs: field board with accept/reject/unsure and explore; query cards with copy, alert steps, "Tried it" feedback that posts a feedback turn and updates the Queries section of the profile | Opus | after 2.1 | Feedback on a query changes the profile text and triggers a revision turn |
-| 2.5 `[TODO]` | Integration: wire 1.x and 2.x into route handlers and the page; end-to-end run on a Vercel preview deploy; fix seams | Orchestrator (Fable) | after all | Full loop on the builder's own resume, on a preview URL |
+| 2.5 `[DONE]` | Integration: wire 1.x and 2.x into route handlers and the page; end-to-end run on a Vercel preview deploy; fix seams | Orchestrator (Fable) | after all | Full loop on the builder's own resume, on a preview URL |
 
 **Phase 2 status (2026-09-12).** 2.1–2.4 ran as four worktree workers (2.1
 and 2.4 Opus, 2.2 and 2.3 Fable) and were merged into `phase-2`; 2.5 wired
@@ -168,6 +168,26 @@ Vercel preview deploy needs a linked project and is the user's step.
 Gate 2: `/code-review` high and `/security-review` on Opus workers (§4) — passcode, input handling,
 RLS, no user content reaching Supabase). User does one full run including two
 real job-board searches and files feedback as issues.
+
+**2.5 end-to-end run (2026-09-12, local `next start`, not a preview URL —
+no Vercel CLI or linked project on this machine).** A driver that uses the
+browser's own modules (`nextStep`, `buildTurnRequest`, `decodeTurnEvents`,
+`applyTurnResponse`, `applyQueryFeedback`) ran the videographer fixture
+resume through `POST /api/turn` behind the passcode cookie: cards (22s,
+$0.04, 4 cards, 3 of 5 preferences inferred) → two elicitation pill clicks
+(0s, no model call) → discover (167s, $0.54, 6 fields, 17 roles) → explore
+F1 (102s, $0.27, +4 roles, day-to-day and keywords on the field) → accept
+F1 locally → queries (79s, $0.06, 12 queries over four boards) → "bad fit"
+feedback on Q1 (33s, $0.08, Q1 marked bad with the reason, 3 queries added,
+explanation quoting the reason). ~6.7 minutes and $1.00 for the loop; 14
+chat messages; profile.md 29KB with zero parse warnings, no blocked hosts,
+and one usage row per call with no content. The server log had nothing but
+the startup lines. Every step's `deltas` count matched its heartbeats plus
+progress lines, so the stream stayed alive through the 167s discovery.
+Seams found and fixed before this run: none in the modules; the only
+failures were in the driver's cookie parsing. Not exercised: the React
+components in a browser (2.1 and 2.4 had no browser run either) — that is
+the user's Gate 2 run.
 
 ### Phase 3 — Evaluation and pilot readiness (3.1 ∥ 3.2 ∥ 3.3, then 3.4)
 
