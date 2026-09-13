@@ -80,3 +80,273 @@ button {
   margin-top: 1rem;
   padding: 0.55rem 1.1rem;
 }
+
+/* ---------------------------------------------------------------------------
+   Workspace (Phase 2.1): chat on the left, Profile / Fields / Queries panel
+   on the right. Plain CSS, no UI library; desktop-first, usable when narrow.
+   --------------------------------------------------------------------------- */
+
+.workspace-main {
+  max-width: none;
+  padding: 0;
+}
+
+.workspace {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: 2fr 1fr;
+  background: var(--border);
+  height: 100dvh;
+}
+
+.workspace-loading {
+  padding: 2rem;
+}
+
+.chat,
+.panel {
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.chat-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.bubble {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  max-width: 46rem;
+  padding: 0.6rem 0.8rem;
+}
+
+.bubble-user {
+  border-color: var(--accent);
+}
+
+.bubble-error {
+  border-color: #b4432f;
+}
+
+.bubble-role {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.bubble-text {
+  white-space: pre-wrap;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.pill,
+.secondary,
+.tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  margin-top: 0;
+  padding: 0.3rem 0.7rem;
+}
+
+.pill:hover:enabled,
+.secondary:hover:enabled,
+.tab:hover {
+  border-color: var(--accent);
+}
+
+.composer {
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.75rem 1.25rem 1rem;
+}
+
+.composer textarea,
+.paste-box {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.composer button {
+  align-self: flex-end;
+  margin-top: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tabs {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+}
+
+.tab-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.panel-section {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+.panel-section:last-child {
+  border-bottom: 0;
+}
+
+.panel-section h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.panel-section h4 {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.9rem 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.warnings {
+  color: #b4432f;
+  font-size: 0.875rem;
+}
+
+.card-list,
+.skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.card-excluded {
+  opacity: 0.55;
+}
+
+.card-head {
+  align-items: start;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.sar {
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
+}
+
+.sar dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.sar dd {
+  margin: 0 0 0.4rem;
+}
+
+.skill-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  font-size: 0.875rem;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.skill-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.profile-md {
+  margin-top: 1rem;
+}
+
+.profile-md pre {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.6rem;
+  white-space: pre-wrap;
+}
+
+.sr-only {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
