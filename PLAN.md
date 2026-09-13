@@ -125,7 +125,21 @@ the `profile.md` schema (the one design decision worth a human look).
 **Phase 1 status (2026-09-12).** The first session ran out mid-phase (§7.28)
 leaving 1.1 and 1.2 in orphaned worktrees; the second session salvaged them,
 ran 1.3 and 1.4, and committed all four steps on `phase-1`. The worktrees are
-removed. Gate 1 has not been run.
+removed.
+
+**Gate 1 run (2026-09-12).** `pnpm test` (199), `pnpm lint`, `pnpm typecheck`
+and `pnpm build` all pass. `/code-review` at medium over `main...phase-1`
+returned four confirmed correctness findings, all in the apply-back paths, all
+open: `cards.ts:430` (a draft card rejected by `normalizeDrafts` silently
+excludes the user's existing card), `cards.ts:404` (case-sensitive card-id
+match duplicates *and* excludes a card when the model returns `c3`),
+`discover.ts:443` (dedupe by ref-or-name vs. apply by ref-then-name collapses
+two same-named fields and reports a stale id), `discover.ts:385` (refs stored
+untrimmed in `extra.Ref` but compared trimmed, so `" CF12 "` fails to match on
+a later run). They are profile-corruption bugs, not prompt-quality bugs; fix
+them before the 2.1/2.4 UI writes to the same paths. Still outstanding: the
+user's own trial run of `pnpm try:cards` / `pnpm try:discover` on a real
+resume.
 
 Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resume.
 
