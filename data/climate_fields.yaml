@@ -40,4 +40,565 @@
 #   * NOT A JOB INDEX. This is a small, hand-curated set that explains fields
 #     and roles. It never powers job search (PRD hard constraint).
 
-[]
+- id: building-electrification-and-heat-pumps
+  name: Building electrification and heat pumps
+  sector_group: built environment/transport/industry
+  description: Building electrification replaces gas furnaces, boilers, and water heaters with
+    electric heat pumps and induction equipment in homes and commercial buildings. The work spans
+    manufacturing efficient heat pump hardware, installing and servicing systems in the field, and
+    building the software, financing, and partner programs that make switching affordable for
+    owners. It also includes utility and contractor programs that recruit and train the installer
+    workforce needed to scale adoption.
+  climate_link: Heating and cooling buildings is one of the largest sources of direct fossil-fuel
+    combustion, so replacing combustion equipment with electric heat pumps run on an increasingly
+    clean grid is one of the fastest available ways to cut building-sector emissions.
+  transferable_functions:
+    - marketing
+    - sales
+    - product
+    - project-management
+    - field-technician
+  sources:
+    - https://www.raponline.org/blog/getting-the-job-done-insights-on-developing-the-heat-pump-workforce/
+    - https://www.greencareershub.com/find-your-green-role/job-profiles/heat-pump-installer/
+    - https://residentialcareerhub.org/for-trainees/HVAC-heat-pumps/
+- id: green-building-design-and-retrofits
+  name: Green building design and retrofits
+  sector_group: built environment/transport/industry
+  description: "This field covers designing new buildings and retrofitting existing ones to use
+    dramatically less energy: high-performance envelopes, efficient HVAC and lighting, LEED and
+    similar certifications, and the financing and program-management work that gets retrofit
+    projects built at scale. It spans architecture and engineering firms, nonprofits coordinating
+    city-wide retrofit programs, and companies that sell efficiency and electrification services
+    directly to building owners."
+  climate_link: Buildings account for roughly a third of global energy-related emissions, and most
+    buildings standing today will still exist in 2050, so improving the efficiency of the existing
+    building stock and designing new buildings to use far less energy is essential to meeting
+    climate targets.
+  transferable_functions:
+    - design
+    - operations
+    - sales
+    - project-management
+    - people
+  sources:
+    - https://www.usgbc.org/professionals/career-development
+    - https://www.bls.gov/green/construction/
+    - https://greenbuildingscareermap.org/
+- id: electric-vehicles
+  name: Electric vehicles
+  sector_group: built environment/transport/industry
+  description: This field covers designing, manufacturing, and selling battery-electric and other
+    zero-emission vehicles, from passenger cars to commercial trucks. Work ranges from powertrain
+    and manufacturing engineering on the factory floor to the sales, supply-chain, and go-to-market
+    roles that get vehicles in front of fleet and retail buyers.
+  climate_link: Transportation is a leading source of greenhouse gas emissions in most developed
+    economies, and replacing combustion-engine vehicles with electric ones powered by an
+    increasingly clean grid is one of the largest available emissions-reduction levers in the
+    sector.
+  transferable_functions:
+    - engineering
+    - sales
+    - supply-chain
+    - marketing
+    - operations
+  sources:
+    - https://www.bls.gov/green/electric_vehicles/
+    - https://www.wri.org/insights/trends-electric-vehicle-workforce-us
+    - https://ev.careers/Electric-Vehicle-Jobs-Guide
+- id: ev-charging-infrastructure
+  name: EV charging infrastructure
+  sector_group: built environment/transport/industry
+  description: "Building out the public and fleet EV charging network: manufacturing charging
+    hardware, selecting and installing sites, and building the software that manages charging
+    sessions, payments, and grid load. Includes electricians who install and service chargers,
+    business development teams who sign up site hosts and fleet customers, and support staff who
+    keep chargers running."
+  climate_link: Reliable, convenient charging access is a prerequisite for EV adoption; without enough
+    fast, workplace, and home charging, drivers and fleets will not switch away from gasoline
+    vehicles, so charging infrastructure buildout directly gates transportation decarbonization.
+  transferable_functions:
+    - business-development
+    - field-technician
+    - customer-success
+    - sales
+    - operations
+  sources:
+    - https://www.nyserda.ny.gov/All-Programs/Clean-Energy-Workforce-Development-and-Training/Energize-Your-Future/Careers-in-Electric-Vehicles-and-Charging
+    - https://tradecolleges.org/blog/trade-programs/ev-charging-infrastructure-installer-careers
+    - https://ev.careers/jobs/ev-charging-infrastructure
+- id: battery-manufacturing-and-recycling
+  name: Battery manufacturing and recycling
+  sector_group: built environment/transport/industry
+  description: Manufacturing lithium-ion and next-generation battery cells at gigafactory scale, and
+    recovering critical minerals from end-of-life batteries and manufacturing scrap through
+    recycling. Covers production and process engineering on the factory floor, the
+    business-development work that secures feedstock and offtake agreements, and the supply-chain
+    planning that keeps a plant running.
+  climate_link: Batteries are the enabling technology for electric vehicles and grid storage; scaling
+    their manufacturing while building a domestic recycling loop reduces the mining footprint of the
+    energy transition and secures the mineral supply that clean-energy growth depends on.
+  transferable_functions:
+    - engineering
+    - business-development
+    - supply-chain
+    - operations
+    - project-management
+  sources:
+    - https://automateamerica.com/blog/battery-ev-manufacturing-automation-careers-in-2026
+    - https://www.energy.gov/cmei/manufacturing/battery-manufacturing-and-recycling-grants
+    - https://www.mckinsey.com/capabilities/operations/our-insights/batteries-included-building-and-operating-sustainable-gigafactories
+- id: public-transit-and-micromobility
+  name: Public transit and micromobility
+  sector_group: built environment/transport/industry
+  description: Operating and maintaining shared electric bikes, scooters, and buses, and the software
+    and city-partnerships work that integrates them with public transit. Includes field operations
+    staff who deploy and repair fleets, and the finance, engineering, and community teams that run a
+    shared-mobility company or transit agency program.
+  climate_link: Shifting short urban trips from single-occupancy cars to shared electric micromobility
+    and public transit cuts per-trip emissions and congestion, and electrifying bus fleets removes a
+    major source of urban tailpipe pollution.
+  transferable_functions:
+    - operations
+    - field-technician
+    - finance
+    - engineering
+    - policy
+  sources:
+    - https://www.transportation.gov/sites/dot.gov/files/2025-01/Shared%20Micromobility%20&%20Microtransit.pdf
+    - https://nabsa.net/2025/08/14/jobs/
+- id: sustainable-aviation-and-shipping
+  name: Sustainable aviation and shipping
+  sector_group: built environment/transport/industry
+  description: Producing lower-carbon fuels, including sustainable aviation fuel made from waste,
+    hydrogen, or captured carbon, and alternative marine fuels, plus the engineering work to run
+    production plants and the commercial work to sell fuel into long-term offtake contracts with
+    airlines and shipping lines.
+  climate_link: Aviation and shipping are hard to electrify because they need energy-dense fuels, so
+    switching them to lower-carbon synthetic or bio-based fuels is one of the few near-term
+    decarbonization paths for sectors that together account for a significant share of global
+    transport emissions.
+  transferable_functions:
+    - marketing
+    - engineering
+    - field-technician
+    - research
+    - operations
+  sources:
+    - https://www.iata.org/en/iata-repository/pressroom/fact-sheets/fact-sheet-sustainable-aviation-fuels/
+    - https://rhg.com/research/sustainable-aviation-fuel-workforce-development/
+    - https://atag.org/industry-topics/sustainable-aviation-fuel
+- id: industrial-decarbonization-steel-cement
+  name: Industrial decarbonization (steel and cement)
+  sector_group: built environment/transport/industry
+  description: "Developing and scaling low-carbon ways to make steel and cement: hydrogen-based direct
+    reduction of iron, electrolytic and molten-oxide processes for metal, and lower-carbon cement
+    chemistries, to replace coal-fired blast furnaces and traditional kilns. Work spans process and
+    plant engineering, pilot-plant operations, and the project-management work to build
+    first-of-a-kind commercial facilities."
+  climate_link: Steel and cement production together account for a large share of global CO2 emissions
+    and are among the hardest industrial sectors to decarbonize because of the high heat and
+    chemical reactions the processes require, so commercializing low-carbon production routes is
+    essential to reaching net zero.
+  transferable_functions:
+    - engineering
+    - research
+    - project-management
+    - operations
+  sources:
+    - https://www.cas.org/resources/cas-insights/industrial-decarbonization
+    - https://e360.yale.edu/features/can-the-worlds-most-polluting-heavy-industries-decarbonize
+    - https://www.mdpi.com/2227-9717/14/10/1529
+- id: carbon-capture-and-removal
+  name: Carbon capture and removal
+  sector_group: built environment/transport/industry
+  description: Capturing CO2 directly from the air or from industrial exhaust and permanently storing
+    it or converting it into products, using solid-sorbent, liquid-solvent, or mineralization
+    technologies. Work spans plant and process engineering, the commercial teams that sell
+    carbon-removal credits to corporate buyers, and the finance and project-development work that
+    gets first commercial facilities built.
+  climate_link: Most net-zero pathways assume some CO2 already in the atmosphere must be removed,
+    particularly to offset hard-to-abate sectors, so direct air capture and carbon capture and
+    storage are leading technology pathways for that removal alongside emissions cuts.
+  transferable_functions:
+    - engineering
+    - business-development
+    - project-management
+    - finance
+  sources:
+    - https://rhg.com/research/direct-air-capture-workforce-development/
+    - https://netl.doe.gov/business/rwfi/CCUSworkforce
+    - https://climeworks.com/press-release/expanding-our-us-team
+- id: circular-economy-and-waste
+  name: Circular economy and waste
+  sector_group: built environment/transport/industry
+  description: Recovering materials such as metals, plastics, electronics, and organics from waste
+    streams instead of landfilling them, through recycling plants, AI-powered sorting, and
+    producer-responsibility programs. Covers plant operations roles, R&D on new separation and
+    recovery technology, and the sales and policy work that builds markets for recovered materials.
+  climate_link: Manufacturing new materials from virgin resources is energy- and emissions-intensive,
+    so recovering and reusing materials that already exist cuts the mining, processing, and
+    landfill-methane emissions associated with a linear take-make-waste economy.
+  transferable_functions:
+    - operations
+    - research
+    - sales
+    - supply-chain
+    - policy
+  sources:
+    - https://blog.theinterviewguys.com/circular-economy-jobs/
+    - https://eit-campus.eu/blog/career-trends-in-circular-economy
+    - https://circularservices.com/careers/
+- id: utility-scale-solar
+  name: Utility-scale solar
+  sector_group: energy/grid/storage
+  description: Utility-scale solar covers the development, construction, and operation of large
+    ground-mount photovoltaic power plants that sell electricity into the grid rather than serving a
+    single building. Work spans land acquisition and permitting, interconnection studies,
+    engineering and procurement, field construction, and long-term asset performance monitoring.
+    Firms range from independent power producers and developers to EPC contractors and asset owners.
+  climate_link: Utility-scale solar is the lowest-cost new source of grid electricity in most of the
+    US and is central to displacing fossil generation at scale; the sector needs roughly
+    50,000-100,000 more qualified workers through 2030 to meet its construction pipeline.
+  transferable_functions:
+    - business-development
+    - project-management
+    - engineering
+    - field-technician
+  sources:
+    - https://irecusa.org/census-solar-job-trends/
+    - https://skillit.com/blog/solar-jobs-hiring-now-what-utility-scale-contractors-are-looking-for-in-2026
+- id: distributed-solar
+  name: Distributed and rooftop solar
+  sector_group: energy/grid/storage
+  description: "Distributed solar is smaller-scale photovoltaic generation sited close to where power
+    is used: residential rooftops, commercial and community solar projects, often paired with
+    behind-the-meter batteries. Companies design, sell, permit, install, finance, and service these
+    systems, and increasingly bundle them with storage and demand-flexibility products."
+  climate_link: Distributed solar cuts household and small-business emissions directly and builds the
+    base of flexible, behind-the-meter capacity that virtual power plants later aggregate for grid
+    services.
+  transferable_functions:
+    - sales
+    - operations
+    - finance
+    - field-technician
+  sources:
+    - https://seia.org/industry-careers/
+    - https://www.surgepv.com/hub/solar-careers/overview
+- id: onshore-wind
+  name: Onshore wind
+  sector_group: energy/grid/storage
+  description: Onshore wind covers development, construction, and operations of land-based wind farms,
+    from siting and permitting through turbine installation and multi-year operations and
+    maintenance. Roles span turbine service technicians, performance and availability engineers, and
+    project developers who negotiate land leases and interconnection.
+  climate_link: Onshore wind remains one of the cheapest sources of new grid capacity and still
+    employs over 130,000 people in the US, though growth has slowed under recent policy and
+    supply-chain pressure.
+  transferable_functions:
+    - engineering
+    - field-technician
+    - business-development
+  sources:
+    - https://weatherguardwind.com/wind-turbine-technician-jobs-2026-outlook/
+    - https://windexchange.energy.gov/education-workforce
+- id: offshore-wind
+  name: Offshore wind
+  sector_group: energy/grid/storage
+  description: Offshore wind develops and operates large turbine arrays sited in ocean waters,
+    requiring specialized vessels, marine logistics, and technicians trained to work at height over
+    water. Roles include turbine technicians, operations and maintenance leads, marine coordinators,
+    and engineers who support foundation, cabling, and turbine reliability work.
+  climate_link: Offshore wind can deliver large, steady blocks of carbon-free power close to dense
+    coastal load centers, but US project timelines have slowed amid permitting and financing
+    uncertainty even as global capacity keeps growing.
+  transferable_functions:
+    - engineering
+    - operations
+    - field-technician
+  sources:
+    - https://us.orsted.com/our-impact/workforce-development-and-jobs
+    - https://www.nyserda.ny.gov/All-Programs/Offshore-Wind/Focus-Areas/Supply-Chain-Economic-Development/Workforce-Development/Job-Opportunities-in-Offshore-Wind
+- id: grid-scale-storage
+  name: Grid-scale energy storage
+  sector_group: energy/grid/storage
+  description: Grid-scale storage builds and operates large battery installations (typically lithium
+    iron phosphate today) that store electricity and dispatch it back to the grid to balance supply
+    and demand. Work covers dispatch software and optimization, battery management systems, field
+    commissioning, and ongoing service and maintenance of installed fleets.
+  climate_link: Storage lets the grid absorb more variable solar and wind by shifting that power to
+    when it's needed, directly enabling higher renewable penetration; developers plan roughly 24 GW
+    of new US utility-scale storage in 2026 alone.
+  transferable_functions:
+    - software
+    - product
+    - operations
+  sources:
+    - https://ev.careers/grid-scale-battery-recruitment
+    - https://fluenceenergy.com/energy-storage-careers/
+- id: transmission-and-grid-modernization
+  name: Transmission and grid modernization
+  sector_group: energy/grid/storage
+  description: "This field covers upgrading and expanding the high-voltage transmission network and
+    the software that runs it: new lines and substations, protection and control systems, and
+    digital tools for monitoring, dispatch, and interconnection of new generation. Employers include
+    utilities, grid-technology vendors, and engineering/construction firms."
+  climate_link: Clean power is stranded without transmission capacity to move it and software to
+    manage a more complex, decentralized grid; US utility capital spending on grid modernization is
+    projected to reach $227.8 billion in 2026.
+  transferable_functions:
+    - software
+    - engineering
+    - operations
+  sources:
+    - https://www.iea.org/reports/building-the-future-transmission-grid/executive-summary
+    - https://transearchusa.com/power-grid-workforce-development-2026-guide/
+- id: distributed-energy-resources-and-vpp
+  name: Distributed energy resources and virtual power plants
+  sector_group: energy/grid/storage
+  description: This field aggregates many small, customer-sited devices — rooftop solar-plus-battery,
+    EV chargers, smart thermostats, water heaters — into a coordinated "virtual power plant" that a
+    utility or grid operator can call on like a traditional plant. Work includes enrolling and
+    onboarding device owners, building the software that dispatches devices, and managing utility
+    and market relationships.
+  climate_link: VPPs relieve peak demand and defer new fossil "peaker" plants and grid buildout by
+    using flexibility that already exists in homes and businesses; regulators in at least ten states
+    expanded VPP programs in 2025-2026.
+  transferable_functions:
+    - business-development
+    - customer-success
+    - software
+    - operations
+  sources:
+    - https://www.utilitydive.com/news/in-2026-virtual-power-plants-must-scale-or-risk-being-left-behind/810321/
+    - https://www.energy.gov/edf/virtual-power-plants-projects
+- id: geothermal
+  name: Geothermal energy
+  sector_group: energy/grid/storage
+  description: Geothermal draws heat from underground rock to generate electricity or provide heating
+    and cooling. A wave of "enhanced geothermal system" (EGS) startups is applying oil-and-gas-style
+    horizontal drilling to reach useful heat far outside traditional volcanic regions, alongside
+    established hydrothermal plant operators.
+  climate_link: Geothermal offers firm, always-on carbon-free power that can complement variable solar
+    and wind; next-generation EGS approaches have drawn over $1.5 billion in private investment
+    since 2021 by making geothermal viable in far more locations.
+  transferable_functions:
+    - engineering
+    - research
+    - field-technician
+  sources:
+    - https://www.geothermal.org/resources/job-board
+    - https://openei.org/wiki/GeoBridge/Work_in_Geothermal
+- id: green-hydrogen
+  name: Green hydrogen
+  sector_group: energy/grid/storage
+  description: Green hydrogen is produced by splitting water with renewable electricity (electrolysis)
+    instead of from natural gas, for use as an industrial feedstock, fuel, or long-duration energy
+    storage. Work spans electrolyzer and fuel-cell engineering, plant operations, and project
+    development for production and delivery infrastructure.
+  climate_link: Green hydrogen can decarbonize heavy industry and transport uses that are hard to
+    electrify directly, though it still makes up under 1% of global hydrogen production and faces
+    real workforce shortages as projects scale.
+  transferable_functions:
+    - engineering
+    - project-management
+    - field-technician
+  sources:
+    - https://irp.cdn-website.com/7f2e400a/files/uploaded/DRAFT-H4D-+Employment+and+Skills+in+the+Green+Hydrogen+Economy.pdf
+    - https://www.energy.gov/eere/fuelcells/careers-hydrogen-and-fuel-cells
+- id: energy-efficiency-and-demand-response
+  name: Energy efficiency and demand response
+  sector_group: energy/grid/storage
+  description: "This field reduces and reshapes electricity use rather than adding generation:
+    building energy audits, retrofits (insulation, HVAC and heat-pump upgrades), and demand-response
+    programs that pay customers to shift or cut usage at peak times. Work ranges from field retrofit
+    delivery to the data analysis and finance that underwrite these programs."
+  climate_link: Efficiency and demand response are consistently the cheapest way to cut emissions and
+    peak grid strain, and the sector already supports about 2.4 million US jobs, growing faster than
+    the economy overall.
+  transferable_functions:
+    - data
+    - finance
+    - project-management
+    - engineering
+  sources:
+    - https://www.eesi.org/papers/view/fact-sheet-climate-jobs-2026
+    - https://ablemkr.com/2026-energy-employment-trends-study-summary/
+- id: regenerative-agriculture-and-agtech
+  name: Regenerative agriculture and agtech
+  sector_group: nature/food/finance/policy/software
+  description: "This field covers farming practices and the technology that supports them: cover
+    cropping, reduced tillage, and rotational grazing that rebuild soil health, alongside the
+    software, sensors, and satellite analytics that measure and verify those practices at scale.
+    Companies in the space run soil-carbon programs that pay farmers for verified sequestration,
+    sell biological or precision-agriculture inputs, and build marketplaces connecting regenerative
+    growers to buyers."
+  climate_link: Healthier soils sequester atmospheric carbon and cut the synthetic fertilizer use that
+    drives nitrous oxide emissions, while more resilient farming systems reduce food-system
+    vulnerability to drought and heat.
+  transferable_functions:
+    - data
+    - sales
+    - marketing
+    - business-development
+    - customer-success
+  sources:
+    - https://www.indigoag.com/careers
+    - https://www.startus-insights.com/innovators-guide/new-regenerative-agriculture-companies/
+- id: alternative-proteins
+  name: Alternative proteins
+  sector_group: nature/food/finance/policy/software
+  description: This field develops plant-based, fermentation-derived, and cultivated (cell-cultured)
+    substitutes for conventional meat, dairy, and eggs. Work spans food science and product
+    development, regulatory affairs to get novel foods approved, and go-to-market roles that get
+    products onto retail and foodservice menus.
+  climate_link: Industrial animal agriculture drives a large share of global greenhouse-gas emissions
+    and land and water use; alternative proteins aim to deliver the same nutrition with a much
+    smaller footprint.
+  transferable_functions:
+    - research
+    - marketing
+    - sales
+    - business-development
+    - operations
+  sources:
+    - https://gfi.org/careers/
+    - https://pathways.gfi.org/
+- id: forestry-and-nature-based-carbon
+  name: Forestry and nature-based carbon
+  sector_group: nature/food/finance/policy/software
+  description: "This field develops and manages forestry-based carbon projects: reforestation,
+    afforestation, and improved forest management on private land, generating carbon credits that
+    are sold into voluntary and compliance markets. It combines field forestry work with GIS-based
+    monitoring, verification, and project finance."
+  climate_link: Forests are one of the largest available carbon sinks; well-run nature-based projects
+    remove and store atmospheric carbon while restoring habitat and rural livelihoods.
+  transferable_functions:
+    - field-technician
+    - project-management
+    - data
+    - finance
+  sources:
+    - https://forestcarbonworks.org/careers/
+    - https://chestnutcarbon.com/careers/
+- id: water-and-climate-adaptation
+  name: Water and climate adaptation
+  sector_group: nature/food/finance/policy/software
+  description: "This field builds the data, planning tools, and infrastructure that help communities,
+    utilities, and governments cope with too much or too little water: flood-risk scoring, drought
+    and water-supply planning, and resilience investment prioritization for aging infrastructure."
+  climate_link: A warming climate is intensifying floods, droughts, and sea-level rise; this field
+    turns climate projections into concrete adaptation decisions for the assets and communities most
+    exposed.
+  transferable_functions:
+    - data
+    - software
+    - product
+    - policy
+  sources:
+    - https://sjfventures.com/a-market-map-of-tech-solutions-for-climate-adaptation-and-resilience/
+    - https://www.rhizomedata.com/careers
+- id: climate-risk-analytics-and-insurance
+  name: Climate risk analytics and insurance
+  sector_group: nature/food/finance/policy/software
+  description: This field quantifies the financial impact of climate-driven hazards -- hurricanes,
+    wildfire, flood, heat -- for insurers, reinsurers, lenders, and asset owners. Work includes
+    building and validating catastrophe models, translating hazard science into pricing and
+    underwriting decisions, and building analytics products for risk managers.
+  climate_link: As physical climate risk grows, accurately pricing and managing it is what keeps
+    insurance and lending markets functional and steers capital away from the most exposed assets.
+  transferable_functions:
+    - data
+    - research
+    - finance
+    - software
+  sources:
+    - https://www.rms.com/careers
+    - https://www.moodys.com/web/en/us/who-we-serve/insurance/catastrophe-modelers.html
+- id: climate-finance-and-impact-investing
+  name: Climate finance and impact investing
+  sector_group: nature/food/finance/policy/software
+  description: "This field allocates capital toward climate mitigation and adaptation: multilateral
+    and blended-finance funds that de-risk clean-energy and resilience projects in emerging markets,
+    and impact-investing firms that back climate-focused companies while tracking financial and
+    environmental returns together."
+  climate_link: Closing the climate-finance gap, especially in emerging markets, determines how fast
+    clean energy, adaptation infrastructure, and nature-based projects can actually get built.
+  transferable_functions:
+    - finance
+    - business-development
+    - operations
+    - policy
+  sources:
+    - https://climatefundmanagers.com/careers-and-internships/
+    - https://www.greenclimate.fund/about/careers
+- id: carbon-accounting-and-esg-software
+  name: Carbon accounting and ESG software
+  sector_group: nature/food/finance/policy/software
+  description: This field builds SaaS platforms that measure a company's Scope 1, 2, and 3 emissions,
+    track progress against reduction targets, and generate the disclosures now required by
+    regulators and investors. Customers range from individual corporations to portfolio-wide
+    reporting for financial institutions.
+  climate_link: Consistent, auditable emissions measurement is the prerequisite for credible corporate
+    decarbonization commitments and for regulators and investors to hold companies to them.
+  transferable_functions:
+    - software
+    - data
+    - sales
+    - customer-success
+    - design
+    - marketing
+  sources:
+    - https://watershed.com/careers
+    - https://www.persefoni.com/company/careers
+- id: climate-policy-and-advocacy
+  name: Climate policy and advocacy
+  sector_group: nature/food/finance/policy/software
+  description: "This field runs campaigns and technical advocacy to shape climate and clean-energy law
+    and regulation at the federal, state, and local level: drafting policy proposals, building
+    coalitions, and organizing constituents to press elected officials and regulators."
+  climate_link: Policy sets the rules -- emissions standards, clean-energy incentives, permitting --
+    that determine how fast the rest of the economy actually decarbonizes.
+  transferable_functions:
+    - policy
+    - communications
+    - marketing
+    - operations
+  sources:
+    - https://www.evergreenaction.com/about/jobs/
+    - https://rmi.org/about/careers/
+- id: climate-communications-and-media
+  name: Climate communications and media
+  sector_group: nature/food/finance/policy/software
+  description: This field produces journalism, data visualization, and video and social content that
+    explain climate science, impacts, and solutions to the public. It spans nonprofit newsrooms,
+    science-communication organizations, and the communications teams of advocacy groups.
+  climate_link: Public understanding and political will for climate action depend on clear, engaging
+    communication of science and solutions that most people never encounter directly.
+  transferable_functions:
+    - communications
+    - video-media
+    - design
+    - marketing
+  sources:
+    - https://grist.org/careers/
+    - https://www.climatecentral.org/what-we-do/jobs
+    - https://coveringclimatenow.org/we-are-hiring/
+- id: environmental-justice-and-community-programs
+  name: Environmental justice and community programs
+  sector_group: nature/food/finance/policy/software
+  description: "This field runs community organizing and program work in frontline communities
+    disproportionately burdened by pollution and climate impacts: door-to-door organizing,
+    environmental-health education, and local campaigns for clean water, air, and green space."
+  climate_link: Climate impacts and the benefits of climate investment are unevenly distributed; this
+    field works to make sure frontline communities are protected and included rather than left
+    behind.
+  transferable_functions:
+    - operations
+    - communications
+    - policy
+    - education
+  sources:
+    - https://cleanwater.org/about/jobs
+    - https://www.ccaej.org/careers

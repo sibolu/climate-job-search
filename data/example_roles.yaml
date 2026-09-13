@@ -35,4 +35,1285 @@
 #   * `field_id` must exist in climate_fields.yaml; the seed refuses to run
 #     otherwise, and the column is a foreign key.
 
-[]
+- id: heat-pump-installer
+  field_id: building-electrification-and-heat-pumps
+  title: Heat Pump Installer
+  function: field-technician
+  day_to_day: Installs, commissions, and services residential and small-commercial heat pump systems,
+    including refrigerant lines, ductwork or ductless heads, and electrical connections. Diagnoses
+    performance issues, explains system operation to building owners, and coordinates with
+    electricians when a panel upgrade is needed.
+  example_companies:
+    - BlocPower
+    - Quilt
+    - local HVAC contractors
+  sources:
+    - https://careers.aanm.org/career/heat-pump-installer
+- id: heat-pump-partner-marketing-manager
+  field_id: building-electrification-and-heat-pumps
+  title: Partner Marketing Manager
+  function: marketing
+  day_to_day: Builds co-marketing programs and materials with contractor, utility, and retail partners
+    to drive demand for heat pump installations. Develops campaign messaging, tracks lead-generation
+    performance, and coordinates launch content across partner channels.
+  example_companies:
+    - Quilt
+  sources:
+    - https://job-boards.greenhouse.io/quilt/jobs/5218031007
+- id: heat-pump-product-manager
+  field_id: building-electrification-and-heat-pumps
+  title: Product Manager
+  function: product
+  day_to_day: Defines the roadmap for heat pump hardware or the software homeowners and installers use
+    to size, quote, and monitor systems. Works with hardware engineering, manufacturing, and
+    customer-facing teams to prioritize features and ship improvements.
+  example_companies:
+    - Quilt
+  sources:
+    - https://job-boards.greenhouse.io/quilt/jobs/5221801007
+- id: heat-pump-regional-partner-sales-manager
+  field_id: building-electrification-and-heat-pumps
+  title: Regional Partner Sales Manager
+  function: sales
+  day_to_day: Recruits and manages a network of contractor and dealer partners across a region,
+    training them to sell and install a company's heat pump systems. Travels to partner sites
+    regularly, forecasts regional pipeline, and resolves channel-partner escalations.
+  example_companies:
+    - Quilt
+  sources:
+    - https://job-boards.greenhouse.io/quilt/jobs/5176246007
+- id: commercial-green-retrofit-architect
+  field_id: green-building-design-and-retrofits
+  title: Commercial Green Retrofit Architect
+  function: design
+  day_to_day: Leads the design of energy-efficiency upgrades for existing commercial buildings, from
+    envelope and window improvements to HVAC replacement, working within LEED or similar
+    certification requirements. Coordinates with structural and mechanical engineers and presents
+    design options and cost trade-offs to building owners.
+  example_companies:
+    - architecture and engineering firms
+  sources:
+    - https://careers.aias.org/career/commercial-green-retrofit-architect
+- id: building-decarbonization-market-operations-lead
+  field_id: green-building-design-and-retrofits
+  title: Market Operations Lead
+  function: operations
+  day_to_day: Runs the commercial operations of a building-electrification program across a market,
+    including contractor logistics, customer scheduling, and program compliance reporting. Works
+    with sales, finance, and installation partners to keep multi-year electrification pipelines on
+    track.
+  example_companies:
+    - BlocPower
+  sources:
+    - https://jobs.lever.co/BlocPower/e26f600b-6498-4c55-8662-bd5e43596c2e
+- id: energy-efficiency-sales-executive
+  field_id: green-building-design-and-retrofits
+  title: Sales Executive, Energy Efficiency
+  function: sales
+  day_to_day: Sells energy-efficiency and retrofit services, such as lighting, HVAC, and
+    building-management-system upgrades, to small and mid-sized businesses. Manages a pipeline of
+    prospects, structures financing or performance-contract terms, and hands off signed deals to
+    project delivery teams.
+  example_companies:
+    - Mantis Innovation
+  sources:
+    - https://jobs.lever.co/mantisinnovation/e1497b56-c636-46cb-b4e1-e32bb63f6fda
+- id: building-decarbonization-people-operations-manager
+  field_id: green-building-design-and-retrofits
+  title: Manager, Human Resources
+  function: people
+  day_to_day: Manages HR operations, including hiring, onboarding, and compliance, for an organization
+    that coordinates building-electrification programs across many contractors and cities. Supports
+    rapid headcount growth in field and program roles as programs scale.
+  example_companies:
+    - Building Decarbonization Coalition
+  sources:
+    - https://boards.greenhouse.io/buildingdecarbonizationcoalition/jobs/4073898007
+- id: ev-powertrain-manufacturing-engineer
+  field_id: electric-vehicles
+  title: Powertrain Manufacturing Engineer
+  function: engineering
+  day_to_day: Develops and validates manufacturing processes for electric drive units, battery packs,
+    or other powertrain components, working from prototype through production ramp. Partners with
+    design engineering to resolve manufacturability issues before a production line goes live.
+  example_companies:
+    - Harbinger Motors
+    - Zoox
+  sources:
+    - https://job-boards.greenhouse.io/harbingermotors/jobs/5231838007
+    - https://jobs.lever.co/zoox/184994f1-84f6-4d0f-b229-07ae1f404491
+- id: ev-sales-specialist
+  field_id: electric-vehicles
+  title: Sales Specialist
+  function: sales
+  day_to_day: Guides prospective buyers through test drives, financing, and trade-in options for
+    electric vehicles, and explains charging and ownership costs compared with a gasoline vehicle.
+    Follows up with leads generated online and works toward a retail location's sales targets.
+  example_companies:
+    - Lucid Motors
+  sources:
+    - https://job-boards.greenhouse.io/lucidmotors/jobs/5220370007
+- id: ev-supply-chain-operations-manager
+  field_id: electric-vehicles
+  title: Supply Chain Operations Manager
+  function: supply-chain
+  day_to_day: Manages sourcing and logistics for EV components such as battery cells, semiconductors,
+    or motors, tracking supplier performance and building resilience against shortages. Coordinates
+    with manufacturing planning to align inbound material flow with production schedules.
+  example_companies:
+    - automakers and EV startups
+  sources:
+    - https://www.wri.org/insights/trends-electric-vehicle-workforce-us
+    - https://ev.careers/Electric-Vehicle-Jobs-Guide
+- id: ev-charging-field-service-electrician
+  field_id: ev-charging-infrastructure
+  title: Electrician, EV Charging Field Service
+  function: field-technician
+  day_to_day: Installs, troubleshoots, and repairs EV charging stations at customer and public sites,
+    following electrical code and manufacturer specifications. Documents service visits and
+    escalates recurring hardware issues back to engineering.
+  example_companies:
+    - Pearce Services
+  sources:
+    - https://job-boards.greenhouse.io/pearceservices/jobs/5169377008
+- id: ev-charging-business-development-manager
+  field_id: ev-charging-infrastructure
+  title: Business Development Manager, Utilities
+  function: business-development
+  day_to_day: Builds relationships with utilities and fleet operators to expand adoption of a
+    smart-charging platform, negotiating pilot and commercial agreements. Represents the company at
+    industry events and feeds market feedback back to product teams.
+  example_companies:
+    - ev.energy
+  sources:
+    - https://jobs.ashbyhq.com/ev.energy/4929018b-ca9d-4e4d-8c7e-5ef26ae2ecb2
+- id: ev-charging-technical-support-specialist
+  field_id: ev-charging-infrastructure
+  title: Technical Support Specialist, EV Charging
+  function: customer-success
+  day_to_day: Answers driver and site-host support requests about charger connectivity, billing, and
+    hardware faults across phone, chat, and email. Walks non-technical customers through
+    troubleshooting steps and logs recurring issues for the hardware team.
+  example_companies:
+    - ChargeLab
+  sources:
+    - https://jobs.lever.co/chargelab-inc/a20f39d0-4632-4ecb-a9bb-1e77002d8f82
+- id: battery-recycling-process-engineer
+  field_id: battery-manufacturing-and-recycling
+  title: Lead Process Engineer, Battery Recycling
+  function: engineering
+  day_to_day: Designs and commissions process equipment for a battery-recycling plant, from early
+    flowsheet decisions through startup. Works with safety and construction teams to hit an
+    aggressive build timeline for a first-of-its-kind facility.
+  example_companies:
+    - Redwood Materials
+  sources:
+    - https://job-boards.greenhouse.io/redwoodmaterials/jobs/5602401004
+- id: battery-recycling-business-development-manager
+  field_id: battery-manufacturing-and-recycling
+  title: Business Development Manager, Consumer Technology
+  function: business-development
+  day_to_day: Builds partnerships with consumer-electronics and device companies to source end-of-life
+    batteries for recycling. Negotiates supply agreements and coordinates logistics handoffs with
+    plant operations.
+  example_companies:
+    - Redwood Materials
+  sources:
+    - https://job-boards.greenhouse.io/redwoodmaterials/jobs/6007938004
+- id: battery-production-control-planner
+  field_id: battery-manufacturing-and-recycling
+  title: Production Control Planner
+  function: supply-chain
+  day_to_day: Plans material flow and production schedules for a battery-materials plant, sitting at
+    the intersection of inbound logistics, supplier quality, and new-product-introduction change
+    management. Balances supply continuity against changing production targets.
+  example_companies:
+    - Redwood Materials
+  sources:
+    - https://job-boards.greenhouse.io/redwoodmaterials/jobs/6118310004
+- id: micromobility-operations-coordinator
+  field_id: public-transit-and-micromobility
+  title: Operations Coordinator
+  function: operations
+  day_to_day: Coordinates day-to-day deployment, rebalancing, and maintenance of a shared e-bike or
+    scooter fleet within a city. Schedules field staff, tracks fleet health metrics, and liaises
+    with city partners on service-level commitments.
+  example_companies:
+    - Lime
+  sources:
+    - https://jobs.ashbyhq.com/lime/2de30dbc-67a2-42f8-a6c5-bb037248f624
+- id: micromobility-fleet-mechanic
+  field_id: public-transit-and-micromobility
+  title: In-Field Mechanic
+  function: field-technician
+  day_to_day: Repairs and maintains shared electric bikes or scooters at street level and in depots,
+    replacing batteries, brakes, and other worn parts. Inspects incoming fleet vehicles and pulls
+    unsafe units from service.
+  example_companies:
+    - Lime
+  sources:
+    - https://jobs.ashbyhq.com/lime/b2a56e63-879c-451f-bf3e-5e1a1c225897
+- id: micromobility-payroll-manager
+  field_id: public-transit-and-micromobility
+  title: Payroll Manager, North America
+  function: finance
+  day_to_day: Runs payroll operations across a shared-mobility company's US and Canadian field and
+    corporate workforce, ensuring accurate and on-time pay across many hourly field locations.
+    Manages compliance with multi-state and provincial payroll rules.
+  example_companies:
+    - Lime
+  sources:
+    - https://jobs.ashbyhq.com/lime/a1c56f3f-4b3b-41ed-9bdd-502bf34bde6b
+- id: saf-product-marketing-manager
+  field_id: sustainable-aviation-and-shipping
+  title: Product Marketing Manager
+  function: marketing
+  day_to_day: Develops positioning and go-to-market materials for a synthetic or sustainable aviation
+    fuel product, working with airline and offtake partners on messaging. Builds sales-enablement
+    content and tracks how the product is perceived against incumbent jet fuel.
+  example_companies:
+    - AIRCO
+  sources:
+    - https://job-boards.greenhouse.io/aircompany/jobs/4732766005
+- id: saf-process-design-engineer
+  field_id: sustainable-aviation-and-shipping
+  title: Lead Engineer, Process Design
+  function: engineering
+  day_to_day: Designs the chemical process for converting captured CO2 and hydrogen into synthetic
+    aviation fuel, developing process flow diagrams and equipment specifications. Works with plant
+    operations to troubleshoot issues discovered during scale-up.
+  example_companies:
+    - AIRCO
+  sources:
+    - https://job-boards.greenhouse.io/aircompany/jobs/4723531005
+- id: saf-process-operator
+  field_id: sustainable-aviation-and-shipping
+  title: Process Operator
+  function: field-technician
+  day_to_day: Runs and monitors production equipment on a synthetic-fuel plant floor, following
+    standard operating procedures and safety protocols. Logs process data, responds to alarms, and
+    coordinates shift handoffs with the next operator.
+  example_companies:
+    - AIRCO
+  sources:
+    - https://job-boards.greenhouse.io/aircompany/jobs/4596283005
+- id: green-steel-plant-engineer
+  field_id: industrial-decarbonization-steel-cement
+  title: Senior Plant Engineer
+  function: engineering
+  day_to_day: Supports design, construction, and commissioning of a first-of-its-kind low-carbon metal
+    production plant, working across mechanical, electrical, and process systems. Troubleshoots
+    equipment issues during startup and documents lessons learned for future plants.
+  example_companies:
+    - Brimstone
+  sources:
+    - https://jobs.ashbyhq.com/brimstone/2ab5ffda-4106-4b86-bf21-8c38ebb19662
+- id: green-steel-pyrometallurgy-lead
+  field_id: industrial-decarbonization-steel-cement
+  title: Head of Pyrometallurgy
+  function: research
+  day_to_day: Leads research and development on high-temperature metal-extraction chemistry for a
+    low-carbon steelmaking process, guiding lab and pilot-scale experiments. Translates lab results
+    into process parameters that plant engineering can design around.
+  example_companies:
+    - Brimstone
+  sources:
+    - https://jobs.ashbyhq.com/brimstone/5e3fb6c7-0a83-402c-9f19-7692e94d2533
+- id: industrial-decarbonization-project-manager
+  field_id: industrial-decarbonization-steel-cement
+  title: Industrial Decarbonization Project Manager
+  function: project-management
+  day_to_day: Manages timelines, budgets, and cross-functional coordination for a
+    first-commercial-scale low-carbon steel or cement facility, tracking engineering, procurement,
+    and construction milestones. Reports risk and schedule status to leadership and outside
+    investors or grant funders.
+  example_companies:
+    - low-carbon steel and cement developers
+  sources:
+    - https://www.cas.org/resources/cas-insights/industrial-decarbonization
+    - https://e360.yale.edu/features/can-the-worlds-most-polluting-heavy-industries-decarbonize
+- id: dac-plant-process-engineer
+  field_id: carbon-capture-and-removal
+  title: Direct Air Capture Process Engineer
+  function: engineering
+  day_to_day: Designs and troubleshoots the sorbent, solvent, or mineralization process equipment used
+    to pull CO2 from ambient air at a commercial capture plant. Works with plant operations to
+    improve capture rate and energy use during ongoing operation.
+  example_companies:
+    - Climeworks
+    - Heirloom
+    - CarbonCapture Inc.
+  sources:
+    - https://rhg.com/research/direct-air-capture-workforce-development/
+- id: carbon-removal-commercialization-manager
+  field_id: carbon-capture-and-removal
+  title: Commercialization Manager
+  function: business-development
+  day_to_day: Negotiates carbon-removal purchase agreements with corporate buyers, translating
+    technical capture capacity into deliverable removal credits. Coordinates with engineering and
+    finance to price and structure multi-year offtake deals.
+  example_companies:
+    - Climeworks
+  sources:
+    - https://climeworks.com/press-release/expanding-our-us-team
+- id: carbon-removal-project-development-finance-analyst
+  field_id: carbon-capture-and-removal
+  title: Project Development Finance Analyst
+  function: finance
+  day_to_day: Builds financial models for a proposed direct-air-capture or carbon capture facility,
+    evaluating grant funding, offtake revenue, and capital costs. Supports due diligence for
+    investors and government funding programs.
+  example_companies:
+    - Climeworks
+    - Heirloom
+  sources:
+    - https://climeworks.com/press-release/expanding-our-us-team
+    - https://rhg.com/research/direct-air-capture-workforce-development/
+- id: recycling-machine-operator
+  field_id: circular-economy-and-waste
+  title: Machine Operator
+  function: operations
+  day_to_day: Operates and monitors sorting and processing equipment at a materials recycling plant,
+    feeding material safely and watching for jams or contamination. Performs basic equipment checks
+    and reports mechanical issues to maintenance staff.
+  example_companies:
+    - Cyclic Materials
+  sources:
+    - https://job-boards.greenhouse.io/cyclicmaterialsinc/jobs/4206060009
+- id: recycling-rd-manager
+  field_id: circular-economy-and-waste
+  title: R&D Manager
+  function: research
+  day_to_day: Leads research on new material-separation and recovery technology for a recycling
+    company, running lab and pilot trials on new feedstocks. Works with plant engineering to
+    translate promising results into full-scale process changes.
+  example_companies:
+    - Cyclic Materials
+  sources:
+    - https://job-boards.greenhouse.io/cyclicmaterialsinc/jobs/4238208009
+- id: circular-economy-sales-development-representative
+  field_id: circular-economy-and-waste
+  title: Sales Development Representative
+  function: sales
+  day_to_day: Prospects and qualifies new business customers for a commercial recycling and
+    waste-diversion service, running outbound outreach and booking meetings for account executives.
+    Tracks pipeline activity in the CRM and reports on outreach conversion rates.
+  example_companies:
+    - RoadRunner Recycling
+  sources:
+    - https://job-boards.greenhouse.io/roadrunner
+- id: utility-solar-bd-associate
+  field_id: utility-scale-solar
+  title: Business Development Associate, Utility-Scale Solar
+  function: business-development
+  day_to_day: Identifies and screens land and interconnection opportunities for new utility-scale
+    solar projects, supports landowner and offtake negotiations, and tracks projects through early
+    development milestones.
+  example_companies:
+    - Nexamp
+    - Intersect Power
+  sources:
+    - https://boards.greenhouse.io/nexamp/jobs/7547056002
+- id: utility-solar-pv-performance-engineer
+  field_id: utility-scale-solar
+  title: PV Performance Engineer
+  function: engineering
+  day_to_day: Builds and runs energy-yield models for operating solar plants, analyzes
+    underperformance against expected generation, and recommends capacity testing or equipment fixes
+    to a portfolio of utility-scale sites.
+  example_companies:
+    - Intersect Power
+    - CIM Group
+  sources:
+    - https://jobs.lever.co/intersect/a1a1e115-502b-41c2-9980-8b7d53850359
+- id: utility-solar-site-electrical-technician
+  field_id: utility-scale-solar
+  title: Assistant Site Manager, Electrical Operations
+  function: field-technician
+  day_to_day: Performs and oversees electrical operations and maintenance on utility-scale solar and
+    storage assets, troubleshoots inverter and switchgear issues on site, and coordinates outage and
+    safety procedures.
+  example_companies:
+    - Intersect Power
+  sources:
+    - https://jobs.lever.co/intersect/a36e74ea-591f-4707-a2dc-297e0ca60889
+- id: utility-solar-construction-project-engineer
+  field_id: utility-scale-solar
+  title: Engineering Manager, Utility-Scale Solar and Storage Development
+  function: project-management
+  day_to_day: Leads engineering design reviews and technical due diligence for utility-scale
+    solar-plus-storage projects moving from development into construction, coordinating between
+    internal teams and outside EPC firms.
+  example_companies:
+    - CIM Group
+  sources:
+    - https://jobs.lever.co/cimgroup/7a45c5ac-7e21-4de9-b5bb-4a2134b97c10
+- id: distributed-solar-field-service-technician
+  field_id: distributed-solar
+  title: Solar Field Service Technician
+  function: field-technician
+  day_to_day: Diagnoses and repairs residential and small commercial solar and battery systems in the
+    field, performs system inspections, and documents work for warranty and performance-monitoring
+    purposes.
+  example_companies:
+    - Palmetto
+  sources:
+    - https://job-boards.greenhouse.io/palmettocleantech/jobs/5420901008
+- id: distributed-solar-service-operations-manager
+  field_id: distributed-solar
+  title: Manager, Service Operations
+  function: operations
+  day_to_day: Manages a team and scheduling process for residential solar service and repair calls,
+    tracks response-time and first-visit-resolution metrics, and works with vendors on parts and
+    truck-roll logistics.
+  example_companies:
+    - Palmetto
+  sources:
+    - https://job-boards.greenhouse.io/palmettocleantech/jobs/5251651008
+- id: distributed-solar-investor-relations-lead
+  field_id: distributed-solar
+  title: VP, Investor Relations
+  function: finance
+  day_to_day: Prepares financial disclosures and investor communications for a publicly traded
+    distributed-solar and storage company, and represents the company to equity and debt investors
+    and analysts.
+  example_companies:
+    - Palmetto
+  sources:
+    - https://job-boards.greenhouse.io/palmettocleantech/jobs/5382929008
+- id: onshore-wind-turbine-technician
+  field_id: onshore-wind
+  title: Wind Technician II
+  function: field-technician
+  day_to_day: Performs scheduled maintenance, troubleshooting, and repair of wind turbine mechanical,
+    electrical, and hydraulic systems at height, and follows safety protocols for a fleet of
+    operating turbines.
+  example_companies:
+    - Invenergy
+  sources:
+    - https://invenergyllc.wd1.myworkdayjobs.com/en-US/invenergycareers/job/Wind-Technician-II_R10442-1
+- id: onshore-wind-availability-engineer
+  field_id: onshore-wind
+  title: Wind Availability Engineer
+  function: engineering
+  day_to_day: Analyzes turbine downtime and availability data across an operating wind fleet, works
+    with OEMs on warranty and performance issues, and recommends reliability improvements.
+  example_companies:
+    - Invenergy
+  sources:
+    - https://invenergyllc.wd1.myworkdayjobs.com/en-US/invenergyllc/job/Sao-Paulo-SP/Wind-Availability-Engineer_R10183-1
+- id: onshore-wind-renewable-development-associate
+  field_id: onshore-wind
+  title: Associate, Renewable Development
+  function: business-development
+  day_to_day: Supports early-stage development of utility-scale wind projects, including site control,
+    permitting coordination, and landowner and community engagement.
+  example_companies:
+    - Invenergy
+  sources:
+    - https://invenergyllc.wd1.myworkdayjobs.com/en-US/invenergyllc/job/Associate--Renewable-Development_R10781
+- id: offshore-wind-turbine-technician
+  field_id: offshore-wind
+  title: Senior Wind Turbine Technician
+  function: field-technician
+  day_to_day: Carries out electrical and mechanical maintenance on offshore wind turbines and
+    substations, working from crew-transfer or service operation vessels under strict marine safety
+    procedures.
+  example_companies:
+    - Equinor
+  sources:
+    - https://equinor.wd3.myworkdayjobs.com/en-US/EQNR/job/Brooklyn-New-York/Senior-Wind-Turbine-Technician_JR106759
+- id: offshore-wind-om-lead
+  field_id: offshore-wind
+  title: Offshore Operations & Maintenance Lead
+  function: operations
+  day_to_day: Coordinates day-to-day operations and maintenance activity across an offshore wind farm,
+    schedules vessel and technician resources, and ensures work complies with safety and regulatory
+    requirements.
+  example_companies:
+    - Equinor
+  sources:
+    - https://equinor.wd3.myworkdayjobs.com/en-US/EQNR/job/Offshore-Operations---Maintenance-Lead_JR103496
+- id: offshore-wind-turbine-engineer
+  field_id: offshore-wind
+  title: Wind Turbine Engineer
+  function: engineering
+  day_to_day: Provides technical support on turbine performance and reliability issues for an offshore
+    wind portfolio, working with technicians and OEMs to resolve recurring faults.
+  example_companies:
+    - Equinor
+  sources:
+    - https://equinor.wd3.myworkdayjobs.com/en-US/EQNR/job/Wind-Turbine-Engineer_JR105753
+- id: storage-technical-product-manager
+  field_id: grid-scale-storage
+  title: Technical Product Manager, Dispatch Software
+  function: product
+  day_to_day: Defines requirements and roadmap for the software platform that controls and dispatches
+    grid-scale battery systems, working with engineering and customers on features like bidding and
+    optimization.
+  example_companies:
+    - Fluence
+  sources:
+    - https://builtin.com/job/technical-product-manager-fluence-os/3550665
+- id: storage-service-operations-supervisor
+  field_id: grid-scale-storage
+  title: Service Operations & Maintenance Supervisor
+  function: operations
+  day_to_day: Supervises field service teams responsible for commissioning and maintaining battery
+    storage installations, manages spare-parts and vendor logistics, and tracks system uptime.
+  example_companies:
+    - Fluence
+  sources:
+    - https://builtin.com/job/service-operations-maintenance-supervisor/3398555
+- id: storage-preventative-maintenance-lead
+  field_id: grid-scale-storage
+  title: Preventative Maintenance Lead, Services
+  function: field-technician
+  day_to_day: Plans and executes scheduled preventative-maintenance visits across a fleet of battery
+    storage sites, and documents findings that feed back into reliability engineering.
+  example_companies:
+    - Fluence
+  sources:
+    - https://builtin.com/job/preventative-maintenance-lead-services/2274567
+- id: grid-transmission-software-engineer
+  field_id: transmission-and-grid-modernization
+  title: Software Engineer, Transmission
+  function: software
+  day_to_day: Builds and tests software for real-time transmission grid management systems used by
+    utility control-room operators, covering functions like load balancing and renewable
+    integration.
+  example_companies:
+    - GE Vernova
+  sources:
+    - https://careers.gevernova.com/ge-vernova-software-engineer-transmission/job/R5048311
+- id: grid-protection-control-engineer
+  field_id: transmission-and-grid-modernization
+  title: Protection and Control Engineer
+  function: engineering
+  day_to_day: Designs and specifies protection and control schemes for substations and transmission
+    lines, reviews relay settings, and supports commissioning of new grid infrastructure.
+  example_companies:
+    - GE Vernova
+    - Hitachi Energy
+  sources:
+    - https://bluelinesearch.ai/insights/energy-utilities-grid-modernization-hiring-2026
+- id: grid-systems-integration-specialist
+  field_id: transmission-and-grid-modernization
+  title: Service Specialist, Grid Systems Integration
+  function: operations
+  day_to_day: Manages end-to-end delivery of software system-integration work on utility transmission,
+    distribution, and market-management projects, coordinating vendors and utility technical teams.
+  example_companies:
+    - GE Vernova
+  sources:
+    - https://careers.gevernova.com/service-specialist/job/R5027911
+- id: der-vpp-market-development-specialist
+  field_id: distributed-energy-resources-and-vpp
+  title: Market Development Specialist
+  function: business-development
+  day_to_day: Builds relationships with utilities and grid operators to launch and grow virtual power
+    plant programs, and helps structure new markets for enrolling distributed devices.
+  example_companies:
+    - Leap
+  sources:
+    - https://apply.workable.com/leapfrog-power-inc/j/539E5A3765/
+- id: der-vpp-technical-implementation-manager
+  field_id: distributed-energy-resources-and-vpp
+  title: Senior Technical Implementation Manager
+  function: customer-success
+  day_to_day: Onboards device manufacturers and aggregators onto a VPP platform, manages integration
+    projects end to end, and troubleshoots issues that arise once devices go live in a program.
+  example_companies:
+    - Leap
+  sources:
+    - https://jobs.ashbyhq.com/leap/9baa1841-f61b-4d5f-9876-649a6e8e14ab
+- id: der-vpp-operations-chief-of-staff
+  field_id: distributed-energy-resources-and-vpp
+  title: Chief of Staff
+  function: operations
+  day_to_day: Coordinates cross-functional priorities and operating rhythm for a VPP company's
+    leadership team, tracking execution against strategic and market-expansion goals.
+  example_companies:
+    - Leap
+  sources:
+    - https://jobs.ashbyhq.com/leap/7e455a34-2826-4876-9b48-effb9a485e6d
+- id: geothermal-next-gen-drilling-engineer
+  field_id: geothermal
+  title: Founding Engineer, Next-Gen Geothermal
+  function: engineering
+  day_to_day: Designs and iterates on subsurface drilling and heat-extraction systems for an enhanced
+    geothermal system startup, working closely with field operations to test and refine well
+    designs.
+  example_companies:
+    - Marble
+  sources:
+    - https://jobs.ashbyhq.com/marble/4aa33ad4-fbcc-45af-a059-5e6ea4b4b613
+- id: geothermal-drilling-operations-lead
+  field_id: geothermal
+  title: Drilling Operations Lead
+  function: field-technician
+  day_to_day: Oversees on-site drilling operations for geothermal wells, coordinates rig crews and
+    contractors, and enforces safety and quality procedures during drilling campaigns.
+  example_companies:
+    - Fervo Energy
+  sources:
+    - https://fervoenergy.com/careers/
+- id: geothermal-field-geologist
+  field_id: geothermal
+  title: Geologist
+  function: research
+  day_to_day: Interprets subsurface geological data to identify and characterize geothermal resources,
+    supports well-siting decisions, and models reservoir behavior over a project's life.
+  example_companies:
+    - Fervo Energy
+  sources:
+    - https://fervoenergy.com/careers/
+- id: hydrogen-plant-operator
+  field_id: green-hydrogen
+  title: Plant Operator, Hydrogen
+  function: field-technician
+  day_to_day: Monitors electrolyzer and balance-of-plant equipment at a hydrogen production facility,
+    responds to alarms, and performs routine operational checks to keep the plant running safely.
+  example_companies:
+    - Plug Power
+  sources:
+    - https://plugpower.wd5.myworkdayjobs.com/plug_power_inc/job/hydrogen-plant-woodbine-ga/hydrogen-operator_r7003/apply
+- id: hydrogen-systems-project-manager
+  field_id: green-hydrogen
+  title: Project Manager, Hydrogen Systems
+  function: project-management
+  day_to_day: Manages timelines, budgets, and vendor coordination for hydrogen production or delivery
+    infrastructure projects, from engineering handoff through commissioning.
+  example_companies:
+    - Plug Power
+  sources:
+    - https://plugpower.wd5.myworkdayjobs.com/en-US/Plug_Power_Inc/job/Project-Manager--Hydrogen-Systems_R6858
+- id: hydrogen-fuel-cell-systems-engineer
+  field_id: green-hydrogen
+  title: Engineer, Fuel Cell System Test & Validation
+  function: engineering
+  day_to_day: Designs and runs test protocols to validate fuel cell system performance and durability,
+    analyzes results, and feeds findings back into product design.
+  example_companies:
+    - Plug Power
+  sources:
+    - https://plugpower.wd5.myworkdayjobs.com/en-US/Plug_Power_Inc/job/Engineer-I--Fuel-Cell-System-Test---Validation_R6885
+- id: efficiency-building-energy-analyst
+  field_id: energy-efficiency-and-demand-response
+  title: Building Energy Analyst (entry-level)
+  function: data
+  day_to_day: Analyzes building energy-use data to identify efficiency and electrification retrofit
+    opportunities, and prepares findings that feed into project scoping and financing decisions.
+  example_companies:
+    - BlocPower
+  sources:
+    - https://jobs.lever.co/BlocPower/845e78ff-61a3-4c60-aaef-8d3181e0c051
+- id: efficiency-hvac-engineer
+  field_id: energy-efficiency-and-demand-response
+  title: HVAC Engineer (mid-level)
+  function: engineering
+  day_to_day: Designs and reviews HVAC and heat-pump systems for building electrification and
+    efficiency retrofit projects, and supports commissioning to confirm systems perform as designed.
+  example_companies:
+    - BlocPower
+  sources:
+    - https://jobs.lever.co/BlocPower/377b1595-ad37-4307-aa72-36cd17d57415
+- id: efficiency-retrofit-program-manager
+  field_id: energy-efficiency-and-demand-response
+  title: Program Manager
+  function: project-management
+  day_to_day: Runs a portfolio of building electrification and efficiency retrofit projects in a given
+    city, coordinating contractors, financing partners, and building owners to keep projects on
+    schedule.
+  example_companies:
+    - BlocPower
+  sources:
+    - https://jobs.lever.co/BlocPower/1f9a8184-856e-40a2-9f58-4e1607a2d77d
+- id: efficiency-director-of-finance
+  field_id: energy-efficiency-and-demand-response
+  title: Director of Finance
+  function: finance
+  day_to_day: Oversees financial planning, reporting, and accounting for a building electrification
+    company, and supports financing structures used to fund customer retrofit projects.
+  example_companies:
+    - BlocPower
+  sources:
+    - https://jobs.lever.co/BlocPower/93d1b866-da7d-499b-870e-ed987e278a39
+- id: regen-ag-agronomy-data-scientist
+  field_id: regenerative-agriculture-and-agtech
+  title: Sustainability data scientist
+  function: data
+  day_to_day: Builds and validates models that estimate soil-carbon sequestration and emissions
+    outcomes from field-level practice data, and works with agronomy teams to turn those models into
+    farmer-facing recommendations and program payouts.
+  example_companies:
+    - Indigo Ag
+  sources:
+    - https://www.indigoag.com/careers
+- id: regen-ag-grower-success-manager
+  field_id: regenerative-agriculture-and-agtech
+  title: Grower success manager
+  function: customer-success
+  day_to_day: "Supports enrolled farmers through a regenerative-practice or carbon-program season:
+    onboarding, answering questions about practice changes and verification requirements, and
+    troubleshooting issues that could affect payments."
+  example_companies:
+    - Indigo Ag
+  sources:
+    - https://www.indigoag.com/careers
+- id: regen-ag-business-development-manager
+  field_id: regenerative-agriculture-and-agtech
+  title: Business development manager
+  function: business-development
+  day_to_day: Builds partnerships with grain buyers, food companies, or retailers that want to source
+    from or fund regenerative acreage, structuring deals that connect supply-chain sustainability
+    goals to farmer programs.
+  example_companies:
+    - Indigo Ag
+  sources:
+    - https://www.startus-insights.com/innovators-guide/new-regenerative-agriculture-companies/
+- id: altprotein-product-development-scientist
+  field_id: alternative-proteins
+  title: Product development scientist
+  function: research
+  day_to_day: Formulates and tests plant-based, fermentation-derived, or cultivated protein products,
+    iterating on taste, texture, and nutrition and running bench-scale experiments toward a product
+    ready for manufacturing.
+  example_companies:
+    - Upside Foods
+    - Motif FoodWorks
+  sources:
+    - https://gfi.org/careers/
+- id: altprotein-policy-manager
+  field_id: alternative-proteins
+  title: Policy and regulatory affairs manager
+  function: policy
+  day_to_day: Tracks and engages with food-safety and novel-food regulatory processes across markets,
+    and represents the industry's position to regulators and legislators working on approval
+    pathways.
+  example_companies:
+    - Good Food Institute
+  sources:
+    - https://gfi.org/careers/
+- id: altprotein-corporate-engagement-manager
+  field_id: alternative-proteins
+  title: Corporate engagement manager
+  function: business-development
+  day_to_day: Works with food companies and retailers to expand alternative-protein product lines and
+    sourcing commitments, tracking industry adoption and briefing corporate partners on the
+    category's progress.
+  example_companies:
+    - Good Food Institute
+  sources:
+    - https://job-boards.greenhouse.io/thegoodfoodinstitute80/jobs/8716799002
+- id: forestry-technician
+  field_id: forestry-and-nature-based-carbon
+  title: Forestry technician
+  function: field-technician
+  day_to_day: Travels to forest properties to collect field data -- tree inventory, site conditions,
+    plot measurements -- that feeds carbon-project design and monitoring, working outdoors across
+    variable terrain and seasons.
+  example_companies:
+    - Chestnut Carbon
+    - Forest Carbon Works
+  sources:
+    - https://jobs.lever.co/chestnutcarbon
+- id: forestry-carbon-project-manager
+  field_id: forestry-and-nature-based-carbon
+  title: Carbon project manager
+  function: project-management
+  day_to_day: "Manages a portfolio of reforestation or forest-management carbon projects end to end:
+    landowner agreements, methodology compliance, verification timelines, and coordinating field and
+    GIS teams."
+  example_companies:
+    - Forest Carbon Works
+    - Chestnut Carbon
+  sources:
+    - https://forestcarbonworks.org/careers/
+- id: water-adaptation-climate-risk-data-analyst
+  field_id: water-and-climate-adaptation
+  title: Climate risk data analyst
+  function: data
+  day_to_day: Analyzes flood, drought, or sea-level-rise model output to produce property- or
+    asset-level risk scores, and works with product teams to turn that analysis into tools
+    homeowners, lenders, or governments can use.
+  example_companies:
+    - First Street
+  sources:
+    - https://firststreet.org/team
+- id: water-adaptation-resilience-consultant
+  field_id: water-and-climate-adaptation
+  title: Resilience planning consultant
+  function: project-management
+  day_to_day: Works with utilities or local governments to prioritize infrastructure investments
+    against climate hazard data, producing adaptation plans and business cases for resilience
+    spending.
+  example_companies:
+    - Rhizome
+    - ClimateView
+  sources:
+    - https://www.rhizomedata.com/careers
+- id: climate-risk-catastrophe-modeler
+  field_id: climate-risk-analytics-and-insurance
+  title: Catastrophe modeler
+  function: research
+  day_to_day: Builds and validates statistical models of hazards such as hurricanes or wildfire,
+    calibrating them against historical loss data and running simulations that estimate potential
+    insured losses under current and future climate scenarios.
+  example_companies:
+    - Moody's RMS
+    - Verisk
+  sources:
+    - https://careers.moodys.com/en/job/london/catastrophe-modeller-tropical-cyclones/49841/95041826560
+- id: climate-risk-underwriting-analyst
+  field_id: climate-risk-analytics-and-insurance
+  title: Climate risk underwriting analyst
+  function: finance
+  day_to_day: Applies catastrophe-model output to individual policies or portfolios, recommending
+    pricing, terms, or exposure limits and flagging concentrations of climate risk to underwriting
+    leadership.
+  example_companies:
+    - Moody's RMS
+  sources:
+    - https://www.moodys.com/web/en/us/who-we-serve/insurance/catastrophe-modelers.html
+- id: climate-finance-investment-analyst
+  field_id: climate-finance-and-impact-investing
+  title: Investment analyst
+  function: finance
+  day_to_day: Evaluates climate-focused deals -- renewable energy, adaptation infrastructure, or
+    nature-based projects -- building financial models and due-diligence memos that inform
+    investment committee decisions.
+  example_companies:
+    - Climate Fund Managers
+    - Green Climate Fund
+  sources:
+    - https://climatefundmanagers.com/careers-and-internships/
+- id: climate-finance-impact-measurement-analyst
+  field_id: climate-finance-and-impact-investing
+  title: Impact measurement analyst
+  function: data
+  day_to_day: Tracks and reports the climate and development outcomes of a fund's portfolio --
+    emissions avoided, people served, capacity built -- and builds the metrics investors and boards
+    use to judge impact alongside financial return.
+  example_companies:
+    - Green Climate Fund
+  sources:
+    - https://www.greenclimate.fund/about/careers
+- id: carbon-accounting-customer-success-manager
+  field_id: carbon-accounting-and-esg-software
+  title: Customer success manager, enterprise
+  function: customer-success
+  day_to_day: Owns the relationship with enterprise customers after signing, guiding them through
+    emissions data collection, platform adoption, and renewal while coordinating with sustainability
+    advisory staff on reduction planning.
+  example_companies:
+    - Watershed
+    - Persefoni
+  sources:
+    - https://watershed.com/careers
+- id: carbon-accounting-account-executive
+  field_id: carbon-accounting-and-esg-software
+  title: Account executive, enterprise
+  function: sales
+  day_to_day: Runs the sales cycle for large corporate customers evaluating carbon accounting
+    software, from initial pitch through procurement and security review to closed contract.
+  example_companies:
+    - Watershed
+    - Sweep
+  sources:
+    - https://watershed.com/careers
+- id: carbon-accounting-product-designer
+  field_id: carbon-accounting-and-esg-software
+  title: Product designer
+  function: design
+  day_to_day: Designs the workflows customers use to upload emissions data, review calculated
+    footprints, and generate disclosure reports, balancing regulatory complexity against a usable
+    interface.
+  example_companies:
+    - Watershed
+  sources:
+    - https://watershed.com/careers
+- id: carbon-accounting-content-marketer
+  field_id: carbon-accounting-and-esg-software
+  title: Content marketer
+  function: marketing
+  day_to_day: Produces guides, benchmarking reports, and campaign content that explain
+    emissions-disclosure regulation and decarbonization strategy to prospective customers and the
+    broader market.
+  example_companies:
+    - Watershed
+  sources:
+    - https://watershed.com/careers
+- id: climate-policy-director
+  field_id: climate-policy-and-advocacy
+  title: Policy director
+  function: policy
+  day_to_day: Sets an organization's policy agenda on a climate issue area, drafting legislative or
+    regulatory proposals and briefing lawmakers, agency staff, and coalition partners to advance
+    them.
+  example_companies:
+    - Evergreen Action
+    - RMI
+  sources:
+    - https://job-boards.greenhouse.io/evergreenaction/jobs/5405225008
+- id: climate-policy-regional-advocate
+  field_id: climate-policy-and-advocacy
+  title: Regional advocate
+  function: communications
+  day_to_day: Builds relationships with state legislators, regulators, and local coalition partners in
+    an assigned region, and translates a national policy campaign into state-specific asks and
+    messaging.
+  example_companies:
+    - Evergreen Action
+  sources:
+    - https://job-boards.greenhouse.io/evergreenaction/jobs/5405196008
+- id: climate-comms-journalist-fellow
+  field_id: climate-communications-and-media
+  title: Climate journalist
+  function: communications
+  day_to_day: Reports and writes stories on climate solutions or climate news for a nonprofit
+    newsroom, pitching angles, interviewing sources, and editing copy through publication.
+  example_companies:
+    - Grist
+    - Climate Central
+  sources:
+    - https://grist.org/careers/
+- id: climate-comms-data-visualization-designer
+  field_id: climate-communications-and-media
+  title: Data visualization designer
+  function: design
+  day_to_day: Turns climate datasets -- local temperature trends, sea-level projections,
+    extreme-weather attribution -- into charts, maps, and interactive graphics that a general
+    audience can understand.
+  example_companies:
+    - Climate Central
+  sources:
+    - https://www.climatecentral.org/what-we-do/jobs
+- id: climate-comms-video-media-producer
+  field_id: climate-communications-and-media
+  title: Video and social media producer
+  function: video-media
+  day_to_day: Produces short-form video and social content that translates climate reporting into
+    shareable explainers, and coordinates with partner newsrooms on distribution and amplification.
+  example_companies:
+    - Covering Climate Now
+  sources:
+    - https://coveringclimatenow.org/we-are-hiring/
+- id: ej-program-coordinator
+  field_id: environmental-justice-and-community-programs
+  title: Environmental justice program coordinator
+  function: operations
+  day_to_day: "Runs a local environmental-health program in an affected community: organizing
+    workshops, coordinating youth engagement, and running projects on food access, green space, or
+    pollution reduction."
+  example_companies:
+    - Clean Water Action
+  sources:
+    - https://cleanwater.org/jobs/environmental-justice-program-coordinator-hybrid-philadelphia-pa
+- id: ej-community-organizer
+  field_id: environmental-justice-and-community-programs
+  title: Community organizer
+  function: communications
+  day_to_day: Builds resident leadership and coalition power in a frontline community, running
+    door-to-door outreach, meetings, and campaigns on local environmental and climate issues.
+  example_companies:
+    - Center for Community Action and Environmental Justice
+  sources:
+    - https://www.ccaej.org/careers
+- id: ev-marketing-manager
+  field_id: electric-vehicles
+  title: Product marketing manager
+  function: marketing
+  day_to_day: Defines positioning, pricing, and go-to-market messaging for vehicle lines and shapes
+    launch campaigns with sales and design teams. General product-marketing skills (positioning
+    frameworks, launch planning, competitive analysis) transfer directly; the new layer is learning
+    vehicle specs, incentive programs, and range/charging claims.
+  example_companies:
+    - Lucid Motors
+    - Rivian
+  sources:
+    - https://jobs.lever.co/lucidmotors/e2677f72-ebf2-4b59-8356-f265d1551bbe
+- id: distributed-solar-marketing-manager
+  field_id: distributed-solar
+  title: Digital performance marketing manager
+  function: marketing
+  day_to_day: Runs paid digital acquisition and lead-generation campaigns for residential solar,
+    testing channels and creative to lower cost per installed system. Performance-marketing
+    fundamentals (funnel metrics, A/B testing, channel mix) carry over unchanged; new context is the
+    long sales cycle and financing options specific to home solar.
+  example_companies:
+    - Sunnova
+    - Sunrun
+  sources:
+    - https://jobs.lever.co/sunnova/5c2515f6-c3af-4c58-96bb-ef3d98b4e93e
+- id: climate-advocacy-communications-manager
+  field_id: climate-policy-and-advocacy
+  title: Press and communications associate
+  function: communications
+  day_to_day: Writes press releases and talking points, pitches reporters, and coordinates
+    rapid-response messaging around climate legislation and elections. Media-relations and
+    message-discipline skills from any advocacy, corporate, or political communications background
+    apply directly; new is tracking the legislative calendar and policy detail.
+  example_companies:
+    - Climate Power
+  sources:
+    - https://jobs.lever.co/climatepower/888d5b23-b433-4808-ab33-64567323c435
+- id: environmental-justice-communications-associate
+  field_id: environmental-justice-and-community-programs
+  title: Communications assistant
+  function: communications
+  day_to_day: Supports a small comms team with newsletters, social content, and translating campaign
+    wins for affected communities and funders. General comms-support skills (editing, scheduling,
+    channel upkeep) transfer directly; new is learning the environmental-justice framing and
+    building trust with community partners the org represents.
+  example_companies:
+    - Pacific Environment
+  sources:
+    - https://jobs.lever.co/pacific-environment/8d42ffd4-195e-4ea2-86ef-59e65e0399b9
+- id: clean-energy-video-content-creator
+  field_id: climate-communications-and-media
+  title: Video content creator
+  function: video-media
+  day_to_day: Scripts, shoots, and edits short-form video for paid social and organic channels
+    explaining heat pumps, solar, and EVs to consumers. Core video-production and platform-native
+    storytelling skills (TikTok, Instagram, YouTube cuts) transfer as-is; new is the technical
+    accuracy needed around energy products and incentives.
+  example_companies:
+    - Octopus Energy
+  sources:
+    - https://jobs.lever.co/octoenergy/5368ecf2-61fb-4572-89ec-b5111cd0c833
+- id: electric-aviation-video-storyteller
+  field_id: sustainable-aviation-and-shipping
+  title: Lead storyteller, video and visual content
+  function: video-media
+  day_to_day: Owns video and visual storytelling for an electric aircraft company, producing
+    flight-test footage, recruiting content, and executive narrative videos. Directing, shooting,
+    and editing skills transfer unchanged; new is working alongside engineering and flight-test
+    teams to get technical claims right.
+  example_companies:
+    - Pivotal
+  sources:
+    - https://jobs.lever.co/pivotal/a5887446-6c15-4003-b6fa-1c0e533e811b
+- id: home-electrification-product-designer
+  field_id: green-building-design-and-retrofits
+  title: Product designer
+  function: design
+  day_to_day: Designs the customer-facing product for planning and financing home electrification
+    retrofits, owning UX flows from quote to install scheduling. Product-design craft (user
+    research, wireframing, design systems) is unchanged; new is learning the retrofit and financing
+    workflow it has to represent clearly.
+  example_companies:
+    - Zero Homes
+  sources:
+    - https://jobs.lever.co/zerohomes/8b785b74-6b19-4590-bf0e-bfd4549c0bc8
+- id: carbon-accounting-product-designer-ux
+  field_id: carbon-accounting-and-esg-software
+  title: Product designer
+  function: design
+  day_to_day: Designs enterprise workflows that let sustainability teams measure and report carbon
+    footprints and audit-ready ESG metrics. Enterprise B2B design skills (complex data tables,
+    workflow simplification, design systems) carry over directly; new is the accounting and
+    disclosure-framework vocabulary.
+  example_companies:
+    - Watershed
+    - Persefoni
+  sources:
+    - https://jobs.ashbyhq.com/Watershed/bb7b1da5-1e38-48e8-a4d0-e3c8e32a8970
+- id: ev-charging-software-engineer
+  field_id: ev-charging-infrastructure
+  title: Software engineer
+  function: software
+  day_to_day: Builds backend services and APIs connecting EV chargers, energy devices, and digital
+    platforms, from domestic charging to grid-scale batteries. General backend/API and
+    event-driven-systems experience transfers directly; new is learning device-communication
+    protocols and grid operating constraints.
+  example_companies:
+    - Octopus Energy
+    - ChargePoint
+  sources:
+    - https://jobs.lever.co/octoenergy/cc3a8861-c20e-4a5e-b55e-b8f99c7075fb
+- id: grid-storage-software-engineer
+  field_id: grid-scale-storage
+  title: Senior software engineer, full stack
+  function: software
+  day_to_day: Builds full-stack software for monitoring and controlling grid-scale battery systems,
+    working across Python services and cloud infrastructure. Full-stack engineering fundamentals
+    transfer directly; new is learning how batteries and grid-control logic behave in production.
+  example_companies:
+    - Form Energy
+    - Fluence
+  sources:
+    - https://jobs.lever.co/formenergy/7178090d-0bc2-4147-986d-25d3ec6c42e4
+- id: climate-risk-data-scientist
+  field_id: climate-risk-analytics-and-insurance
+  title: Data scientist
+  function: data
+  day_to_day: Builds models assessing flood, heat, wind, and fire risk from climate change for
+    insurers and financial institutions. Statistical modeling and data-pipeline skills from any
+    industry transfer directly; new is learning climate and hazard science well enough to validate
+    outputs.
+  example_companies:
+    - Jupiter Intelligence
+    - First Street
+  sources:
+    - https://jobs.lever.co/jupiterintel/919cc8af-406c-48a3-b6d7-42e9a6a812f6
+- id: regenerative-ag-data-scientist
+  field_id: regenerative-agriculture-and-agtech
+  title: ML data scientist
+  function: data
+  day_to_day: Builds machine-learning models on satellite and field data to identify and verify
+    regenerative farming practices at scale. Applied ML and geospatial-data skills transfer
+    directly; new is learning agronomy and how carbon-credit verification standards constrain the
+    model outputs.
+  example_companies:
+    - Regrow
+    - Indigo Ag
+  sources:
+    - https://jobs.lever.co/regrow.ag/f8fc5e40-d7d0-4c30-839a-73af60533619
+- id: vpp-product-manager
+  field_id: distributed-energy-resources-and-vpp
+  title: Technical product manager, energy storage
+  function: product
+  day_to_day: Owns the roadmap for software that aggregates home batteries, EVs, and thermostats into
+    a virtual power plant dispatched to the grid. Product-management fundamentals (roadmapping,
+    cross-functional alignment, metrics) transfer directly; new is learning grid dispatch economics
+    and utility program rules.
+  example_companies:
+    - Voltus
+    - GoodLeap
+  sources:
+    - https://jobs.lever.co/voltus/fd6c3c35-26d2-41b7-80c3-4aec247dbc82
+- id: carbon-accounting-product-manager
+  field_id: carbon-accounting-and-esg-software
+  title: Senior product manager, methodology
+  function: product
+  day_to_day: Translates evolving carbon-accounting and disclosure standards into product requirements
+    for an enterprise sustainability platform. Core PM skills (spec writing, prioritization, working
+    with engineering) transfer directly; new is tracking regulatory standards like CSRD that the
+    product must stay compliant with.
+  example_companies:
+    - Watershed
+    - Persefoni
+  sources:
+    - https://jobs.ashbyhq.com/Watershed/1e127832-c438-4bd9-bf7c-2e6f42ebf137
+- id: battery-recycling-hr-business-partner
+  field_id: battery-manufacturing-and-recycling
+  title: Senior HR business partner
+  function: people
+  day_to_day: Partners with plant and corporate leaders on org design, workforce planning, and
+    performance management at a battery-materials recycler. HR business-partner skills transfer
+    directly from any industry; new is learning manufacturing shift structures and safety-driven HR
+    policies specific to industrial recycling operations.
+  example_companies:
+    - Redwood Materials
+  sources:
+    - https://job-boards.greenhouse.io/redwoodmaterials/jobs/5988133004?gh_jid=5988133004
+- id: solar-talent-development-specialist
+  field_id: distributed-solar
+  title: Training and development specialist
+  function: people
+  day_to_day: Designs onboarding and ongoing training programs for sales and customer-facing solar
+    teams. Learning-and-development program design transfers directly from any sector; new is
+    building curriculum around solar products, financing options, and compliance requirements.
+  example_companies:
+    - GoodLeap
+    - Sunnova
+  sources:
+    - https://jobs.lever.co/goodleap/90c03475-2916-4868-b0b7-f349dbded08e
+- id: heat-pump-sales-specialist
+  field_id: building-electrification-and-heat-pumps
+  title: Heat pump sales specialist
+  function: sales
+  day_to_day: Consults with homeowners on replacing gas heating with heat pumps, building quotes and
+    closing financed installs. Consultative-sales skills (needs discovery, objection handling,
+    pipeline management) transfer directly; new is learning heat pump sizing, rebates, and
+    electrical-panel constraints.
+  example_companies:
+    - Zero Homes
+    - Sealed
+  sources:
+    - https://jobs.lever.co/zerohomes/6620d296-985b-4d56-8e4c-15202eb6cf34
+- id: climate-risk-account-executive
+  field_id: climate-risk-analytics-and-insurance
+  title: Account executive, climate analytics
+  function: sales
+  day_to_day: Sells climate-risk analytics subscriptions to banks, insurers, and asset managers,
+    running the full enterprise sales cycle. B2B enterprise-sales skills transfer directly from any
+    software sales background; new is learning how financial institutions use physical climate-risk
+    data in underwriting and disclosure.
+  example_companies:
+    - Jupiter Intelligence
+  sources:
+    - https://jobs.lever.co/jupiterintel/ccebd88c-974f-4a59-801c-e179fcc06b9f
+- id: electric-fleet-customer-success-manager
+  field_id: public-transit-and-micromobility
+  title: Customer success manager
+  function: customer-success
+  day_to_day: Manages relationships with school districts and transit agencies through electric bus
+    deployment, from delivery to charging uptime. Account-management and renewal skills transfer
+    directly from any B2B customer-success role; new is learning fleet charging schedules and
+    utility program requirements.
+  example_companies:
+    - Highland Electric Fleets
+  sources:
+    - https://jobs.lever.co/highlandfleets-2/324ccd2c-695e-4059-99c0-cc7d30c8c862
+- id: vpp-customer-success-associate
+  field_id: distributed-energy-resources-and-vpp
+  title: Customer success associate
+  function: customer-success
+  day_to_day: Onboards commercial customers into demand-response programs and helps them maximize
+    payments for shifting or reducing load. Customer-onboarding and account-support skills transfer
+    directly; new is learning how demand-response events and utility tariffs determine customer
+    payouts.
+  example_companies:
+    - Voltus
+  sources:
+    - https://jobs.lever.co/voltus/74788219-f059-4a07-87f2-4dae2fa20c74/apply
+- id: forestry-education-program-manager
+  field_id: forestry-and-nature-based-carbon
+  title: Education and outreach program manager
+  function: education
+  day_to_day: Runs K-12 and community STEM programming connecting students to urban forestry and
+    tree-equity work, and coordinates workforce pipelines into forestry careers. Curriculum design
+    and program management transfer directly from any education role; new is learning urban forestry
+    and tree-equity concepts.
+  example_companies:
+    - American Forests
+  sources:
+    - https://www.americanforests.org/job-opportunities/
+- id: alt-protein-education-outreach-lead
+  field_id: alternative-proteins
+  title: Institutional outreach and education lead
+  function: education
+  day_to_day: Educates grant-makers, corporations, and government bodies on the case for
+    alternative-protein R&D investment, and builds career pathway resources for people entering the
+    field. Stakeholder education and program-building skills transfer directly; new is learning the
+    food-science and climate case for alternative proteins.
+  example_companies:
+    - Good Food Institute
+  sources:
+    - https://gfi.org/vocation/
+- id: agricultural-climate-policy-director
+  field_id: regenerative-agriculture-and-agtech
+  title: Director of agricultural policy
+  function: policy
+  day_to_day: Develops and advances policy positions that would accelerate adoption of regenerative
+    farming practices at the state and federal level. Policy-development and coalition-building
+    skills transfer directly from any advocacy background; new is learning farm-bill mechanics and
+    agricultural-program design.
+  example_companies:
+    - Spark Climate Solutions
+  sources:
+    - https://jobs.lever.co/SparkClimateSolutions/f6eb81e9-cac8-4ae3-a212-b9e62ec39be3
+- id: geothermal-government-affairs-lead
+  field_id: geothermal
+  title: Head of government affairs
+  function: policy
+  day_to_day: Owns political and policy strategy for a geothermal developer, engaging clean-energy
+    coalitions and addressing permitting and regulatory risk with land-development teams.
+    Government-affairs and coalition-management skills transfer directly; new is learning geothermal
+    permitting and subsurface-rights regulation.
+  example_companies:
+    - Zanskar
+  sources:
+    - https://jobs.lever.co/Zanskar/f1274aaf-a209-472f-907b-a6e4cf57292c
