@@ -149,11 +149,21 @@ Gate 1: same as Gate 0. User tries the flow via a `tsx` script on their own resu
 
 | # | Step | Model | Parallel | Acceptance |
 |---|---|---|---|---|
-| 2.1 `[TODO]` | Workspace shell: passcode screen, chat with streaming and answer pills, Profile tab (paste, cards, export/import/start over), `localStorage` persistence via `session.ts` | Opus | ∥ 2.2, 2.3 | Reload restores state; export file round-trips; "start over" clears everything |
-| 2.2 `[TODO]` | `explore.ts`: field drill-down → titles, companies, example posts (reference collection first, then web), day-to-day description, LinkedIn guidance links built from keywords | Fable | ∥ | Output cites URLs; blocked domains never fetched (assert on usage log) |
-| 2.3 `[TODO]` | `queries.ts`: keyword and boolean queries per board with alert steps; **revise** function that takes query feedback (good/bad + why) and returns updated queries, field status changes, and profile edits with a one-paragraph explanation | Fable | ∥ | Scripted feedback "bad fit: all roles need PE license" removes or narrows those queries and says why |
-| 2.4 `[TODO]` | Fields and Queries tabs: field board with accept/reject/unsure and explore; query cards with copy, alert steps, "Tried it" feedback that posts a feedback turn and updates the Queries section of the profile | Opus | after 2.1 | Feedback on a query changes the profile text and triggers a revision turn |
+| 2.1 `[DONE]` | Workspace shell: passcode screen, chat with streaming and answer pills, Profile tab (paste, cards, export/import/start over), `localStorage` persistence via `session.ts` | Opus | ∥ 2.2, 2.3 | Reload restores state; export file round-trips; "start over" clears everything |
+| 2.2 `[DONE]` | `explore.ts`: field drill-down → titles, companies, example posts (reference collection first, then web), day-to-day description, LinkedIn guidance links built from keywords | Fable | ∥ | Output cites URLs; blocked domains never fetched (assert on usage log) |
+| 2.3 `[DONE]` | `queries.ts`: keyword and boolean queries per board with alert steps; **revise** function that takes query feedback (good/bad + why) and returns updated queries, field status changes, and profile edits with a one-paragraph explanation | Fable | ∥ | Scripted feedback "bad fit: all roles need PE license" removes or narrows those queries and says why |
+| 2.4 `[DONE]` | Fields and Queries tabs: field board with accept/reject/unsure and explore; query cards with copy, alert steps, "Tried it" feedback that posts a feedback turn and updates the Queries section of the profile | Opus | after 2.1 | Feedback on a query changes the profile text and triggers a revision turn |
 | 2.5 `[TODO]` | Integration: wire 1.x and 2.x into route handlers and the page; end-to-end run on a Vercel preview deploy; fix seams | Orchestrator (Fable) | after all | Full loop on the builder's own resume, on a preview URL |
+
+**Phase 2 status (2026-09-12).** 2.1–2.4 ran as four worktree workers (2.1
+and 2.4 Opus, 2.2 and 2.3 Fable) and were merged into `phase-2`; 2.5 wired
+them into `src/lib/turn.ts` and `POST /api/turn` (§7.31). Worker live runs:
+explore $0.25 / 107s on the videographer fixture with 48 URLs seen and zero
+blocked hosts; queries $0.08 / 91s (11 queries, four boards); revise $0.09 /
+38s on "bad fit: all roles need PE license" (one query retired, three
+narrowed, three added, one field moved to unsure, explanation quoting the
+reason). The 2.5 end-to-end run is recorded below the Gate 2 line; the
+Vercel preview deploy needs a linked project and is the user's step.
 
 Gate 2: `/code-review` high and `/security-review` on Opus workers (§4) — passcode, input handling,
 RLS, no user content reaching Supabase). User does one full run including two
@@ -537,3 +547,44 @@ square of how long it runs. Brief accordingly.
     stored trimmed and compared trimmed on both sides. A draft that
     normalization *rejects* is a malformed answer, never a decision to
     exclude the card it addressed.
+
+31. **One turn endpoint; the browser picks the step; NDJSON back.**
+    `POST /api/turn` takes a `TurnRequest` (`session.ts`); `src/lib/turn.ts`
+    dispatches on `step` and returns `{ message, profileMd, pills }` with the
+    *whole* canonical `profile.md` every turn — the server keeps nothing. The
+    wire format is NDJSON (`turn-stream.ts`): progress `delta`s while a slow
+    step runs, an empty heartbeat delta every 15s so proxies never see an
+    idle stream, then exactly one `final` or one `error`. The browser picks
+    the step in `workspace.ts` (`nextStep`): paste → `cards`; a missing
+    preference → `elicit`; no fields → `discover`; otherwise `explore`, and
+    the Fields/Queries tabs force `explore`, `queries` and `revise`. Message
+    conventions the server parses: `Explore F3: <name>` (first `F\d+` wins;
+    no id → a "which field?" reply with pills, no model call), the
+    `GENERATE_QUERIES_TEXT` sentence (routed to `queries` even on the
+    `explore` step so the pill works after discovery), and "go". An
+    elicitation pill click is applied by `applyPillAnswer` without a model
+    call; free text goes through `interpretAnswer`. Errors reach the user
+    only through `turnErrorMessage`: our own input errors verbatim, every
+    model/SDK error as a fixed sentence, and the route logs the error *class*
+    and step only. Gotcha: Next 16 refuses a route file whose `maxDuration`
+    is an imported constant or that exports anything but segment config and
+    handlers, so `route.ts` says `800` and `route.test.ts` pins it to
+    `MAX_DURATION_SECONDS`.
+
+32. **`boards.ts` is the client-safe owner of job-board text.**
+    `BOARD_LABELS`, `ALERT_STEPS`, `BOARD_NAME_KEY`, `RETIRED_KEY` and
+    `RETIRED_REASON_KEY` live in `src/lib/boards.ts` with no server imports,
+    because client components cannot import `queries.ts`; `queries.ts`
+    re-exports them. Steps 2.3 and 2.4 each wrote an `ALERT_STEPS`; the 2.4
+    copy survived because it is phrased "look for…" so a board's UI change
+    does not make it wrong. A revision never deletes a query: an untried one
+    it retires keeps its id and gets `Retired: yes` plus a reason, and the
+    Queries tab shows it struck through.
+
+33. **Worker worktrees start from `main`, not the phase branch.** The Agent
+    tool's `isolation: worktree` branched every Phase 2 worker from `main`;
+    each had to `git checkout -b <step> phase-N` before starting, so the
+    brief now says so. Those worktrees under `.claude/worktrees/` are full
+    checkouts that ESLint walks (576 phantom errors), so `.claude/**` is in
+    `globalIgnores`, and the orchestrator removes worktrees and their
+    branches right after merging.

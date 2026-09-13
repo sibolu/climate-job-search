@@ -78,6 +78,8 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or a skill |
 | `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data + web search → ranked fields and roles; non-zero if any lacks a card citation or a source |
+| `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
+| `pnpm try:queries <profile.md> [out.md]` | Stage 2.3 live: generate queries, then revise from a scripted "bad fit" feedback |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -247,6 +249,25 @@ With a key it needs the local Supabase stack running and
 `SUPABASE_SERVICE_ROLE_KEY` set, because the read-back uses the service role —
 the anon key deliberately cannot read `llm_usage`.
 
+## The turn endpoint (`src/lib/turn.ts`, `src/app/api/turn/route.ts`)
+
+One `POST /api/turn` for every step (PLAN.md §7.31). The browser sends a
+`TurnRequest` and chooses the `step` in `src/lib/workspace.ts`; `turn.ts`
+dispatches and returns the assistant message, pills, and the **whole**
+canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
+`delta`s, a heartbeat every 15s, then one `final` or one `error`.
+
+- Message conventions the server parses live in one place each:
+  `exploreChatText(field)` / `GENERATE_QUERIES_TEXT` in `workspace.ts`,
+  `GO_PILL` in `turn.ts`. Change the text there, never inline.
+- User-facing error text comes only from `turnErrorMessage`; the route logs
+  the error class and step, never the message or the body.
+- `maxDuration` in a route file must be a numeric literal and the file may
+  export nothing but segment config and handlers (Next 16 build check);
+  `route.test.ts` pins the literal to `MAX_DURATION_SECONDS`.
+- Client components import only browser-safe modules: `profile.ts`,
+  `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`.
+
 ## Passcode gate
 
 One shared passcode, no accounts (PLAN.md §2 "Access", §7 decision 5).
@@ -309,11 +330,17 @@ src/
     cards.ts        # pasted text → experience cards (done, 1.1)
     elicit.ts       # preference elicitation policy and answer pills (done, 1.2)
     discover.ts     # fields/roles discovery (done, 1.4)
-    explore.ts      # field drill-down, example posts, LinkedIn guidance
-    queries.ts      # query generation and revision from feedback
+    explore.ts      # field drill-down, example posts, LinkedIn guidance (done, 2.2)
+    queries.ts      # query generation and revision from feedback (done, 2.3)
+    boards.ts       # client-safe board labels, alert steps, query extra keys (done, 2.4; §7.32)
+    workspace.ts    # browser-side step policy and profile edits for the UI (done, 2.1/2.4)
+    turn-stream.ts  # NDJSON wire codec + sendTurn (done, 2.1)
+    turn.ts         # server dispatcher: TurnRequest → TurnResponse (done, 2.5; §7.31)
+  components/       # Workspace, ChatPane, ProfileTab, FieldsTab, QueriesTab (client)
   app/
-    api/            # streaming route handlers, one per lib module
-    (app)/          # the single-page workspace
+    api/turn/       # the one turn endpoint (NDJSON stream; done, 2.5)
+    api/enter/      # passcode check
+    page.tsx        # the single-page workspace
   proxy.ts          # passcode gate (Next 16 name for middleware.ts)
 supabase/
   config.toml          # local stack config (supabase init)
@@ -323,6 +350,8 @@ scripts/
   seed.ts              # data/*.yaml → Supabase (mirror; service role)
   try-cards.ts         # Gate 1 CLI for stage 1.1 (live call)
   try-discover.ts      # Gate 1 CLI for stage 1.4 (live call, web search)
+  try-explore.ts       # stage 2.2 live check (blocked-host assertion)
+  try-queries.ts       # stage 2.3 live check (generate + scripted revise)
   check-rls.ts         # asserts the RLS shape against a live stack
   smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
 evals/                 # synthetic profiles, structural checks, feedback-loop eval, baseline arm

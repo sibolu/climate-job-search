@@ -70,6 +70,11 @@ workflow, and the repo layout.
 - **LLM:** Claude Opus 5 via the Anthropic TypeScript SDK, with web search
   and web fetch for sourcing — all of it behind `src/lib/llm.ts`, which is
   also where the blocked-domain rule is enforced.
+- **One endpoint:** the browser POSTs its whole session (profile.md, recent
+  chat, the new input) to `/api/turn` and gets NDJSON back: progress lines,
+  then the assistant message plus the full replacement profile.md. The
+  browser decides which step runs (`src/lib/workspace.ts`); the server
+  dispatches in `src/lib/turn.ts` and stores nothing.
 - **Users:** fellows of any technical level, desktop Chrome.
 
 Decisions are recorded in PLAN.md §7, not in any individual's notes or

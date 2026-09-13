@@ -10,6 +10,17 @@
 
 import type { Board, Query } from "./profile";
 
+/** `extra` key naming the site for a query on the `other` board. */
+export const BOARD_NAME_KEY = "Board name";
+/** `extra` keys a revision sets on an untried query it retires (never deleted; PLAN.md §7.10). */
+export const RETIRED_KEY = "Retired";
+export const RETIRED_REASON_KEY = "Retired reason";
+
+/** True when a revision retired this untried query. */
+export function isRetiredQuery(query: Query): boolean {
+  return query.extra[RETIRED_KEY] === "yes";
+}
+
 export const BOARD_LABELS: Record<Board, string> = {
   linkedin: "LinkedIn",
   indeed: "Indeed",
@@ -51,7 +62,7 @@ export const ALERT_STEPS: Record<Board, string[]> = {
  */
 export function boardLabel(query: Query): string {
   if (query.board === "other") {
-    const named = query.extra["Board name"]?.trim();
+    const named = query.extra[BOARD_NAME_KEY]?.trim();
     if (named !== undefined && named !== "") return named;
   }
   return BOARD_LABELS[query.board];

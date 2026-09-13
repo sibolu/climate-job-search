@@ -50,6 +50,10 @@ import {
   upsertQuery,
 } from "./profile";
 import type { QueryFeedback } from "./session";
+import { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY } from "./boards";
+
+/** Re-exported for callers of this module; `boards.ts` is the client-safe owner. */
+export { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -63,39 +67,9 @@ export const MAX_QUERIES_TOTAL = 12;
 export const ELIGIBLE_FIELD_STATUSES: readonly FieldStatus[] = ["accepted", "unsure"];
 
 /** `extra` keys this module writes on queries and fields. */
-export const BOARD_NAME_KEY = "Board name";
 export const WHY_KEY = "Rationale";
-export const RETIRED_KEY = "Retired";
 export const RETIRED_REASON_KEY = "Retired reason";
 export const STATUS_NOTE_KEY = "Status note";
-
-/** How to save a search as an email alert, per board. Plain text; nothing is fetched. */
-export const ALERT_STEPS: Record<Board, string[]> = {
-  linkedin: [
-    "Open LinkedIn Jobs and paste the query into the search box; set the location filter.",
-    "Apply any other filters you want (date posted, experience level, remote).",
-    'Switch the "Set alert" toggle on above the results list.',
-    'Under "Manage alerts" choose email and daily or weekly; the alert keeps these filters.',
-  ],
-  indeed: [
-    'Open Indeed and paste the query into the "What" box; put your location in "Where".',
-    "Run the search and apply any filters (date posted, remote, salary).",
-    'Click "Get new jobs for this search by email" above the results (the bell icon on mobile).',
-    'Confirm your email address; edit or pause alerts under "My subscriptions" in your account.',
-  ],
-  climatebase: [
-    "Open Climatebase jobs and paste the keywords into the search box.",
-    "Filter by function, location and remote option; Climatebase has no boolean operators, so the filters do the narrowing.",
-    'Sign in and click "Create job alert" above the results.',
-    "Choose the email frequency; manage or delete alerts from your account settings.",
-  ],
-  other: [
-    "Open the board or careers page named next to the query and paste the query into its search box.",
-    "Apply the location and other filters the site offers.",
-    'Look for "Create alert", "Save search" or "Notify me" on the results page or under your account; most company career sites and Google Jobs offer one.',
-    "If the site has no alerts, bookmark the results URL and check it on a schedule.",
-  ],
-};
 
 // ---------------------------------------------------------------------------
 // Output schemas (passed to `structured`)

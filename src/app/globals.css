@@ -471,3 +471,9 @@ button:disabled {
 .feedback-box h4 {
   margin: 0 0 0.3rem;
 }
+
+.badge-query-retired {
+  background: #eee;
+  color: #666;
+  text-decoration: line-through;
+}

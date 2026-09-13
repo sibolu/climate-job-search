@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 
-import { ALERT_STEPS, boardLabel } from "@/lib/boards";
+import { ALERT_STEPS, boardLabel, isRetiredQuery, RETIRED_REASON_KEY } from "@/lib/boards";
 import type { Profile, Query, QueryStatus } from "@/lib/profile";
 import type { QueryFeedback } from "@/lib/session";
 import { MAX_FEEDBACK_REASON, normalizeFeedbackReason } from "@/lib/workspace";
@@ -72,6 +72,11 @@ function QueryCard({
           {board} <span className="muted">{query.id}</span>
         </h3>
         <span className={`badge badge-query-${query.status}`}>{STATUS_LABELS[query.status]}</span>
+        {isRetiredQuery(query) ? (
+          <span className="badge badge-query-retired" title={query.extra[RETIRED_REASON_KEY] ?? "Retired by a revision"}>
+            Retired
+          </span>
+        ) : null}
       </div>
 
       <p className="query-text">{query.query}</p>

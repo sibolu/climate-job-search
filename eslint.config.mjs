@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Worker worktrees (Agent tool, isolation: worktree) are full checkouts.
+    ".claude/**",
   ]),
 ]);
 
