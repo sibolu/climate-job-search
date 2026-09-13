@@ -50,10 +50,10 @@ import {
   upsertQuery,
 } from "./profile";
 import type { QueryFeedback } from "./session";
-import { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY } from "./boards";
+import { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY } from "./boards";
 
 /** Re-exported for callers of this module; `boards.ts` is the client-safe owner. */
-export { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY };
+export { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -68,7 +68,6 @@ export const ELIGIBLE_FIELD_STATUSES: readonly FieldStatus[] = ["accepted", "uns
 
 /** `extra` keys this module writes on queries and fields. */
 export const WHY_KEY = "Rationale";
-export const RETIRED_REASON_KEY = "Retired reason";
 export const STATUS_NOTE_KEY = "Status note";
 
 // ---------------------------------------------------------------------------

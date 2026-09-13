@@ -7,6 +7,12 @@
  *
  * The user is in charge of the profile (PRD): cards are excluded, never
  * deleted, and an inferred skill can always be rejected.
+ *
+ * The card and skill controls are disabled while a turn is in flight: that
+ * turn returns the whole `profile.md`, so an edit made under it would be
+ * overwritten. Export, import and "Start over" stay live — they replace or
+ * read the session rather than editing it, and `Workspace` abandons the
+ * in-flight turn before it applies either replacement.
  */
 
 import { useRef } from "react";
@@ -92,6 +98,7 @@ export default function ProfileTab({
                   <button
                     type="button"
                     className="secondary"
+                    disabled={busy}
                     onClick={() => onToggleCard(card.id, !card.excluded)}
                   >
                     {card.excluded ? "Include" : "Exclude"}
@@ -122,7 +129,7 @@ export default function ProfileTab({
             {profile.skills.confirmed.map((skill) => (
               <li key={skill}>
                 <span>{skill}</span>
-                <button type="button" className="secondary" onClick={() => onRejectSkill(skill)}>
+                <button type="button" className="secondary" disabled={busy} onClick={() => onRejectSkill(skill)}>
                   Reject
                 </button>
               </li>
@@ -139,10 +146,10 @@ export default function ProfileTab({
               <li key={skill}>
                 <span>{skill}</span>
                 <span className="skill-actions">
-                  <button type="button" className="secondary" onClick={() => onConfirmSkill(skill)}>
+                  <button type="button" className="secondary" disabled={busy} onClick={() => onConfirmSkill(skill)}>
                     Confirm
                   </button>
-                  <button type="button" className="secondary" onClick={() => onRejectSkill(skill)}>
+                  <button type="button" className="secondary" disabled={busy} onClick={() => onRejectSkill(skill)}>
                     Reject
                   </button>
                 </span>
@@ -158,7 +165,7 @@ export default function ProfileTab({
               {profile.skills.excluded.map((skill) => (
                 <li key={skill}>
                   <span>{skill}</span>
-                  <button type="button" className="secondary" onClick={() => onConfirmSkill(skill)}>
+                  <button type="button" className="secondary" disabled={busy} onClick={() => onConfirmSkill(skill)}>
                     Confirm
                   </button>
                 </li>

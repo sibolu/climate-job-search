@@ -36,7 +36,16 @@ interface FakeLlm extends Llm {
   requests: StructuredRequest<z.ZodType>[];
 }
 
-function fakeLlm(values: readonly unknown[], content: readonly unknown[] = []): FakeLlm {
+/**
+ * `content` is the last response's blocks; `pausedContent` is one entry per
+ * `pause_turn` continuation that preceded it, so a test can put a tool result
+ * in a segment that is not the final message.
+ */
+function fakeLlm(
+  values: readonly unknown[],
+  content: readonly unknown[] = [],
+  pausedContent: readonly (readonly unknown[])[] = [],
+): FakeLlm {
   const requests: StructuredRequest<z.ZodType>[] = [];
   let i = 0;
   return {
@@ -48,7 +57,9 @@ function fakeLlm(values: readonly unknown[], content: readonly unknown[] = []): 
       requests.push(request as unknown as StructuredRequest<z.ZodType>);
       const value = values[Math.min(i, values.length - 1)];
       i += 1;
-      return Promise.resolve({ value: value as z.infer<S>, message: { content } as never, ...METRICS });
+      const message = { content } as never;
+      const messages = [...pausedContent.map((c) => ({ content: c }) as never), message];
+      return Promise.resolve({ value: value as z.infer<S>, message, messages, ...METRICS });
     },
   };
 }
@@ -304,6 +315,17 @@ describe("exploreField", () => {
     ]);
     await expect(
       exploreField({ sessionId: SESSION_ID, profile: profileWithField(), fieldId: "F1" }, { llm: blocked, reference, tools: [] }),
+    ).rejects.toThrow(ExploreBlockedFetchError);
+  });
+
+  it("catches a blocked fetch in a pause_turn continuation, not just the last message", async () => {
+    const paused = fakeLlm(
+      [output()],
+      [],
+      [[{ type: "web_fetch_tool_result", content: { type: "web_fetch_result", url: "https://www.linkedin.com/jobs/view/1" } }]],
+    );
+    await expect(
+      exploreField({ sessionId: SESSION_ID, profile: profileWithField(), fieldId: "F1" }, { llm: paused, reference, tools: [] }),
     ).rejects.toThrow(ExploreBlockedFetchError);
   });
 

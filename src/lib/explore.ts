@@ -18,9 +18,9 @@
  *
  * LinkedIn guidance is a list of search URLs the *user* opens themselves —
  * this module never fetches linkedin.com, indeed.com or climatebase.org
- * (PRD hard constraint). `assertNoBlockedFetches` checks every response's
- * tool-result and citation URLs after the fact; `webTools()` blocks the hosts
- * before the call.
+ * (PRD hard constraint). `assertNoBlockedFetches` checks the tool-result and
+ * citation URLs of every segment of every call — `pause_turn` continuations
+ * included — after the fact; `webTools()` blocks the hosts before the call.
  */
 
 import { z } from "zod";
@@ -624,8 +624,11 @@ export async function exploreField(
   const message = buildExploreMessage(profile, field, bundle);
   const calls: CallMetrics[] = [];
   let fetchedUrls = 0;
-  const check = (m: MessageLike) => {
-    fetchedUrls += assertNoBlockedFetches(m).checked;
+  // Every segment of the call, not just the last: a `pause_turn` continuation
+  // is where the server tools actually ran, so checking only the final
+  // response would miss the fetches this rule exists to catch (PRD).
+  const check = (messages: readonly MessageLike[]) => {
+    for (const m of messages) fetchedUrls += assertNoBlockedFetches(m).checked;
   };
 
   let strategy = options.strategy ?? "single";
@@ -641,7 +644,7 @@ export async function exploreField(
         ...(tools.length === 0 ? {} : { tools }),
       });
       calls.push(metricsOf(result));
-      check(result.message);
+      check(result.messages);
       value = result.value;
     } catch (error: unknown) {
       if (tools.length === 0 || !isBadRequest(error)) throw error;
@@ -657,7 +660,7 @@ export async function exploreField(
       ...(tools.length === 0 ? {} : { tools }),
     }).final;
     calls.push(metricsOf(research));
-    check(research.message);
+    check(research.messages);
     const shaped = await llmClient.structured({
       step: "explore",
       sessionId,
@@ -666,7 +669,7 @@ export async function exploreField(
       schema: ExploreOutputSchema,
     });
     calls.push(metricsOf(shaped));
-    check(shaped.message);
+    check(shaped.messages);
     value = shaped.value;
   }
 

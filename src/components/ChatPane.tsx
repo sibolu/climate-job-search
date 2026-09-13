@@ -36,6 +36,16 @@ export default function ChatPane({
 }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  /**
+   * The one way this pane sends. Enter and the submit button both go through
+   * it, so neither can hand `Workspace` a send it will refuse — a refused send
+   * still clears the draft, which loses what the user typed.
+   */
+  const submit = () => {
+    if (busy || draft.trim() === "") return;
+    onSend();
+  };
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, streaming, error]);
@@ -94,7 +104,7 @@ export default function ChatPane({
         className="composer"
         onSubmit={(event) => {
           event.preventDefault();
-          onSend();
+          submit();
         }}
       >
         <label className="sr-only" htmlFor="chat-input">
@@ -109,7 +119,7 @@ export default function ChatPane({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              onSend();
+              submit();
             }
           }}
         />

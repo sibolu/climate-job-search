@@ -56,6 +56,9 @@ import {
 
 type TabName = "profile" | "fields" | "queries";
 
+/** One task later, so the click has started the download before the URL dies. */
+const REVOKE_DELAY_MS = 1_000;
+
 const TABS: { id: TabName; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "fields", label: "Fields" },
@@ -75,6 +78,15 @@ export default function Workspace() {
 
   /** The latest state, readable from inside an in-flight turn. */
   const stateRef = useRef<SessionState | null>(null);
+  /**
+   * Which turn is current. Bumped when a turn starts and when one is
+   * abandoned, so a reply that arrives after "Start over" — or after any later
+   * turn — is dropped instead of committing a stale `profileMd` over the
+   * session the user is looking at now.
+   */
+  const turnIdRef = useRef(0);
+  /** Aborts the in-flight request when the turn it belongs to is abandoned. */
+  const abortRef = useRef<AbortController | null>(null);
 
   // localStorage is a browser API: load after mount so the server and the
   // first client render agree.
@@ -110,12 +122,19 @@ export default function Workspace() {
       setBusy(true);
       setStreaming("");
 
+      const turnId = (turnIdRef.current += 1);
+      /** False once this turn has been abandoned; nothing it returns may land. */
+      const isCurrent = () => turnIdRef.current === turnId;
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const { profile } = parseProfile(withUser.profileMd);
       const step = nextStep(profile, { source });
       const request = buildTurnRequest(withUser, step, input);
 
       try {
-        const result = await sendTurn(request);
+        const result = await sendTurn(request, { signal: controller.signal });
+        if (!isCurrent()) return;
         if (!result.ok) {
           if (result.kind === "unauthorized") {
             router.replace("/enter");
@@ -128,6 +147,7 @@ export default function Workspace() {
         let accumulated = "";
         let settled = false;
         for await (const event of result.events) {
+          if (!isCurrent()) return;
           if (event.type === "delta") {
             accumulated += event.text;
             setStreaming(accumulated);
@@ -148,20 +168,47 @@ export default function Workspace() {
             commit(appendAssistantMessage(base, accumulated));
           }
         }
+      } catch {
+        // A mid-stream failure (the connection dropped, the body was cut off)
+        // rejects here; `send` is called as `void send(...)`, so without this
+        // the user would see the spinner stop with no explanation and the
+        // rejection would go unhandled. An abort is not a failure: the turn
+        // was abandoned deliberately and is no longer current.
+        if (isCurrent()) {
+          setError("The connection dropped mid-answer. Your message is still here; try sending it again.");
+        }
       } finally {
-        setBusy(false);
-        setStreaming(null);
+        if (isCurrent()) {
+          abortRef.current = null;
+          setBusy(false);
+          setStreaming(null);
+        }
       }
     },
     [busy, commit, router],
   );
 
+  /**
+   * Abandons the in-flight turn, if any: its reply is dropped rather than
+   * committed. Used by "Start over" and import, which both replace the whole
+   * session the turn was computed from.
+   */
+  const abandonTurn = useCallback(() => {
+    turnIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setStreaming(null);
+  }, []);
+
   const onSend = useCallback(() => {
     const text = draft.trim();
-    if (text === "") return;
+    // `send` drops the turn while one is in flight; clearing the draft first
+    // would throw the typed text away with it.
+    if (busy || text === "") return;
     setDraft("");
     void send({ kind: "message", content: text }, "chat", text);
-  }, [draft, send]);
+  }, [busy, draft, send]);
 
   const onPill = useCallback(
     (pill: AnswerPill) => {
@@ -172,18 +219,24 @@ export default function Workspace() {
 
   const onCreateCards = useCallback(() => {
     const text = pasteText.trim();
-    if (text === "") return;
+    if (busy || text === "") return;
     setPasteText("");
     void send({ kind: "message", content: text }, "paste", text);
-  }, [pasteText, send]);
+  }, [busy, pasteText, send]);
 
+  /**
+   * A local profile edit (field status, card exclude, skill confirm/reject).
+   * Refused while a turn is in flight: that turn returns the whole
+   * `profile.md` and would overwrite the edit a moment later. The controls are
+   * disabled too; this is the guard behind them.
+   */
   const editProfile = useCallback(
     (edit: (s: SessionState) => SessionState) => {
       const current = stateRef.current;
-      if (current === null) return;
+      if (current === null || busy) return;
       commit(edit(current));
     },
-    [commit],
+    [busy, commit],
   );
 
   /** Explore a field. The server marks it explored; nothing changes locally. */
@@ -225,13 +278,19 @@ export default function Workspace() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = EXPORT_FILENAME;
+    // In the document and revoked on a later task: some browsers cancel the
+    // download if the anchor is detached or the URL is revoked in the same
+    // tick as the click.
+    document.body.append(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
   }, []);
 
   const onImportFile = useCallback(
     (file: File) => {
       setImportError(null);
+      abandonTurn();
       void file.text().then((text) => {
         const result = importSession(text);
         if (!result.ok) {
@@ -241,20 +300,22 @@ export default function Workspace() {
         commit(result.value);
       });
     },
-    [commit],
+    [abandonTurn, commit],
   );
 
   const onStartOver = useCallback(() => {
     if (!window.confirm("Start over? This deletes the profile and chat stored in this browser.")) return;
+    // Before anything else: an in-flight turn would commit the server's
+    // `profileMd` into the fresh session and bring back what was just deleted.
+    abandonTurn();
     clearSession();
     const fresh = startOver();
     setDraft("");
     setPasteText("");
     setError(null);
     setImportError(null);
-    setStreaming(null);
     commit(fresh);
-  }, [commit]);
+  }, [abandonTurn, commit]);
 
   if (state === null) {
     return (

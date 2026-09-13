@@ -189,6 +189,44 @@ failures were in the driver's cookie parsing. Not exercised: the React
 components in a browser (2.1 and 2.4 had no browser run either) — that is
 the user's Gate 2 run.
 
+**Gate 2 security review (2026-09-12).** `/security-review` on Opus over
+`main...phase-2` (the 2.1–2.5 diff: the turn route, `turn.ts`, `turn-stream.ts`,
+the four React components, `cards`/`elicit`/`discover`/`explore`/`queries`/
+`boards`/`workspace`, the four `try-*` scripts, and the config changes)
+returned **no HIGH or MEDIUM findings**. What it confirmed, so a later change
+that breaks one of these is a regression and not a new opinion:
+
+- **The gate covers the new endpoint.** `PUBLIC_PATHS` in `proxy.ts` is still
+  only `/enter` and `/api/enter`, so `/api/turn` gets the `401` JSON body
+  unauthenticated (§7.7). The cookie is `SameSite=Lax` and no state-changing
+  `GET` was added, so a cross-site POST carries no cookie.
+- **No XSS sink.** No `dangerouslySetInnerHTML` anywhere in `src/components/`
+  or `src/app/`; chat text is a React text child, not parsed markdown. The one
+  model-supplied `href` (field sources, `FieldsTab.tsx`) is scheme-guarded with
+  `/^https?:\/\//` — which is what stops a `javascript:` URL the model
+  emitted — and carries `rel="noreferrer"`. `linkedinGuidanceLinks`
+  `encodeURIComponent`s every parameter.
+- **Nothing content-bearing is logged or persisted.** The new code has exactly
+  one `console.*` call: the route's catch, which logs the error *class* and
+  step. `turnErrorMessage` interpolates only regex-constrained ids (`Q\d+`,
+  `F\d+`) and integers — never model text or the request body (§7.31). Every
+  body goes through `parseTurnRequest` before anything else, and `runTurn`
+  holds no state.
+- **The no-scraping enforcement point held.** No `new Anthropic(`, raw
+  `fetch(`, `child_process`, `eval` or `new Function` in any new module; web
+  tools come only from `webTools()`, and `explore.ts` adds a post-hoc
+  `assertNoBlockedFetches` over tool-result and citation URLs on top of it
+  (§7.13, §7.19).
+
+Not vulnerabilities, recorded so they are not re-raised each gate: prompt
+injection from pasted resume text or fetched pages (inherent to the design;
+blast radius is the user's own profile and the output renders as inert text),
+and model-directed `web_fetch` to internal hosts (that fetch runs on
+Anthropic's infrastructure, not ours, so it is not SSRF against this app).
+
+The user's own Gate 2 run — the browser pass over the React components and two
+real job-board searches — is still outstanding.
+
 ### Phase 3 — Evaluation and pilot readiness (3.1 ∥ 3.2 ∥ 3.3, then 3.4)
 
 | # | Step | Model | Acceptance |
@@ -608,3 +646,26 @@ square of how long it runs. Brief accordingly.
     checkouts that ESLint walks (576 phantom errors), so `.claude/**` is in
     `globalIgnores`, and the orchestrator removes worktrees and their
     branches right after merging.
+
+34. **One turn is in flight at a time, and the client owns abandoning it.**
+    `Workspace` keeps a turn-generation counter and an `AbortController`: a
+    reply only commits while its turn is still the current one, and "Start
+    over" and import bump the counter and abort first, so a reply in flight
+    cannot re-commit the server's `profileMd` over the session that just
+    replaced it. A turn returns the *whole* `profile.md`, so the local profile
+    edits (field status, card exclude, skill confirm/reject) are disabled
+    while `busy` and refused by `editProfile` behind that; the send paths are
+    guarded before the draft is cleared, so a refused send never eats what the
+    user typed. A mid-stream failure is caught and shown as an error bubble —
+    `send` is called as `void send(...)`, so an uncaught one would be silent.
+
+35. **The blocked-host audit reads every segment of a call, not the last
+    message.** `llm.ts` returns `messages` (each response of one logical call,
+    `pause_turn` continuations included) alongside `message`, and
+    `explore.ts` runs `assertNoBlockedFetches` over all of them: the paused
+    segments are exactly where the server tools ran, so checking only the
+    final response left the PRD guarantee (§7.13, §7.19) half-enforced. A
+    client disconnect now stops the turn at the next step boundary — the
+    route's progress callback throws once the stream is cancelled — but a
+    model call already in flight still completes, which is `llm.ts`'s
+    deliberate choice so the usage row stays exact.

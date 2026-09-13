@@ -62,7 +62,7 @@ function fakeLlm(value: unknown): FakeLlm {
     },
     async structured(request) {
       requests.push(request);
-      return { value: request.schema.parse(value), message: {} as never, ...METRICS };
+      return { value: request.schema.parse(value), message: {} as never, messages: [], ...METRICS };
     },
   };
 }

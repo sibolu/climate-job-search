@@ -8,6 +8,9 @@
  *
  * The user is in charge (PRD): statuses are local profile edits with no server
  * call, and nothing is ever deleted. Only the Explore button posts a turn.
+ *
+ * Every control is disabled while a turn is in flight: that turn returns the
+ * whole `profile.md`, so an edit made under it would be overwritten.
  */
 
 import type { Field, FieldStatus, MoveType, Profile, Role } from "@/lib/profile";
@@ -155,6 +158,7 @@ export default function FieldsTab({ profile, busy, onSetFieldStatus, onExplore }
                   type="button"
                   className="secondary"
                   aria-pressed={field.status === b.status}
+                  disabled={busy}
                   onClick={() => onSetFieldStatus(field.id, b.status)}
                 >
                   {b.label}

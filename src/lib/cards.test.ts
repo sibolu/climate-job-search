@@ -57,7 +57,7 @@ function fakeLlm(values: readonly unknown[]): FakeLlm {
       requests.push(request as unknown as StructuredRequest<z.ZodType>);
       const value = values[Math.min(i, values.length - 1)];
       i += 1;
-      return Promise.resolve({ value: value as z.infer<S>, message: {} as never, ...METRICS });
+      return Promise.resolve({ value: value as z.infer<S>, message: {} as never, messages: [], ...METRICS });
     },
   };
 }
