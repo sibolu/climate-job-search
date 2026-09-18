@@ -334,8 +334,6 @@ square of how long it runs. Brief accordingly.
   if it affects contributors, in README.md, in the same commit.
 - **Standing conventions go in the repo's CLAUDE.md** (Phase 0.1 expands
   the first version), not in chat.
-- **Optional hardening:** a post-edit hook that runs lint and unit tests
-  automatically (via the `update-config` skill). Worth adding after Phase 0.
 
 ---
 
@@ -669,3 +667,90 @@ square of how long it runs. Brief accordingly.
     route's progress callback throws once the stream is cancelled — but a
     model call already in flight still completes, which is `llm.ts`'s
     deliberate choice so the usage row stays exact.
+
+36. **Location and work mode are board filters, not elicitation questions.**
+    `ELICIT_ORDER` is now `climateInterests`, `seniority`,
+    `retrainingAppetite`: the initial conversation no longer spends a turn
+    asking where someone wants to work or whether they want remote. Both stay
+    `PreferenceKey`s in the `profile.md` contract — inferred from the resume
+    by `inferPreferences`, editable in the Profile tab, and still settable
+    from query feedback via `preferenceEdits` ("bad fit: these are all in
+    Texas" is the user volunteering it, not us asking). What changed is that
+    generated query strings carry no place names and no remote/hybrid
+    wording; the queries prompt takes location and work mode as context for
+    which fields and employers are realistic, never as literal query terms.
+    `ALERT_STEPS` in `boards.ts` instead tells the person to set that board's
+    own location filter and its remote/hybrid filter, in the "look for…"
+    house style of §7.32 — every major board already ships those filters, and
+    a filter the board maintains beats a term hacked into the keyword box.
+    Elicitation completeness is therefore scoped to the asked keys
+    (`isElicitationComplete` in `elicit.ts`, which `workspace.ts`'s
+    `nextStep` now calls instead of `missingPreferences`), or a profile with
+    no inferable location would never leave the elicit step.
+
+    Whether these two should nonetheless be asked early for *some* fields is
+    an open product decision, parked in §8.4.
+
+---
+
+## 8. Future improvements (unsorted backlog)
+
+Items 1–3 captured from a local walkthrough on 2026-09-18; 4–5 relocated here
+from §7 and §5, where forward-looking notes had been accumulating inside
+decisions that were otherwise settled. **No ordering, no sizing, no commitment
+yet** — this is a holding pen. Promote an item into §3 as a real step (and
+record the design decision in §7) before building it.
+
+1. **Resume file upload (PDF / .docx), not just paste.** Today the only way in
+   is the paste box in `ProfileTab` → `cards` step. Accept a dropped or picked
+   file and extract its text before the cards call. Constraints that already
+   bind: nothing about the user may be stored server-side (the extraction has
+   to be either in-browser or a stateless pass-through), and the extracted
+   text still has to land in the same `pasteText` → `cards` path so
+   `profile.md` stays the contract. Open question: browser-side extraction
+   (pdf.js / a docx reader shipped to the client) vs. a stateless route that
+   parses and returns text without writing it anywhere.
+
+2. **UX redesign: exploration-first, chat-secondary.** The workspace is
+   currently chat-led — the chat pane is the main way to move through steps,
+   and the tabs are where results land. Invert that: browsing fields, roles,
+   and queries should be the primary interaction, with chat kept as a
+   supporting affordance (ask about this field, push back on a
+   recommendation, give fit feedback) rather than the driver. The chat
+   interface stays; it just stops being the front door.
+   *Next action:* the user is collecting screenshots to work from (likely
+   Claude Design) — design work waits on those references. Once the target
+   shape is chosen, `workspace.ts`'s `nextStep` policy is the thing that has
+   to change with it, since it currently encodes a mostly-linear chat
+   progression.
+
+3. **Show approximate cost in the UI (urgent), then control token spend.**
+   Two items, deliberately split:
+   - **Near-term, wanted first:** display the approximate cost of the session
+     to the user. Cost is already computed per call in `llm.ts`
+     (`PRICE_PER_MTOK` → `costUsd`) but goes only into the anonymous
+     `llm_usage` row; nothing is returned to the browser. The work is to
+     carry the per-turn usage/cost back through `turn.ts` / `turn-stream.ts`
+     and accumulate it client-side. It stays a counter — no content, no
+     identity — so it does not disturb the no-server-side-user-data rule.
+   - **Later:** actual spend control (per-session budget, a cheaper effort
+     level or a smaller model once a threshold is crossed, or a hard stop
+     with an explanation). `EFFORT_BY_STEP` is the lever that already exists.
+
+4. **Ask location and work mode early for some fields?** §7.36 took them out
+   of elicitation entirely: every major board ships a location filter and a
+   remote/hybrid filter, so `ALERT_STEPS` points the person at those instead
+   of hacking place names into a keyword box. The open question is whether
+   that is right for *every* field. If the number of jobs varies drastically
+   by industry and geography — BLS employment data by sector and region
+   would be the evidence — then asking location early is warranted for those
+   fields, because it changes which fields are realistic to recommend at all
+   rather than merely filtering a list already on the table. Decide once
+   there is usage data or that BLS analysis; not now.
+
+5. **A post-edit hook that runs lint and unit tests automatically** (via the
+   `update-config` skill). Optional hardening, noted while §5 was written and
+   never acted on. Cheap; the reason to hold off is that it fires on every
+   edit inside a worker, and §4's budget rule is one filtered verification
+   pass per step rather than a run after each change — so it wants a scope
+   narrower than "every edit" before it goes in.

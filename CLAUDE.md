@@ -5,6 +5,10 @@
 - **Read PLAN.md first.** It is the roadmap, the decisions log (§7), and the
   operating agreement for autonomous phase execution (§5). Update step
   statuses there as work completes.
+- **Keep `docs/data-flow.md` current.** It is a single high-level
+  flowchart of what talks to what (person, model calls, stored data, web,
+  reference collection). Update it only when a step, a data store or a
+  source of ground truth is added or removed. No implementation details.
 - **Record decisions in the repo, not in memory.** New architectural
   decisions or constraints go into PLAN.md §7 (and README.md if they affect
   contributors) in the same commit as the change. Do not rely on Claude's

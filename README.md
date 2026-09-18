@@ -52,6 +52,12 @@ See [CLAUDE.md](CLAUDE.md) for the full command list, the environment
 variables and which are server-only, the passcode gate, the Supabase
 workflow, and the repo layout.
 
+## How the pipeline works
+
+[docs/data-flow.md](docs/data-flow.md) is a one-diagram, high-level map of
+how a pasted resume becomes cards, climate fields, roles and search queries,
+and where data is stored and grounded.
+
 ## Key decisions and constraints (summary; PLAN.md §2 and §7 are canonical)
 
 - **Stack:** Next.js + TypeScript on Vercel. Supabase Postgres holds only

@@ -73,17 +73,32 @@ import type { AnswerPill } from "./session";
  *      it every other answer only filters an unknown set. It is also the one
  *      question where "not sure yet" is a good answer (see
  *      {@link OPEN_TO_SUGGESTIONS}), so it never blocks.
- *   2. `location` — geography decides which employers are in reach at all
- *      (offshore wind, utilities and manufacturing are regional).
- *   3. `workMode` — remote/hybrid/on-site is the second reachability filter,
- *      and one location pill ("remote only") answers it for free.
- *   4. `seniority` — calibrates the role level; the cards usually make this
+ *   2. `seniority` — calibrates the role level; the cards usually make this
  *      inferable, so it is often skipped.
- *   5. `retrainingAppetite` — decides between a sector move, an adjacent role
+ *   3. `retrainingAppetite` — decides between a sector move, an adjacent role
  *      and a retrain. It is most useful once fields are on the table, so it
  *      goes last; it is rarely inferable, so it is still asked.
+ *
+ * `location` and `workMode` are deliberately **not** asked (PLAN.md §7.36).
+ * They are native filters on every major job board, so the app guides the
+ * person to the board's own location and remote/hybrid filter
+ * (`ALERT_STEPS` in `boards.ts`) rather than spending a conversational turn
+ * on them. Both remain {@link PreferenceKey}s: still inferred from the cards
+ * by {@link inferPreferences}, still editable in the Profile tab, still
+ * settable from query feedback — only the asking stops.
  */
 export const ELICIT_ORDER: readonly PreferenceKey[] = [
+  "climateInterests",
+  "seniority",
+  "retrainingAppetite",
+];
+
+/**
+ * Display order for the closing summary: every known preference, asked or
+ * not, so an inferred location or work mode is still shown back for
+ * correction. {@link displayValue} drops the ones with no value.
+ */
+export const SUMMARY_ORDER: readonly PreferenceKey[] = [
   "climateInterests",
   "location",
   "workMode",
@@ -113,15 +128,23 @@ export function isOpenToSuggestions(p: Profile): boolean {
   return values.length > 0 && values.every((v) => normalizeInterest(v) === OPEN_TO_SUGGESTIONS);
 }
 
-/** Every typed preference is known (stated or inferred). */
+/** The preferences still missing that the conversation actually asks for. */
+function missingAskedPreferences(p: Profile): PreferenceKey[] {
+  const missing = new Set(missingPreferences(p));
+  return ELICIT_ORDER.filter((key) => missing.has(key));
+}
+
+/**
+ * Every preference the conversation asks for is known (stated or inferred).
+ * `location` and `workMode` are not asked, so they never hold this back.
+ */
 export function isElicitationComplete(p: Profile): boolean {
-  return missingPreferences(p).length === 0;
+  return missingAskedPreferences(p).length === 0;
 }
 
 /** The first missing preference in {@link ELICIT_ORDER}, or `undefined` when none is. */
 export function nextMissingPreference(p: Profile): PreferenceKey | undefined {
-  const missing = new Set(missingPreferences(p));
-  return ELICIT_ORDER.find((key) => missing.has(key));
+  return missingAskedPreferences(p)[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +333,7 @@ function displayValue(p: Profile, key: PreferenceKey): { text: string; inferred:
 
 function doneSummary(p: Profile): string {
   const lines: string[] = [];
-  for (const key of ELICIT_ORDER) {
+  for (const key of SUMMARY_ORDER) {
     const shown = displayValue(p, key);
     if (shown === undefined) continue;
     lines.push(`- ${PREFERENCE_LABELS[key]}: ${shown.text}${shown.inferred ? ` ${INFERRED_TAG}` : ""}`);

@@ -11,10 +11,10 @@
  */
 
 import { confirmSkill, rejectSkill } from "./cards";
+import { isElicitationComplete } from "./elicit";
 import type { Card, Field, FieldStatus, Profile, Role } from "./profile";
 import {
   activeCards,
-  missingPreferences,
   parseProfile,
   serializeProfile,
   setCardExcluded,
@@ -47,7 +47,7 @@ export interface NextStepInput {
 /**
  * The client-side step policy (PLAN.md §3). A button that names its own step
  * wins; pasted text always means card extraction; otherwise the profile
- * decides: elicit preferences until none are missing, then discover fields,
+ * decides: elicit preferences until every asked one is known, then discover fields,
  * then explore.
  */
 export function nextStep(profile: Profile, input: NextStepInput): StepName {
@@ -56,7 +56,7 @@ export function nextStep(profile: Profile, input: NextStepInput): StepName {
   if (input.source === "queries") return "queries";
   if (input.source === "feedback") return "revise";
   if (activeCards(profile).length === 0) return "cards";
-  if (missingPreferences(profile).length > 0) return "elicit";
+  if (!isElicitationComplete(profile)) return "elicit";
   if (profile.fields.length === 0) return "discover";
   return "explore";
 }

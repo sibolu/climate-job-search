@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useRouter } from "next/navigation";
 
-import ChatPane from "@/components/ChatPane";
+import ChatPane, { pillTurn } from "@/components/ChatPane";
 import FieldsTab from "@/components/FieldsTab";
 import ProfileTab from "@/components/ProfileTab";
 import QueriesTab from "@/components/QueriesTab";
@@ -70,7 +70,11 @@ export default function Workspace() {
   const [tab, setTab] = useState<TabName>("profile");
   const [draft, setDraft] = useState("");
   const [pasteText, setPasteText] = useState("");
-  const [streaming, setStreaming] = useState<string | null>(null);
+  /**
+   * The progress lines the server has streamed for the in-flight turn, or
+   * `null` between turns. Non-null is what makes the working bubble show.
+   */
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,7 +124,7 @@ export default function Workspace() {
       commit(withUser);
       setError(null);
       setBusy(true);
-      setStreaming("");
+      setProgress("");
 
       const turnId = (turnIdRef.current += 1);
       /** False once this turn has been abandoned; nothing it returns may land. */
@@ -150,7 +154,7 @@ export default function Workspace() {
           if (!isCurrent()) return;
           if (event.type === "delta") {
             accumulated += event.text;
-            setStreaming(accumulated);
+            setProgress(accumulated);
           } else if (event.type === "final") {
             const base = stateRef.current ?? withUser;
             commit(applyTurnResponse(base, event.response));
@@ -181,7 +185,7 @@ export default function Workspace() {
         if (isCurrent()) {
           abortRef.current = null;
           setBusy(false);
-          setStreaming(null);
+          setProgress(null);
         }
       }
     },
@@ -198,7 +202,7 @@ export default function Workspace() {
     abortRef.current?.abort();
     abortRef.current = null;
     setBusy(false);
-    setStreaming(null);
+    setProgress(null);
   }, []);
 
   const onSend = useCallback(() => {
@@ -212,7 +216,8 @@ export default function Workspace() {
 
   const onPill = useCallback(
     (pill: AnswerPill) => {
-      void send({ kind: "message", content: pill.value }, "chat", pill.value);
+      const { content, display } = pillTurn(pill);
+      void send({ kind: "message", content }, "chat", display);
     },
     [send],
   );
@@ -331,7 +336,7 @@ export default function Workspace() {
     <div className="workspace">
       <ChatPane
         messages={state.messages}
-        streaming={streaming}
+        progress={progress}
         error={error}
         busy={busy}
         draft={draft}
