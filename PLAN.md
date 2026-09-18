@@ -697,3 +697,47 @@ square of how long it runs. Brief accordingly.
     because it changes which fields are realistic to recommend at all rather
     than merely filtering a list already on the table. Decide once there is
     usage data or that BLS analysis; not now.
+
+---
+
+## 8. Future improvements (unsorted backlog)
+
+Captured from a local walkthrough on 2026-09-18. **No ordering, no sizing, no
+commitment yet** — this is a holding pen. Promote an item into §3 as a real
+step (and record the design decision in §7) before building it.
+
+1. **Resume file upload (PDF / .docx), not just paste.** Today the only way in
+   is the paste box in `ProfileTab` → `cards` step. Accept a dropped or picked
+   file and extract its text before the cards call. Constraints that already
+   bind: nothing about the user may be stored server-side (the extraction has
+   to be either in-browser or a stateless pass-through), and the extracted
+   text still has to land in the same `pasteText` → `cards` path so
+   `profile.md` stays the contract. Open question: browser-side extraction
+   (pdf.js / a docx reader shipped to the client) vs. a stateless route that
+   parses and returns text without writing it anywhere.
+
+2. **UX redesign: exploration-first, chat-secondary.** The workspace is
+   currently chat-led — the chat pane is the main way to move through steps,
+   and the tabs are where results land. Invert that: browsing fields, roles,
+   and queries should be the primary interaction, with chat kept as a
+   supporting affordance (ask about this field, push back on a
+   recommendation, give fit feedback) rather than the driver. The chat
+   interface stays; it just stops being the front door.
+   *Next action:* the user is collecting screenshots to work from (likely
+   Claude Design) — design work waits on those references. Once the target
+   shape is chosen, `workspace.ts`'s `nextStep` policy is the thing that has
+   to change with it, since it currently encodes a mostly-linear chat
+   progression.
+
+3. **Show approximate cost in the UI (urgent), then control token spend.**
+   Two items, deliberately split:
+   - **Near-term, wanted first:** display the approximate cost of the session
+     to the user. Cost is already computed per call in `llm.ts`
+     (`PRICE_PER_MTOK` → `costUsd`) but goes only into the anonymous
+     `llm_usage` row; nothing is returned to the browser. The work is to
+     carry the per-turn usage/cost back through `turn.ts` / `turn-stream.ts`
+     and accumulate it client-side. It stays a counter — no content, no
+     identity — so it does not disturb the no-server-side-user-data rule.
+   - **Later:** actual spend control (per-session budget, a cheaper effort
+     level or a smaller model once a threshold is crossed, or a hard stop
+     with an explanation). `EFFORT_BY_STEP` is the lever that already exists.
