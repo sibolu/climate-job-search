@@ -334,8 +334,6 @@ square of how long it runs. Brief accordingly.
   if it affects contributors, in README.md, in the same commit.
 - **Standing conventions go in the repo's CLAUDE.md** (Phase 0.1 expands
   the first version), not in chat.
-- **Optional hardening:** a post-edit hook that runs lint and unit tests
-  automatically (via the `update-config` skill). Worth adding after Phase 0.
 
 ---
 
@@ -690,21 +688,18 @@ square of how long it runs. Brief accordingly.
     `nextStep` now calls instead of `missingPreferences`), or a profile with
     no inferable location would never leave the elicit step.
 
-    **Open product decision, to revisit:** whether these two should in fact
-    be asked early for *some* fields. If the number of jobs varies
-    drastically by industry and geography — BLS employment data by sector and
-    region would be the evidence — then asking location early is warranted,
-    because it changes which fields are realistic to recommend at all rather
-    than merely filtering a list already on the table. Decide once there is
-    usage data or that BLS analysis; not now.
+    Whether these two should nonetheless be asked early for *some* fields is
+    an open product decision, parked in §8.4.
 
 ---
 
 ## 8. Future improvements (unsorted backlog)
 
-Captured from a local walkthrough on 2026-09-18. **No ordering, no sizing, no
-commitment yet** — this is a holding pen. Promote an item into §3 as a real
-step (and record the design decision in §7) before building it.
+Items 1–3 captured from a local walkthrough on 2026-09-18; 4–5 relocated here
+from §7 and §5, where forward-looking notes had been accumulating inside
+decisions that were otherwise settled. **No ordering, no sizing, no commitment
+yet** — this is a holding pen. Promote an item into §3 as a real step (and
+record the design decision in §7) before building it.
 
 1. **Resume file upload (PDF / .docx), not just paste.** Today the only way in
    is the paste box in `ProfileTab` → `cards` step. Accept a dropped or picked
@@ -741,3 +736,21 @@ step (and record the design decision in §7) before building it.
    - **Later:** actual spend control (per-session budget, a cheaper effort
      level or a smaller model once a threshold is crossed, or a hard stop
      with an explanation). `EFFORT_BY_STEP` is the lever that already exists.
+
+4. **Ask location and work mode early for some fields?** §7.36 took them out
+   of elicitation entirely: every major board ships a location filter and a
+   remote/hybrid filter, so `ALERT_STEPS` points the person at those instead
+   of hacking place names into a keyword box. The open question is whether
+   that is right for *every* field. If the number of jobs varies drastically
+   by industry and geography — BLS employment data by sector and region
+   would be the evidence — then asking location early is warranted for those
+   fields, because it changes which fields are realistic to recommend at all
+   rather than merely filtering a list already on the table. Decide once
+   there is usage data or that BLS analysis; not now.
+
+5. **A post-edit hook that runs lint and unit tests automatically** (via the
+   `update-config` skill). Optional hardening, noted while §5 was written and
+   never acted on. Cheap; the reason to hold off is that it fires on every
+   edit inside a worker, and §4's budget rule is one filtered verification
+   pass per step rather than a run after each change — so it wants a scope
+   narrower than "every edit" before it goes in.
