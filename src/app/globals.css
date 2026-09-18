@@ -4,6 +4,9 @@
   --muted: #5d6470;
   --border: #d7dbe2;
   --accent: #12603f;
+  /* Assistant message text. Deep teal on --background: 7.27:1, WCAG AA body
+     text. Distinct from --foreground (user text) and from the error red. */
+  --assistant-text: #155e75;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -13,6 +16,8 @@
     --muted: #9aa2af;
     --border: #2b2f38;
     --accent: #4fbf8b;
+    /* 9.72:1 on the dark --background. */
+    --assistant-text: #67c7de;
   }
 }
 
@@ -150,6 +155,75 @@ button {
 
 .bubble-text {
   white-space: pre-wrap;
+}
+
+/*
+ * The assistant's words in their own colour, so a long transcript can be
+ * skimmed. Colour is never the only signal: the "You" / "Assistant"
+ * `.bubble-role` label above every bubble says the same thing in words. The
+ * selector deliberately targets `.bubble-text` rather than the bubble, so the
+ * muted role label and the in-flight `.working` indicator keep their own
+ * colours.
+ */
+.bubble-assistant .bubble-text {
+  color: var(--assistant-text);
+}
+
+.working {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-style: italic;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.working-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+}
+
+.working-dots {
+  display: inline-flex;
+  gap: 0.1rem;
+}
+
+.working-dots span {
+  animation: working-pulse 1.2s ease-in-out infinite;
+  background: currentColor;
+  border-radius: 50%;
+  display: inline-block;
+  height: 0.25rem;
+  opacity: 0.25;
+  width: 0.25rem;
+}
+
+.working-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.working-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes working-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* Motion is decoration here: the text already says the turn is running. */
+@media (prefers-reduced-motion: reduce) {
+  .working-dots span {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 .pills {
