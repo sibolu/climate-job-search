@@ -8,7 +8,7 @@
 --     anyone.
 --
 -- `authenticated` gets exactly the same as `anon`: there are no accounts
--- (PLAN.md §7.5), but the role exists in every Supabase project, so it is
+-- (technical-plan.md D5), but the role exists in every Supabase project, so it is
 -- pinned down rather than left at Supabase's defaults.
 --
 -- Two layers on purpose: table grants (a hard permission error) and policies

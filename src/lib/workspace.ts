@@ -45,7 +45,7 @@ export interface NextStepInput {
 }
 
 /**
- * The client-side step policy (PLAN.md §3). A button that names its own step
+ * The client-side step policy (technical-plan.md D31). A button that names its own step
  * wins; pasted text always means card extraction; otherwise the profile
  * decides: elicit preferences until every asked one is known, then discover fields,
  * then explore.

@@ -21,10 +21,10 @@
  * - **The profile is written through `profile.ts` helpers only.** No module
  *   here string-edits markdown, and card IDs are never renumbered: a card the
  *   model drops is *excluded*, not deleted, so fit reasoning that cites it
- *   keeps resolving (PLAN.md §7.10).
+ *   keeps resolving (technical-plan.md D10).
  * - **The system prompt is a byte-stable constant.** It is sent as a cached
  *   block; per-call content (the pasted text, the current cards) goes in the
- *   user message (PLAN.md §7 / `llm.ts`).
+ *   user message (technical-plan.md §1 "LLM" / `llm.ts`).
  * - **No content is ever logged.** Not in `console.*`, not in error messages.
  *   {@link CardsInputError} carries a length, never the text.
  */
@@ -46,7 +46,7 @@ import { MAX_MESSAGE_CHARS } from "./session";
 // Shape of the card set
 // ---------------------------------------------------------------------------
 
-/** Ask for at least this many cards when the text supports it (PLAN.md §3). */
+/** Ask for at least this many cards when the text supports it (PLAN.md step 1.1). */
 export const MIN_CARDS = 3;
 
 /** Hard cap. Extra cards from the model are dropped, keeping model order. */
@@ -388,7 +388,7 @@ function cardKey(id: string): string {
  *
  * The model sees the active cards and returns the full corrected list keyed by
  * their IDs. IDs are preserved; a card it leaves out is **excluded**, not
- * deleted (PLAN.md §7.10), so a later "bring C3 back" is `setCardExcluded`
+ * deleted (technical-plan.md D10), so a later "bring C3 back" is `setCardExcluded`
  * rather than a re-extraction. Already-excluded cards are not sent and are not
  * modified.
  */

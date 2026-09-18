@@ -2,43 +2,24 @@
 
 @AGENTS.md
 
-- **Read PLAN.md first.** It is the roadmap, the decisions log (§7), and the
-  operating agreement for autonomous phase execution (§5). Update step
+How work is run (phases, orchestration, model policy, context budget,
+reporting) is in AGENTS.md above. This file is the code: commands,
+environment, the hard constraints, and the rules each module enforces.
+
+- **Read PLAN.md first** for what is done and what is next; update step
   statuses there as work completes.
-- **Keep `docs/data-flow.md` current.** It is a single high-level
-  flowchart of what talks to what (person, model calls, stored data, web,
-  reference collection). Update it only when a step, a data store or a
-  source of ground truth is added or removed. No implementation details.
-- **Record decisions in the repo, not in memory.** New architectural
-  decisions or constraints go into PLAN.md §7 (and README.md if they affect
-  contributors) in the same commit as the change. Do not rely on Claude's
+- **Decisions are numbered `D<n>` in `docs/technical-plan.md` §5.** Code
+  comments cite them as `technical-plan.md D31`. Append a new decision there
+  in the same commit as the change; never renumber. Do not rely on Claude's
   private memory for anything another contributor would need.
-- **Model policy** (PLAN.md §4): Fable orchestrates and owns only the steps
-  whose §3 Model column says Fable; Opus does the coding *and every gate
-  review*; Sonnet 5 at `effort: low` does web data-gathering; escalate a
-  blocked worker to Fable.
+- **Keep `docs/data-flow.md` current.** One high-level flowchart of what
+  talks to what. Update it only when a step, a data store or a source of
+  ground truth is added or removed. No implementation details.
 - **Prompts** live as plain template strings in `src/lib/*.ts`, one module
   each, so they can be edited without touching React.
-- **Reporting** follows the user's global CLAUDE.md: action line first, 1–3
-  sentence summary, gotchas under `FYI (no action needed):`.
-
-## Context budget (PLAN.md §4, §7.28)
-
-Cost is context × turns: 93% of input tokens in the measured window were cache
-reads, so every token you pull into context is re-billed on every later turn.
-
-- **Never read a whole file.** No `cat file.ts`, no multi-file `cat -n a b c`,
-  no `Read` without `offset`/`limit` above ~200 lines. Use `grep -n -C5` or
-  `sed -n 'A,Bp'`. `profile.ts` is 49KB and `PLAN.md` is 30KB — neither is ever
-  read whole.
-- **Workers finish in ≤20 turns / ~80K context.** Over that, split the task.
-  The orchestrator puts the turn budget in the brief and pastes the step row,
-  the acceptance check and the relevant §7 decisions in — it does not send a
-  worker to read PLAN.md.
-- **Verify once per step, filtered:**
-  `pnpm test && pnpm lint && pnpm typecheck 2>&1 | tail -30`, then `pnpm build`
-  before the commit. Not after every edit.
-- **Never run a gate review and a phase execution in the same session.**
+- **Never read a whole file** (`profile.ts` is 49KB, `docs/technical-plan.md`
+  37KB): `grep -n -C5`, `sed -n 'A,Bp'`, or a ranged `Read`. The full budget
+  rules are in AGENTS.md.
 
 ## Hard constraints (PRD.md — these bind every change)
 
@@ -89,7 +70,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 committed. `next typegen` runs first in `typecheck` because Next generates the
 `LayoutProps` / `PageProps` globals into `.next/types`.
 
-Unit tests cover parsers and pure logic only (PLAN.md §2). Prompt behaviour is
+Unit tests cover parsers and pure logic only (docs/technical-plan.md §1). Prompt behaviour is
 covered by the evals in `evals/` (Phase 3), not by unit tests. Test files are
 `src/**/*.test.ts`; `vitest.config.ts` excludes `.next/` so build output is
 never collected.
@@ -143,7 +124,7 @@ path writes anything to Supabase, ever. Concretely:
   completions, no resume or chat text, no identifiers. CHECK constraints keep
   it that way: `session_id` must be exactly the 32 hex chars `newSessionId()`
   produces and `step` must be one of the six `StepName` values, so neither
-  column can carry free text (PLAN.md §7.22).
+  column can carry free text (docs/technical-plan.md D22).
 
 ### Changing the schema
 
@@ -171,21 +152,21 @@ array equals `BLOCKED_SOURCE_DOMAINS`, so a half-done edit fails a test. Look-al
 `notlinkedin.com` are deliberately unaffected.
 
 `function` on roles and `transferable_functions` on fields use a fixed
-vocabulary so discovery can match a person's function to a field (PLAN.md
-§7.29): software, data, product, design, marketing, communications, sales,
+vocabulary so discovery can match a person's function to a field (docs/technical-plan.md
+D29): software, data, product, design, marketing, communications, sales,
 business-development, customer-success, operations, project-management,
 finance, accounting, legal, policy, people, research, engineering,
 field-technician, video-media, education, supply-chain.
 
 `example_roles` holds **role profiles, never personal profiles**: what someone
 in the role does day to day, with no real individual described, named or
-linked (PLAN.md §7.6). No schema can check that — it is a review rule.
+linked (docs/technical-plan.md D6). No schema can check that — it is a review rule.
 
 ## LLM calls (`src/lib/llm.ts`)
 
 **Every model call in this app goes through `src/lib/llm.ts`.** No other module
 constructs an Anthropic client, builds a web tool, or writes an `llm_usage`
-row, and **any new fetch path must go through this module too** (PLAN.md §6) —
+row, and **any new fetch path must go through this module too** (docs/technical-plan.md §4) —
 that is what makes the PRD's no-scraping rule enforceable in code rather than
 in prose.
 
@@ -209,17 +190,17 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   tests; `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
 - **Model and thinking**: `claude-opus-5` with adaptive thinking on every call
-  (PLAN.md §7.2). `budget_tokens` is rejected by this model; depth is
+  (docs/technical-plan.md D2). `budget_tokens` is rejected by this model; depth is
   `output_config.effort`.
-- **Effort per step** (`EFFORT_BY_STEP`, PLAN.md §2): chat-like steps `cards`
+- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md §1): chat-like steps `cards`
   and `elicit` are `medium`; `discover`, `explore`, `queries` and `revise` are
   `high`. Change the table, not the call sites.
 - **Structured outputs** use `client.messages.create()` with
   `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
-  the rest of the app uses (PLAN.md §7.12). The wrapper records usage and
+  the rest of the app uses (docs/technical-plan.md D12). The wrapper records usage and
   checks the stop reason first, then parses the final text block with the
   schema; a parse failure is `LlmOutputError` carrying issue paths only,
-  never model text (PLAN.md §7.18).
+  never model text (docs/technical-plan.md D18).
 - **Web tools**: `webTools()` is the only factory, and every call runs its
   tools through `assertToolsAllowed()`, which throws `LlmToolPolicyError` on
   any web tool that does not block all of `BLOCKED_DOMAINS`
@@ -227,14 +208,14 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   `BLOCKED_SOURCE_DOMAINS` in `reference-schema.ts` (re-exported here as
   `BLOCKED_DOMAINS`) and `private.blocked_source_domains()` in the
   reference-tables migration — and `reference-schema.test.ts` reads the
-  migration and asserts the SQL array matches (PLAN.md §7.13, §7.25).
+  migration and asserts the SQL array matches (docs/technical-plan.md D13, D25).
 - **Stop reasons**: `refusal` → `LlmRefusalError` (category only, never the
   text), `max_tokens` → `LlmTruncatedError`, `pause_turn` → resumed
   automatically up to `MAX_PAUSE_TURN_CONTINUATIONS`, then
   `LlmPauseLimitError`. SDK errors (`Anthropic.RateLimitError`, …) pass
   through untouched — catch the typed classes, never match on message text.
 - **Route handlers** that call this module set
-  `export const maxDuration = MAX_DURATION_SECONDS` (800s, PLAN.md §6).
+  `export const maxDuration = MAX_DURATION_SECONDS` (800s, docs/technical-plan.md §4).
 - **Never log content.** The module logs no prompt or completion text
   anywhere, error messages included; a failed usage insert is a
   `console.warn` with the error *code* only. Keep it that way.
@@ -255,7 +236,7 @@ the anon key deliberately cannot read `llm_usage`.
 
 ## The turn endpoint (`src/lib/turn.ts`, `src/app/api/turn/route.ts`)
 
-One `POST /api/turn` for every step (PLAN.md §7.31). The browser sends a
+One `POST /api/turn` for every step (docs/technical-plan.md D31). The browser sends a
 `TurnRequest` and chooses the `step` in `src/lib/workspace.ts`; `turn.ts`
 dispatches and returns the assistant message, pills, and the **whole**
 canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
@@ -274,12 +255,11 @@ canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 
 ## Passcode gate
 
-One shared passcode, no accounts (PLAN.md §2 "Access", §7 decision 5).
+One shared passcode, no accounts (docs/technical-plan.md §1 "Access", D5).
 
 - **`src/proxy.ts`** is the gate. Next.js 16 renamed the `middleware` file
   convention to `proxy`, so the file is `src/proxy.ts` and it exports `proxy`,
-  not `middleware`. PLAN.md §2's layout still says `middleware.ts`; `proxy.ts`
-  is the current spelling of the same thing.
+  not `middleware`.
 - Every path is gated except `/enter`, `/api/enter`, `_next/static`,
   `_next/image`, `favicon.ico`, and static asset extensions. `/api/*` is gated
   too — those are stateless LLM calls the pilot pays for. Unauthenticated
@@ -298,7 +278,7 @@ One shared passcode, no accounts (PLAN.md §2 "Access", §7 decision 5).
   to `/`. A wrong passcode returns `401` and sets no cookie. The submitted
   passcode is never logged.
 
-## `profile.md` is the contract (PLAN.md §7 decisions 9–12)
+## `profile.md` is the contract (docs/technical-plan.md D9–D12)
 
 - The format is defined once, in the header comment of `src/lib/profile.ts`,
   with a complete example. Change the format only there, in the same commit
@@ -317,49 +297,8 @@ One shared passcode, no accounts (PLAN.md §2 "Access", §7 decision 5).
   the source of truth, `sessionId` is random and anonymous, and no field may
   carry identity. Route handlers validate bodies with `parseTurnRequest`.
 
-## Repo layout (target, PLAN.md §2)
+## Repo layout
 
-```
-src/
-  lib/
-    passcode.ts     # shared-passcode logic (done, 0.1)
-    profile.ts      # profile.md schema, parse/serialize  (the contract; done, 0.2)
-    session.ts      # browser session state + per-turn payload (done, 0.2)
-    __fixtures__/   # canonical profile.md fixtures used by the round-trip tests
-    llm.ts          # client wrapper, model config, usage logging, web tools (done, 0.3)
-    supabase.ts     # anonClient() / serviceClient()  (done, 0.4)
-    database.types.ts  # GENERATED by `pnpm db:types`; do not hand-edit (0.4)
-    reference-schema.ts # data/*.yaml shapes + blocked-source rules (done, 0.4)
-    reference.ts    # typed reads from the Supabase reference tables (done, 0.4)
-    cards.ts        # pasted text → experience cards (done, 1.1)
-    elicit.ts       # preference elicitation policy and answer pills (done, 1.2)
-    discover.ts     # fields/roles discovery (done, 1.4)
-    explore.ts      # field drill-down, example posts, LinkedIn guidance (done, 2.2)
-    queries.ts      # query generation and revision from feedback (done, 2.3)
-    boards.ts       # client-safe board labels, alert steps, query extra keys (done, 2.4; §7.32)
-    workspace.ts    # browser-side step policy and profile edits for the UI (done, 2.1/2.4)
-    turn-stream.ts  # NDJSON wire codec + sendTurn (done, 2.1)
-    turn.ts         # server dispatcher: TurnRequest → TurnResponse (done, 2.5; §7.31)
-  components/       # Workspace, ChatPane, ProfileTab, FieldsTab, QueriesTab (client)
-  app/
-    api/turn/       # the one turn endpoint (NDJSON stream; done, 2.5)
-    api/enter/      # passcode check
-    page.tsx        # the single-page workspace
-  proxy.ts          # passcode gate (Next 16 name for middleware.ts)
-supabase/
-  config.toml          # local stack config (supabase init)
-  migrations/          # reference tables, llm_usage, blocked-source CHECK, RLS
-data/                  # climate_fields.yaml, example_roles.yaml, example_job_posts.yaml (filled, 1.3)
-scripts/
-  seed.ts              # data/*.yaml → Supabase (mirror; service role)
-  try-cards.ts         # Gate 1 CLI for stage 1.1 (live call)
-  try-discover.ts      # Gate 1 CLI for stage 1.4 (live call, web search)
-  try-explore.ts       # stage 2.2 live check (blocked-host assertion)
-  try-queries.ts       # stage 2.3 live check (generate + scripted revise)
-  check-rls.ts         # asserts the RLS shape against a live stack
-  smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
-evals/                 # synthetic profiles, structural checks, feedback-loop eval, baseline arm
-```
-
-Each module is owned by the step that creates it; do not create a later
+The module map, with the step that owns each file, is `docs/technical-plan.md`
+§3. Each module is owned by the step that created it; do not create a later
 step's file early.

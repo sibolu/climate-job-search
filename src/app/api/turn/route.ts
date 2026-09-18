@@ -15,7 +15,7 @@ import { encodeTurnEvent, NDJSON_CONTENT_TYPE, type TurnEvent } from "@/lib/turn
  * `maxDuration` and the heartbeat that keeps the connection alive.
  */
 // Segment config must be a literal Next can read at build time; the test pins
-// it to `MAX_DURATION_SECONDS` in `llm.ts` (PLAN.md §6).
+// it to `MAX_DURATION_SECONDS` in `llm.ts` (technical-plan.md §4).
 export const maxDuration = 800;
 
 /** An empty delta every so often, so proxies never see an idle stream. */

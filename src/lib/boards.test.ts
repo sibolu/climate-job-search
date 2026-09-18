@@ -38,7 +38,7 @@ describe("boards", () => {
   });
 
   it("points every board at its own location and remote/hybrid filters", () => {
-    // PLAN.md §7.36: the boards filter on these, so the queries never do.
+    // technical-plan.md D36: the boards filter on these, so the queries never do.
     for (const board of BOARDS) {
       const steps = ALERT_STEPS[board].join(" ").toLowerCase();
       expect(steps).toContain("location");

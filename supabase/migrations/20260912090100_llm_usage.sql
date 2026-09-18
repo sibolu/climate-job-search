@@ -1,5 +1,5 @@
 -- llm_usage: the ONE server-side write this product ever makes
--- (PRD "no user data stored server-side"; PLAN.md §2 "Cost telemetry", §7.4).
+-- (PRD "no user data stored server-side"; technical-plan.md §1 "Cost telemetry", D4).
 --
 -- It exists for two reasons only: a per-session spend cap, and evidence for a
 -- later "is Sonnet good enough for chat turns?" decision. It therefore stores

@@ -314,7 +314,7 @@ describe("tolerant parsing", () => {
     // Both lines used to be pathological: an unterminated `**` made the old
     // bold-key regex backtrack cubically (55 s for a kilobyte), and a long run
     // of trailing spaces made `/\s+$/` quadratic. Nothing here is exotic — a
-    // user can paste either into the textarea (PLAN.md §7.24).
+    // user can paste either into the textarea (technical-plan.md D24).
     const unterminatedBold = `**${" ".repeat(5 * 1024)}x`;
     const longSpaceRun = `${"x".repeat(40 * 1024)}${" ".repeat(40 * 1024)}y`;
     const md = [

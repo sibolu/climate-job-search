@@ -41,7 +41,7 @@ export function pillTurn(pill: AnswerPill): { content: string; display: string }
  * How long a turn has to go quiet — no new progress line — before the bubble
  * stops repeating itself and reassures instead. Discovery runs two to three
  * minutes with long silent stretches, so the wire's empty heartbeat deltas
- * (PLAN.md §7.31) leave the text unchanged for minutes at a time.
+ * (technical-plan.md D31) leave the text unchanged for minutes at a time.
  */
 export const WORKING_REASSURE_MS = 45_000;
 

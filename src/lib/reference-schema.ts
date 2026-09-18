@@ -15,7 +15,7 @@
  *      as `notlinkedin.com` are unaffected.
  *   2. **Role profiles, never personal profiles.** `example_roles` describes
  *      what someone in a role does day to day; it never describes, names or
- *      links to a real individual (PLAN.md §7.6). That one is a curation
+ *      links to a real individual (technical-plan.md D6). That one is a curation
  *      rule, not something a schema can check — the header comments in
  *      `data/example_roles.yaml` state it, and Phase 1.3's review enforces it.
  *

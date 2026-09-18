@@ -267,7 +267,7 @@ describe("blocked domains stay in step with SQL", () => {
    * `blocked_domains` the web tools get in `llm.ts` (which imports this list,
    * so that one is free), and the SQL function. `llm.test.ts` pins the two
    * TypeScript lists together; this pins the SQL copy, so the lists cannot
-   * drift apart without a test failing (PLAN.md §7.13, §7.25).
+   * drift apart without a test failing (technical-plan.md D13, D25).
    */
   it("the SQL function lists exactly BLOCKED_SOURCE_DOMAINS", () => {
     expect(sqlBlockedDomains(referenceTablesSql())).toEqual([...BLOCKED_SOURCE_DOMAINS]);

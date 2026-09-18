@@ -3,7 +3,7 @@
 //   supabase gen types typescript --local > src/lib/database.types.ts
 //
 // Regenerate after every migration in supabase/migrations/ and commit the
-// result, so `Database` always matches the schema (PLAN.md §7).
+// result, so `Database` always matches the schema (technical-plan.md D15).
 
 export type Json =
   | string

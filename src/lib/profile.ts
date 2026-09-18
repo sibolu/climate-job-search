@@ -1,8 +1,8 @@
 /**
  * `profile.md` — the contract every other module reads and writes.
  *
- * The profile is one markdown document the user keeps (PRD stage 2.2, PLAN.md
- * §2 "Session state"). It is the assistant's compressed memory, resent on
+ * The profile is one markdown document the user keeps (PRD stage 2.2, technical-plan.md
+ * §1 "Session state"). It is the assistant's compressed memory, resent on
  * every turn, and it must stay hand-editable by a nontechnical person in a
  * textarea. This module owns its shape: the zod schemas, a tolerant parser,
  * a deterministic serializer, and small pure update helpers. No I/O, no
@@ -544,7 +544,7 @@ function isSpace(ch: string | undefined): boolean {
  * (`^\s?(?:[-*+]\s+)?\*\*\s*([^*]+?)\s*:?\s*\*\*\s*:?\s*(.*)$`) backtracks
  * cubically on a line that opens `**` and never closes it — seconds of CPU for
  * a kilobyte of input. This runs on every non-indented line of a document the
- * user controls, so it has to be linear (PLAN.md §7.24).
+ * user controls, so it has to be linear (technical-plan.md D24).
  */
 function matchBoldKey(line: string): { label: string; value: string } | null {
   const start = isSpace(line[0]) ? 1 : 0;

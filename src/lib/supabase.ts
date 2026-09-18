@@ -14,7 +14,7 @@
  *
  * Supabase holds the reference collection and the anonymous `llm_usage` rows
  * and nothing else: no profiles, no transcripts, no user content of any kind
- * (PRD "no user data stored server-side", PLAN.md §7.3–7.4).
+ * (PRD "no user data stored server-side", technical-plan.md D3–D4).
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -44,7 +44,7 @@ function required(name: string, value: string | undefined): string {
 
 const NO_PERSISTENCE = {
   auth: {
-    // There are no accounts (PLAN.md §7.5). Never write a session to storage
+    // There are no accounts (technical-plan.md D5). Never write a session to storage
     // and never try to refresh one.
     persistSession: false,
     autoRefreshToken: false,

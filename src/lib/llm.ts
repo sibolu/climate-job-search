@@ -1,6 +1,6 @@
 /**
- * The single door to the Claude API (PLAN.md §2 "LLM", §6, §7 decisions 2 and
- * 13). Every model call in this app goes through `createLlm()`; no other
+ * The single door to the Claude API (technical-plan.md §1 "LLM", §4, D2 and
+ * D13). Every model call in this app goes through `createLlm()`; no other
  * module may construct an Anthropic client, build a web tool, or write an
  * `llm_usage` row.
  *
@@ -53,14 +53,14 @@ import { anonClient } from "./supabase";
 // Model, effort and limits
 // ---------------------------------------------------------------------------
 
-/** One model everywhere (PLAN.md §7.2). Re-evaluate Sonnet 5 after Phase 3. */
+/** One model everywhere (technical-plan.md D2). Re-evaluate Sonnet 5 after Phase 3. */
 export const MODEL = "claude-opus-5";
 
 /** Effort levels this app uses. The SDK also accepts `xhigh`; we do not. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /**
- * Depth per call type (PLAN.md §2: chat `medium`, discovery `high`). Chat-like
+ * Depth per call type (technical-plan.md §1: chat `medium`, discovery `high`). Chat-like
  * steps answer from what the user just said; discovery steps reason over the
  * reference collection and the web and are worth the extra tokens.
  */
@@ -75,7 +75,7 @@ export const EFFORT_BY_STEP: Record<StepName, Effort> = {
 
 /**
  * `maxDuration` for the route handlers that call this module. Discovery and
- * exploration turns with web search run 1–3 minutes (PLAN.md §6).
+ * exploration turns with web search run 1–3 minutes (technical-plan.md §4).
  */
 export const MAX_DURATION_SECONDS = 800;
 
@@ -110,7 +110,7 @@ export const MAX_RETRIES = 1;
 
 /**
  * THE enforcement point for the PRD's "no scraping LinkedIn, Indeed or
- * Climatebase" (PLAN.md §6, §7.13). Passed as `blocked_domains` on every web
+ * Climatebase" (technical-plan.md §4, D13). Passed as `blocked_domains` on every web
  * tool, so the server-side tools never search or fetch these hosts (or their
  * subdomains) at all.
  *
@@ -139,7 +139,7 @@ export interface WebToolOptions {
 /**
  * The ONLY way to build a web tool in this app. Both tools carry
  * {@link BLOCKED_DOMAINS}; web fetch also turns citations on, because every
- * recommendation has to cite a real source (PLAN.md §3 steps 1.4 and 2.2).
+ * recommendation has to cite a real source (PLAN.md steps 1.4 and 2.2).
  */
 export function webTools({ searchMaxUses = 8, fetchMaxUses = 8 }: WebToolOptions = {}): LlmTool[] {
   return [
@@ -187,7 +187,7 @@ export function assertToolsAllowed(tools: readonly LlmTool[]): void {
       throw new LlmToolPolicyError(
         `${name} is missing blocked_domains ${missing.join(", ")}. Build web tools with ` +
           "webTools() — the PRD forbids scraping those sites and blocked_domains is where " +
-          "that is enforced (PLAN.md §6).",
+          "that is enforced (technical-plan.md §4).",
       );
     }
   }
@@ -334,7 +334,7 @@ export class LlmOutputError extends LlmError {
 export class LlmConfigError extends LlmError {}
 
 // ---------------------------------------------------------------------------
-// Usage logging (PLAN.md §7.4)
+// Usage logging (technical-plan.md D4)
 // ---------------------------------------------------------------------------
 
 /**

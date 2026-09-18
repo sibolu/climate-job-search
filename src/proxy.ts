@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, verifySession } from "@/lib/passcode";
 
 /**
- * Shared-passcode gate (PLAN.md §2 "Access").
+ * Shared-passcode gate (technical-plan.md §1 "Access").
  *
  * Next.js 16 renamed the `middleware` file convention to `proxy`, so the gate
  * lives in `src/proxy.ts` and exports `proxy` rather than `middleware`.

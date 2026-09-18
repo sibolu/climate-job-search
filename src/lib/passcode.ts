@@ -1,5 +1,5 @@
 /**
- * Shared-passcode access gate (PLAN.md §2 "Access", §7 decision 5).
+ * Shared-passcode access gate (technical-plan.md §1 "Access", D5).
  *
  * Pure logic only: no Node-only imports, no I/O, no logging. Everything here
  * runs in the Next.js proxy (request interception) as well as in route

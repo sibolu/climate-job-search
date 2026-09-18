@@ -1,87 +1,87 @@
 # Climate Career Exploration Tool
 
 A website that helps people move their existing skills into climate work.
-Paste a resume, answer a few questions, get climate fields and roles with
-evidence for the fit, then job-board queries you run yourself. Report what
-you found and the assistant revises. Built as a Climatebase fellowship
-capstone.
 
-- [PRD.md](PRD.md): problem, hypothesis, scope, hard constraints, evaluation.
-- [PLAN.md](PLAN.md): architecture, phased roadmap, decisions log (§7), and
-  how Claude Code sessions execute phases autonomously.
-- [CLAUDE.md](CLAUDE.md): conventions for Claude Code sessions in this repo.
+Most people who want to work on climate do not know which fields and roles
+are interesting and attainable given what they already do. Job boards index
+on your current title, so searching for "climate" returns more of the job you
+have. This tool works the other way round: it starts from your experience,
+proposes climate fields and roles where those skills transfer, shows the
+evidence for each, and then writes the job-board searches for you to run.
 
-## Development
+Built as a [Climatebase](https://climatebase.org) fellowship capstone. It is
+an alpha, being piloted with a small group of fellows.
 
-Next.js (App Router) + TypeScript, Node 24, pnpm 12.
+## What it does
+
+1. **Paste your resume or a short bio.** It becomes a handful of editable
+   experience cards: situation, what you did, results, skills shown. You
+   correct anything it got wrong and exclude anything you do not want used.
+2. **Answer a few questions**, one at a time, about your climate interests,
+   seniority, and appetite for retraining. Click an answer or type.
+3. **See climate fields and roles that fit.** Each one says which of your
+   cards support the fit, whether it is a sector move, an adjacent role or a
+   retraining move, what is uncertain, and where the evidence came from.
+4. **Explore a field.** Concrete job titles, employers, example job posts,
+   what the work is day to day, and guidance for browsing LinkedIn yourself.
+5. **Get search queries** for LinkedIn, Indeed and Climatebase, with copy
+   buttons and steps to turn each search into an email alert.
+6. **Report back.** Mark a query as a good or bad fit and say why. The
+   assistant revises the queries, the fields and your profile in response.
+
+Everything it knows about you lives in one plain-text profile you can read,
+edit, export and delete.
+
+[docs/data-flow.md](docs/data-flow.md) is a one-page diagram of how a pasted
+resume becomes cards, fields, roles and queries, and where each piece of
+evidence comes from.
+
+## What it will not do
+
+- **Store anything about you on a server.** Your profile, chat and feedback
+  stay in your browser and are sent to the model only for the turn you are
+  on. The only server-side record is an anonymous count of tokens and cost.
+- **Scrape LinkedIn, Indeed or Climatebase.** The model's web tools block
+  those domains, and the database refuses to store a link to them as a
+  source. Searching those boards is something you do yourself.
+- **Run your job search.** No alert ingestion, no application tracking, no
+  outreach. It gets you to good queries; the boards do the rest.
+- **Train a model on you.** No fine-tuning, no trained transition models.
+  The bet is that a frontier model plus a small, curated reference collection
+  of climate fields, role profiles and example job posts is enough.
+
+## How it works, briefly
+
+Next.js and TypeScript on Vercel. Claude Opus 5 through the Anthropic SDK,
+with web search and fetch for sourcing. Supabase Postgres holds only the
+reference collection, which is edited as YAML in this repo and mirrored into
+the database, so every row in production is reviewable in a pull request.
+Access is by a shared passcode; there are no accounts.
+
+## Run it locally
+
+Node 24 and pnpm 12 (pinned in `package.json`). Docker for the local
+Supabase stack. An Anthropic API key for model calls.
 
 ```bash
 pnpm install
-cp .env.example .env.local   # set APP_PASSCODE and PASSCODE_COOKIE_SECRET
-pnpm dev                     # http://localhost:3000
+cp .env.example .env.local   # set APP_PASSCODE, PASSCODE_COOKIE_SECRET, ANTHROPIC_API_KEY
+pnpm db:start                # local Supabase; copy its URL and keys into .env.local
+pnpm db:reset && pnpm seed   # apply migrations, load data/*.yaml
+pnpm dev                     # http://localhost:3000, then enter the passcode
 ```
 
-The app is behind a shared passcode: the first request redirects to `/enter`.
+Checks: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`. The
+full command list, environment variables and repo conventions are in
+[CLAUDE.md](CLAUDE.md).
 
-```bash
-pnpm test        # vitest
-pnpm lint        # eslint
-pnpm typecheck   # next typegen && tsc --noEmit
-pnpm build       # production build
-```
+## Documents
 
-The reference collection lives in Supabase and is run locally through the
-Supabase CLI (Docker must be running):
-
-```bash
-pnpm db:start      # local stack; copy its URL and keys into .env.local
-pnpm db:reset      # apply supabase/migrations/
-pnpm seed          # data/*.yaml -> the reference tables (mirror, not append)
-pnpm db:check-rls  # assert anon can read reference data and nothing else
-```
-
-Every model call goes through `src/lib/llm.ts` — one wrapper that owns the
-model, effort per step, the web tools and their blocked domains, refusal
-handling, and the anonymous usage row. `pnpm smoke:llm` makes one live call and
-reads its `llm_usage` row back; without `ANTHROPIC_API_KEY` it skips and exits
-0. That read-back needs `SUPABASE_SERVICE_ROLE_KEY`, so the service-role key
-belongs to three scripts — `seed.ts`, `check-rls.ts` and `smoke-llm.ts` — and
-to no app code.
-
-See [CLAUDE.md](CLAUDE.md) for the full command list, the environment
-variables and which are server-only, the passcode gate, the Supabase
-workflow, and the repo layout.
-
-## How the pipeline works
-
-[docs/data-flow.md](docs/data-flow.md) is a one-diagram, high-level map of
-how a pasted resume becomes cards, climate fields, roles and search queries,
-and where data is stored and grounded.
-
-## Key decisions and constraints (summary; PLAN.md §2 and §7 are canonical)
-
-- **Stack:** Next.js + TypeScript on Vercel. Supabase Postgres holds only
-  the reference collection (climate fields, role profiles, example job
-  posts) plus anonymous usage rows. The reference collection is edited as
-  `data/*.yaml` in this repo and mirrored into Supabase by `pnpm seed`, so
-  every row in production is reviewable in a pull request.
-- **No user data server-side.** Profile, chat, and query feedback live in
-  the browser's localStorage and are resent each turn. No accounts; access
-  is a shared passcode.
-- **No scraping** of LinkedIn, Indeed, or Climatebase. Enforced in code via
-  blocked domains on the web tools, and again by a CHECK constraint that
-  refuses to store a URL from those hosts as a source.
-- **No job index, no model training.** The reference collection explains
-  roles; it does not power search.
-- **LLM:** Claude Opus 5 via the Anthropic TypeScript SDK, with web search
-  and web fetch for sourcing — all of it behind `src/lib/llm.ts`, which is
-  also where the blocked-domain rule is enforced.
-- **One endpoint:** the browser POSTs its whole session (profile.md, recent
-  chat, the new input) to `/api/turn` and gets NDJSON back: progress lines,
-  then the assistant message plus the full replacement profile.md. The
-  browser decides which step runs (`src/lib/workspace.ts`); the server
-  dispatches in `src/lib/turn.ts` and stores nothing.
-- **Users:** fellows of any technical level, desktop Chrome.
-
-Decisions are recorded in PLAN.md §7, not in any individual's notes or
-Claude memory, so every contributor can see them.
+- [PRD.md](PRD.md): the problem, the hypothesis, hard constraints, how
+  success is judged.
+- [PLAN.md](PLAN.md): phases, status, and the backlog.
+- [docs/technical-plan.md](docs/technical-plan.md): architecture, the
+  numbered design decisions, and what each review gate verified.
+- [docs/data-flow.md](docs/data-flow.md): the one-page flowchart.
+- [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md): conventions and
+  working rules for Claude Code sessions in this repo.

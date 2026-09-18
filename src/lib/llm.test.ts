@@ -181,7 +181,7 @@ describe("blocked domains", () => {
     expect(() => assertToolsAllowed(webTools())).not.toThrow();
   });
 
-  it("is the one list owned by reference-schema.ts, not a copy (PLAN.md §7.13)", () => {
+  it("is the one list owned by reference-schema.ts, not a copy (technical-plan.md D13)", () => {
     expect(BLOCKED_DOMAINS).toBe(BLOCKED_SOURCE_DOMAINS);
     expect(BLOCKED_DOMAINS).toEqual(["linkedin.com", "indeed.com", "climatebase.org"]);
   });
@@ -222,7 +222,7 @@ describe("timeouts", () => {
   it("keeps every attempt of one logical call inside the Vercel maxDuration", () => {
     // The SDK retries a timed-out attempt, so the worst case is attempts × timeout.
     expect((MAX_RETRIES + 1) * REQUEST_TIMEOUT_MS).toBeLessThan(MAX_DURATION_SECONDS * 1000);
-    // Discovery turns with web search legitimately run 1–3 minutes (PLAN.md §6).
+    // Discovery turns with web search legitimately run 1–3 minutes (technical-plan.md §4).
     expect(REQUEST_TIMEOUT_MS).toBeGreaterThanOrEqual(3 * 60 * 1000);
   });
 });

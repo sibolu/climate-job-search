@@ -5,7 +5,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Entry screen for the shared passcode (PLAN.md §2 "Access"). A plain form
+ * Entry screen for the shared passcode (technical-plan.md §1 "Access"). A plain form
  * post so the gate works without client JavaScript; `/api/enter` sets the
  * session cookie and redirects to the workspace.
  */

@@ -1,7 +1,7 @@
 # How the app gets from a pasted resume to search queries
 
 One diagram, kept at the level of "what talks to what". Implementation details
-(models, prompts, validation rules) live in the code and PLAN.md and change
+(models, prompts, validation rules) live in the code and docs/technical-plan.md and change
 often; this stays stable. Keep it current when a step, a data store or a
 source of ground truth is added or removed.
 

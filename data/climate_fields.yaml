@@ -36,7 +36,7 @@
 #     notlinkedin.com are fine. Rejected by the seed validator AND by a CHECK
 #     constraint in the migration, so neither path can let one through.
 #   * ROLE PROFILES, NEVER PERSONAL PROFILES. Nothing in this collection
-#     describes, names or links to a real individual (PLAN.md §7.6).
+#     describes, names or links to a real individual (technical-plan.md D6).
 #   * NOT A JOB INDEX. This is a small, hand-curated set that explains fields
 #     and roles. It never powers job search (PRD hard constraint).
 

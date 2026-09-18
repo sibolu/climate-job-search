@@ -194,7 +194,7 @@ describe("policy tables", () => {
   });
 
   it("never asks for location or work mode — the job boards filter on those", () => {
-    // PLAN.md §7.36: both stay PreferenceKeys (inferred, editable, settable
+    // technical-plan.md D36: both stay PreferenceKeys (inferred, editable, settable
     // from query feedback); only the conversational question is gone.
     expect(ELICIT_ORDER).not.toContain("location");
     expect(ELICIT_ORDER).not.toContain("workMode");

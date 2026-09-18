@@ -1,6 +1,6 @@
 /**
- * Browser-side session state and the per-turn payload (PLAN.md §2 "Session
- * state", §7 decisions 3 and 4).
+ * Browser-side session state and the per-turn payload (technical-plan.md §1 "Session
+ * state", D3 and D4).
  *
  * Everything about the user lives in the browser: the `profile.md` text (the
  * source of truth — see `profile.ts`), the chat messages, and a random
@@ -150,7 +150,7 @@ export function appendMessage(
 }
 
 /**
- * Keeps only the last `keepLastN` messages (PLAN.md §6 "Per-turn payload
+ * Keeps only the last `keepLastN` messages (technical-plan.md §4 "Per-turn payload
  * grows"). The profile is the compressed memory, so older chat is safe to drop.
  */
 export function trimMessages(state: SessionState, keepLastN: number): SessionState {

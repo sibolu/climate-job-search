@@ -1,11 +1,11 @@
 -- Reference collection: the three tables seeded from data/*.yaml by
--- scripts/seed.ts (PLAN.md §2 "Reference data"). These explain climate fields
+-- scripts/seed.ts (technical-plan.md §1 "Reference data"). These explain climate fields
 -- and roles; they are NOT a job index and never power search (PRD hard
 -- constraint). They hold no user data of any kind.
 --
 -- Blocked sources are enforced here, in the schema, so no code path — seed
 -- script, psql, a future admin tool — can store a LinkedIn / Indeed /
--- Climatebase URL as a source (PRD "no scraping"; PLAN.md §7).
+-- Climatebase URL as a source (PRD "no scraping"; technical-plan.md D13).
 
 -- ---------------------------------------------------------------------------
 -- Host matching (one place, so it is testable)
@@ -152,7 +152,7 @@ create table public.example_roles (
 create index example_roles_field_id_idx on public.example_roles (field_id);
 
 comment on table public.example_roles is
-  'A ROLE profile: what someone in this role does day to day. Never a personal profile — no real individual is described, named or linked (PRD "user control over the profile"; PLAN.md §7.6).';
+  'A ROLE profile: what someone in this role does day to day. Never a personal profile — no real individual is described, named or linked (PRD "user control over the profile"; technical-plan.md D6).';
 comment on column public.example_roles."function" is 'The job function the role belongs to, e.g. marketing, software, video, finance.';
 comment on column public.example_roles.day_to_day is 'What the ROLE involves day to day. Role profile, not a person.';
 comment on column public.example_roles.sources is 'Public source URLs. LinkedIn / Indeed / Climatebase are rejected by example_roles_sources_allowed.';

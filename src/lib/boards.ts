@@ -12,7 +12,7 @@ import type { Board, Query } from "./profile";
 
 /** `extra` key naming the site for a query on the `other` board. */
 export const BOARD_NAME_KEY = "Board name";
-/** `extra` keys a revision sets on an untried query it retires (never deleted; PLAN.md §7.10). */
+/** `extra` keys a revision sets on an untried query it retires (never deleted; technical-plan.md D10). */
 export const RETIRED_KEY = "Retired";
 export const RETIRED_REASON_KEY = "Retired reason";
 
@@ -32,7 +32,7 @@ export const BOARD_LABELS: Record<Board, string> = {
  * Short numbered steps for turning a search into a recurring email alert.
  *
  * Every board's steps set location and remote/hybrid through that board's own
- * filters (PLAN.md §7.36): the query strings carry no place names and no
+ * filters (technical-plan.md D36): the query strings carry no place names and no
  * "remote" wording, because a filter the board maintains beats a term hacked
  * into the keyword box.
  */

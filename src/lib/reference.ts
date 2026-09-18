@@ -1,5 +1,5 @@
 /**
- * Typed reads of the reference collection (PLAN.md §2 "Reference data").
+ * Typed reads of the reference collection (technical-plan.md §1 "Reference data").
  *
  * Read-only by design: the tables are written only by `scripts/seed.ts` from
  * `data/*.yaml`, so the repo stays the source of truth and every row in
@@ -85,7 +85,7 @@ export async function listSectorGroups(): Promise<string[]> {
 // Roles and example posts
 // ---------------------------------------------------------------------------
 
-/** Role profiles — what someone in the role does, never a real person (PLAN.md §7.6). */
+/** Role profiles — what someone in the role does, never a real person (technical-plan.md D6). */
 export async function listRoles(fieldId?: string): Promise<ExampleRoleRow[]> {
   let query = anonClient().from("example_roles").select("*");
   if (fieldId !== undefined) query = query.eq("field_id", fieldId);

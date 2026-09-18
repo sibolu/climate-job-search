@@ -1,5 +1,5 @@
 /**
- * Progressive preference elicitation (PRD stage 1.2, PLAN.md §3 step 1.2).
+ * Progressive preference elicitation (PRD stage 1.2, PLAN.md step 1.2).
  *
  * A nontechnical fellow should get value before finishing anything that feels
  * like a form. So this module asks for **one** preference per turn, in the
@@ -79,7 +79,7 @@ import type { AnswerPill } from "./session";
  *      and a retrain. It is most useful once fields are on the table, so it
  *      goes last; it is rarely inferable, so it is still asked.
  *
- * `location` and `workMode` are deliberately **not** asked (PLAN.md §7.36).
+ * `location` and `workMode` are deliberately **not** asked (technical-plan.md D36).
  * They are native filters on every major job board, so the app guides the
  * person to the board's own location and remote/hybrid filter
  * (`ALERT_STEPS` in `boards.ts`) rather than spending a conversational turn
