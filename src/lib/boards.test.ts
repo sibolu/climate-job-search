@@ -37,6 +37,16 @@ describe("boards", () => {
     expect(boardLabel(query("other", { "Board name": "   " }))).toBe("Other");
   });
 
+  it("points every board at its own location and remote/hybrid filters", () => {
+    // PLAN.md §7.36: the boards filter on these, so the queries never do.
+    for (const board of BOARDS) {
+      const steps = ALERT_STEPS[board].join(" ").toLowerCase();
+      expect(steps).toContain("location");
+      expect(steps).toMatch(/remote|hybrid/);
+      expect(steps).toContain("filter");
+    }
+  });
+
   it("keeps the alert steps phrased as hints rather than exact UI text", () => {
     // A board redesign should make these vague, not wrong.
     for (const board of BOARDS) {

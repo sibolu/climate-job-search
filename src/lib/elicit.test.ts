@@ -7,6 +7,7 @@ import type { z } from "zod";
 import {
   DEFAULT_CLIMATE_AREAS,
   ELICIT_ORDER,
+  SUMMARY_ORDER,
   INFERRED_TAG,
   INFER_SYSTEM,
   INTERPRET_SYSTEM,
@@ -116,30 +117,31 @@ describe("acceptance: a scripted 5-turn transcript", () => {
     p = applyPillAnswer(p, d.key, NOT_SURE_PILL);
     expect(isOpenToSuggestions(p)).toBe(true);
 
-    // Turn 2: location, answered in free text that also volunteers work mode.
-    d = nextQuestion(p, CTX);
-    decisions.push(d);
-    if (d.kind !== "ask") throw new Error("expected a question");
-    expect(d.key).toBe("location");
-    const llm = fakeLlm(interpretation({ location: "Portland, OR", workMode: "hybrid" }));
-    const answered = await interpretAnswer(llm, {
-      sessionId: SESSION_ID,
-      profile: p,
-      key: d.key,
-      answer: "Portland, ideally hybrid",
-    });
-    expect(answered.answered).toBe(true);
-    expect(answered.updatedKeys).toEqual(["location", "workMode"]);
-    p = answered.profile;
-
-    // Turn 3: work mode and seniority are known, so retraining appetite is next.
+    // Turn 2: seniority is inferred, so retraining appetite is next. It is
+    // answered in free text that also volunteers location and work mode —
+    // neither is ever asked, but both are recorded when the person says them.
     d = nextQuestion(p, CTX);
     decisions.push(d);
     if (d.kind !== "ask") throw new Error("expected a question");
     expect(d.key).toBe("retrainingAppetite");
-    p = applyPillAnswer(p, d.key, d.pills[1]);
+    const llm = fakeLlm(
+      interpretation({
+        retrainingAppetite: "a short course, not a degree",
+        location: "Portland, OR",
+        workMode: "hybrid",
+      }),
+    );
+    const answered = await interpretAnswer(llm, {
+      sessionId: SESSION_ID,
+      profile: p,
+      key: d.key,
+      answer: "A short course maybe. I'm in Portland and would like hybrid.",
+    });
+    expect(answered.answered).toBe(true);
+    expect(answered.updatedKeys).toEqual(["location", "workMode", "retrainingAppetite"]);
+    p = answered.profile;
 
-    // Turns 4 and 5: done, and it stays done.
+    // Turns 3 and 4: done, and it stays done.
     d = nextQuestion(p, CTX);
     decisions.push(d);
     expect(d.kind).toBe("done");
@@ -147,12 +149,13 @@ describe("acceptance: a scripted 5-turn transcript", () => {
     decisions.push(d);
     expect(d.kind).toBe("done");
 
-    expect(decisions).toHaveLength(5);
+    expect(decisions).toHaveLength(4);
     const asks = decisions.filter((x) => x.kind === "ask");
-    expect(asks).toHaveLength(3);
+    expect(asks).toHaveLength(2);
     const askedKeys = asks.map((a) => a.key);
     expect(new Set(askedKeys).size).toBe(askedKeys.length);
     expect(askedKeys).not.toContain("seniority");
+    expect(askedKeys).not.toContain("location");
     expect(askedKeys).not.toContain("workMode");
     for (const ask of asks) {
       expect(questionMarks(ask.question)).toBe(1);
@@ -170,10 +173,10 @@ describe("acceptance: a scripted 5-turn transcript", () => {
     expect(d.summary).toContain("2 experience cards");
   });
 
-  it("asks all five in ELICIT_ORDER when nothing is inferable, then is done", () => {
+  it("asks every key in ELICIT_ORDER when nothing is inferable, then is done", () => {
     let p = cardsOnly();
     const asked: string[] = [];
-    for (let turn = 0; turn < 5; turn++) {
+    for (let turn = 0; turn < ELICIT_ORDER.length; turn++) {
       const d = nextQuestion(p, CTX);
       if (d.kind !== "ask") throw new Error(`turn ${turn} should ask`);
       asked.push(d.key);
@@ -185,8 +188,31 @@ describe("acceptance: a scripted 5-turn transcript", () => {
 });
 
 describe("policy tables", () => {
-  it("ELICIT_ORDER covers every KNOWN_PREFERENCE_KEYS entry exactly once", () => {
-    expect([...ELICIT_ORDER].sort()).toEqual([...KNOWN_PREFERENCE_KEYS].sort());
+  it("ELICIT_ORDER lists known preference keys, each at most once", () => {
+    expect(new Set(ELICIT_ORDER).size).toBe(ELICIT_ORDER.length);
+    for (const key of ELICIT_ORDER) expect(KNOWN_PREFERENCE_KEYS).toContain(key);
+  });
+
+  it("never asks for location or work mode — the job boards filter on those", () => {
+    // PLAN.md §7.36: both stay PreferenceKeys (inferred, editable, settable
+    // from query feedback); only the conversational question is gone.
+    expect(ELICIT_ORDER).not.toContain("location");
+    expect(ELICIT_ORDER).not.toContain("workMode");
+    expect(SUMMARY_ORDER).toContain("location");
+    expect(SUMMARY_ORDER).toContain("workMode");
+    expect([...SUMMARY_ORDER].sort()).toEqual([...KNOWN_PREFERENCE_KEYS].sort());
+  });
+
+  it("completes even when location and work mode are unknown", () => {
+    let p = cardsOnly();
+    for (let turn = 0; turn < ELICIT_ORDER.length; turn++) {
+      const d = nextQuestion(p, CTX);
+      if (d.kind !== "ask") throw new Error("expected a question");
+      p = applyPillAnswer(p, d.key, d.pills[0]);
+    }
+    expect(isElicitationComplete(p)).toBe(true);
+    expect(p.preferences.location).toBeUndefined();
+    expect(p.preferences.workMode).toBeUndefined();
   });
 
   it("every question is exactly one question", () => {
@@ -338,12 +364,12 @@ describe("interpretAnswer", () => {
     const r = await interpretAnswer(llm, {
       sessionId: SESSION_ID,
       profile: cardsOnly(),
-      key: "location",
+      key: "seniority",
       answer: "no idea what area yet",
     });
     expect(r.answered).toBe(false);
     expect(r.updatedKeys).toEqual(["climateInterests"]);
     expect(isOpenToSuggestions(r.profile)).toBe(true);
-    expect(nextQuestion(r.profile, CTX)).toMatchObject({ kind: "ask", key: "location" });
+    expect(nextQuestion(r.profile, CTX)).toMatchObject({ kind: "ask", key: "seniority" });
   });
 });

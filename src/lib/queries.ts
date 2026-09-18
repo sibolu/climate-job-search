@@ -112,7 +112,8 @@ const BOARD_SYNTAX = `Boards and their syntax. Every query must paste straight i
 
 const QUERY_RULES = `Rules for every query:
 - fieldIds lists only ids from the Fields section, and every query serves at least one. Prefer role titles and domain terms that appear in the roles and fit reasoning; never a bare generic word such as "climate" or "sustainability".
-- Respect the preferences: seniority words, location or remote wording, and anything the person has excluded.
+- Respect the preferences: seniority words and anything the person has excluded.
+- Never put location or remote/hybrid wording in a query string — no city, state, country or "remote"/"hybrid" terms. Every board filters on those itself, and the alert steps tell the person to set the board's own location and remote filters. Use the stated location and work mode only as context for which fields, employers and role titles are realistic (offshore wind, utilities and manufacturing are regional).
 - Learn from tried queries: never repeat a listed query, keep what made a good query good, avoid what made a bad one bad.
 - rationale is one sentence naming the field ids and skills the query targets and why those terms were chosen.
 - Use nothing about the person beyond what the profile states; invent no personal detail.`;
@@ -149,8 +150,8 @@ function renderPreferences(p: Profile): string {
   const pr = p.preferences;
   const text = (v: { value: string } | undefined) => v?.value ?? "(not stated)";
   return [
-    `- Location: ${text(pr.location)}`,
-    `- Work mode: ${text(pr.workMode)}`,
+    `- Location (context for what is realistic; never a query term): ${text(pr.location)}`,
+    `- Work mode (context for what is realistic; never a query term): ${text(pr.workMode)}`,
     `- Seniority: ${text(pr.seniority)}`,
     `- Retraining appetite: ${text(pr.retrainingAppetite)}`,
     `- Climate interests: ${pr.climateInterests?.values.join(", ") ?? "(not stated)"}`,

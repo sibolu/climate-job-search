@@ -669,3 +669,31 @@ square of how long it runs. Brief accordingly.
     route's progress callback throws once the stream is cancelled — but a
     model call already in flight still completes, which is `llm.ts`'s
     deliberate choice so the usage row stays exact.
+
+36. **Location and work mode are board filters, not elicitation questions.**
+    `ELICIT_ORDER` is now `climateInterests`, `seniority`,
+    `retrainingAppetite`: the initial conversation no longer spends a turn
+    asking where someone wants to work or whether they want remote. Both stay
+    `PreferenceKey`s in the `profile.md` contract — inferred from the resume
+    by `inferPreferences`, editable in the Profile tab, and still settable
+    from query feedback via `preferenceEdits` ("bad fit: these are all in
+    Texas" is the user volunteering it, not us asking). What changed is that
+    generated query strings carry no place names and no remote/hybrid
+    wording; the queries prompt takes location and work mode as context for
+    which fields and employers are realistic, never as literal query terms.
+    `ALERT_STEPS` in `boards.ts` instead tells the person to set that board's
+    own location filter and its remote/hybrid filter, in the "look for…"
+    house style of §7.32 — every major board already ships those filters, and
+    a filter the board maintains beats a term hacked into the keyword box.
+    Elicitation completeness is therefore scoped to the asked keys
+    (`isElicitationComplete` in `elicit.ts`, which `workspace.ts`'s
+    `nextStep` now calls instead of `missingPreferences`), or a profile with
+    no inferable location would never leave the elicit step.
+
+    **Open product decision, to revisit:** whether these two should in fact
+    be asked early for *some* fields. If the number of jobs varies
+    drastically by industry and geography — BLS employment data by sector and
+    region would be the evidence — then asking location early is warranted,
+    because it changes which fields are realistic to recommend at all rather
+    than merely filtering a list already on the table. Decide once there is
+    usage data or that BLS analysis; not now.
