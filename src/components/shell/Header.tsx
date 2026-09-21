@@ -8,6 +8,7 @@ export interface HeaderProps {
   input: ScreenInput;
   current: NavStep;
   showNav: boolean;
+  onNavigate: (step: NavStep) => void;
 }
 
 /**
@@ -15,7 +16,7 @@ export interface HeaderProps {
  * steps the person has not reached yet are disabled — there is no way to jump
  * ahead of the sequential flow (technical-plan.md D38).
  */
-export default function Header({ input, current, showNav }: HeaderProps) {
+export default function Header({ input, current, showNav, onNavigate }: HeaderProps) {
   return (
     <header className="cc-header">
       <span className="cc-mark" aria-hidden="true" />
@@ -30,6 +31,7 @@ export default function Header({ input, current, showNav }: HeaderProps) {
               className="cc-step"
               disabled={!navStepEnabled(step, input)}
               aria-current={step === current ? "step" : undefined}
+              onClick={() => onNavigate(step)}
             >
               {NAV_LABELS[step]}
             </button>

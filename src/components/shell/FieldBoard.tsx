@@ -1,49 +1,93 @@
 "use client";
 
-// step 2b.5 replaces this with the real field board: ranked cards, the
-// three-way mark, expand-in-place with roles, evidence and the per-field ask.
+/**
+ * The field board (technical-plan.md D39): ranked cards in the order discovery wrote
+ * them, re-banded by mark only on arrival (the order comes in as a snapshot
+ * from the shell, so nothing jumps out from under the cursor while marking).
+ */
 
-import type { Profile } from "@/lib/profile";
+import type { FieldStatus, Profile } from "@/lib/profile";
+import { rolesForField } from "@/lib/profile";
+import { matchFieldsGate, orderFields } from "@/lib/screens";
+
+import FieldCard from "./FieldCard";
+import type { AskState } from "./FieldCard";
 
 export interface FieldBoardProps {
   profile: Profile;
+  /** Field ids in the order snapshotted when the board was entered. */
+  order: readonly string[];
+  expandedId?: string;
+  onExpand: (fieldId: string | undefined) => void;
+  onMark: (fieldId: string, status: FieldStatus) => void;
+  onRole: (roleId: string, selected: boolean) => void;
+  onAsk: (fieldId: string) => void;
+  askStateFor: (fieldId: string) => AskState;
+  canWriteSearches: (fieldId: string) => boolean;
+  onWriteSearches: (fieldId: string) => void;
   onMatchFields: () => void;
 }
 
-const FIT_LABELS: Record<string, string> = {
-  strong: "Strong overlap",
-  some: "Some overlap",
-  stretch: "Stretch",
-};
-
-export default function FieldBoard({ profile, onMatchFields }: FieldBoardProps) {
+export default function FieldBoard({
+  profile,
+  order,
+  expandedId,
+  onExpand,
+  onMark,
+  onRole,
+  onAsk,
+  askStateFor,
+  canWriteSearches,
+  onWriteSearches,
+  onMatchFields,
+}: FieldBoardProps) {
   if (profile.fields.length === 0) {
+    const gate = matchFieldsGate(profile);
     return (
       <section>
         <h2 className="cc-h2">Climate fields worth a look</h2>
         <p className="cc-sub">No fields yet. Matching reads your included highlights.</p>
-        <button type="button" className="cc-btn" style={{ marginTop: 16 }} onClick={onMatchFields}>
+        <button
+          type="button"
+          className="cc-btn"
+          style={{ marginTop: 16 }}
+          disabled={!gate.enabled}
+          onClick={onMatchFields}
+        >
           Match fields
         </button>
+        <p className="cc-note" style={{ marginTop: 8 }}>
+          {gate.note}
+        </p>
       </section>
     );
   }
+
+  const fields = orderFields(profile, order);
 
   return (
     <section>
       <h2 className="cc-h2">Climate fields worth a look</h2>
       <p className="cc-sub">Click on a card to see more info and roles.</p>
-      <ul className="cc-fieldlist">
-        {profile.fields.map((field) => (
-          <li key={field.id}>
-            <span style={{ fontWeight: 600 }}>{field.name}</span>
-            <span className="cc-note">{field.sector}</span>
-            {field.fitLevel ? (
-              <span className="cc-fit">{FIT_LABELS[field.fitLevel] ?? field.fitLevel}</span>
-            ) : null}
-          </li>
+      <div className="cc-field-grid">
+        {fields.map((field, index) => (
+          <FieldCard
+            key={field.id}
+            profile={profile}
+            field={field}
+            rank={index + 1}
+            open={field.id === expandedId}
+            roles={rolesForField(profile, field.id)}
+            askState={askStateFor(field.id)}
+            canWriteSearches={canWriteSearches(field.id)}
+            onToggle={() => onExpand(field.id === expandedId ? undefined : field.id)}
+            onMark={(status) => onMark(field.id, status)}
+            onRole={onRole}
+            onAsk={() => onAsk(field.id)}
+            onWriteSearches={() => onWriteSearches(field.id)}
+          />
         ))}
-      </ul>
+      </div>
     </section>
   );
 }

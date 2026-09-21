@@ -16,15 +16,27 @@ import {
   showNav,
   showRail,
   takeSnapshot,
+  boardOrder,
+  boardSearchUrl,
+  feedbackReason,
+  hasLiveQueries,
+  orderFields,
+  orderedFieldGroups,
+  revisedQueryFor,
+  verdictToServer,
   MAX_LOG_LINES,
 } from "./screens";
+import { MAX_FEEDBACK_REASON } from "./workspace";
 import {
   emptyProfile,
   setClimateInterests,
   setPreference,
   upsertCard,
   type Card,
+  type Field,
   type Profile,
+  type Query,
+  type Role,
 } from "./profile";
 
 function card(patch: Partial<Card> = {}): Omit<Card, "id"> & { id?: string } {
@@ -198,5 +210,179 @@ describe("the pre-turn snapshot", () => {
     const snapshot = takeSnapshot("# Profile\n", 1_700_000_000_000);
     expect(snapshot.startedAt).toBe(1_700_000_000_000);
     expect(restoreSnapshot(snapshot)).toBe("# Profile\n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The board / searches ordering and the feedback helpers (2b.5)
+// ---------------------------------------------------------------------------
+
+function field(id: string, patch: Partial<Field> = {}): Field {
+  return {
+    id,
+    name: `Field ${id}`,
+    status: "candidate",
+    explored: false,
+    sector: "energy",
+    summary: "",
+    chips: [],
+    fit: "",
+    evidence: [],
+    uncertain: "",
+    sources: [],
+    extra: {},
+    ...patch,
+  };
+}
+
+function role(id: string, fieldId: string, selected: boolean): Role {
+  return {
+    id,
+    title: `Role ${id}`,
+    fieldId,
+    companies: [],
+    why: "",
+    selected,
+    sources: [],
+    extra: {},
+  };
+}
+
+function query(id: string, board: Query["board"], fieldIds: string[], patch: Partial<Query> = {}): Query {
+  return { id, board, query: `q-${id}`, fieldIds, status: "untried", reason: "", extra: {}, ...patch };
+}
+
+function withFields(fields: Field[], roles: Role[] = [], queries: Query[] = []): Profile {
+  return { ...emptyProfile(), fields, roles, queries };
+}
+
+describe("boardOrder", () => {
+  it("bands Interesting, Unsure, unmarked, Not for me and is stable inside a band", () => {
+    const p = withFields([
+      field("F1", { status: "rejected" }),
+      field("F2"),
+      field("F3", { status: "unsure" }),
+      field("F4", { status: "accepted" }),
+      field("F5"),
+    ]);
+    expect(boardOrder(p)).toEqual(["F4", "F3", "F2", "F5", "F1"]);
+  });
+});
+
+describe("orderFields", () => {
+  it("applies a stored order and appends fields the snapshot never saw", () => {
+    const p = withFields([field("F1"), field("F2"), field("F3")]);
+    expect(orderFields(p, ["F2", "F1"]).map((f) => f.id)).toEqual(["F2", "F1", "F3"]);
+  });
+
+  it("drops ids that no longer exist", () => {
+    const p = withFields([field("F1")]);
+    expect(orderFields(p, ["F9", "F1"]).map((f) => f.id)).toEqual(["F1"]);
+  });
+});
+
+describe("orderedFieldGroups", () => {
+  it("keeps only fields with ticked roles or live queries, Interesting first", () => {
+    const p = withFields(
+      [field("F1"), field("F2", { status: "accepted" }), field("F3")],
+      [role("R1", "F1", true), role("R2", "F2", true), role("R3", "F3", false)],
+      [query("Q1", "linkedin", ["F1"])],
+    );
+    const groups = orderedFieldGroups(p);
+    expect(groups.map((g) => g.field.id)).toEqual(["F2", "F1"]);
+    expect(groups[1].queries.map((q) => q.id)).toEqual(["Q1"]);
+    expect(groups[0].queries).toEqual([]);
+  });
+
+  it("hides retired queries", () => {
+    const p = withFields(
+      [field("F1")],
+      [role("R1", "F1", true)],
+      [query("Q1", "indeed", ["F1"], { extra: { Retired: "yes" } })],
+    );
+    expect(orderedFieldGroups(p)[0].queries).toEqual([]);
+    expect(hasLiveQueries(p)).toBe(false);
+  });
+});
+
+describe("boardSearchUrl", () => {
+  it("encodes the query into the board's own search page", () => {
+    expect(boardSearchUrl("indeed", 'a "b" c')).toBe(
+      "https://www.indeed.com/jobs?q=a%20%22b%22%20c",
+    );
+  });
+
+  it("has no link for an unknown board", () => {
+    expect(boardSearchUrl("other", "x")).toBeUndefined();
+  });
+});
+
+describe("feedback", () => {
+  it("collapses the four verdicts onto the server's two", () => {
+    expect(verdictToServer("good")).toBe("good");
+    expect(verdictToServer("partly")).toBe("bad");
+    expect(verdictToServer("wrong")).toBe("bad");
+    expect(verdictToServer("none")).toBe("bad");
+  });
+
+  it("prefixes the verdict label and the chips onto the free text", () => {
+    expect(feedbackReason("wrong", ["Too senior", "Wrong discipline"], " agency jobs ")).toBe(
+      "Wrong roles; Too senior; Wrong discipline — agency jobs",
+    );
+  });
+
+  it("omits the dash when there is no free text and caps the length", () => {
+    expect(feedbackReason("none", [], "   ")).toBe("No results");
+    expect(feedbackReason("good", [], "x".repeat(MAX_FEEDBACK_REASON + 50))).toHaveLength(
+      MAX_FEEDBACK_REASON,
+    );
+  });
+});
+
+describe("revisedQueryFor", () => {
+  const before = withFields([field("F1")], [], [query("Q1", "indeed", ["F1"])]);
+
+  it("finds the same query edited in place", () => {
+    const after = withFields([field("F1")], [], [query("Q1", "indeed", ["F1"], { query: "new" })]);
+    expect(revisedQueryFor(before, after, "Q1")).toEqual({
+      query: after.queries[0],
+      previousText: "q-Q1",
+      changed: true,
+    });
+  });
+
+  it("falls back to the live replacement on the same field and board", () => {
+    const after = withFields(
+      [field("F1")],
+      [],
+      [
+        query("Q1", "indeed", ["F1"], { extra: { Retired: "yes" } }),
+        query("Q2", "indeed", ["F1"], { query: "new" }),
+      ],
+    );
+    expect(revisedQueryFor(before, after, "Q1")?.query.id).toBe("Q2");
+  });
+
+  it("is undefined when the query is unknown or gone", () => {
+    expect(revisedQueryFor(before, before, "Q9")).toBeUndefined();
+    expect(revisedQueryFor(before, withFields([field("F1")]), "Q1")).toBeUndefined();
+  });
+});
+
+describe("currentScreen and the nav with searches", () => {
+  const base = { hasCards: true, hasFields: true, busy: false };
+
+  it("renders the view the person navigated to", () => {
+    expect(currentScreen({ ...base, view: "searches" })).toBe("searches");
+    expect(currentScreen({ ...base, view: "feedback" })).toBe("feedback");
+    expect(currentScreen(base)).toBe("board");
+    expect(currentScreen({ ...base, view: "searches", busy: true })).toBe("pending");
+  });
+
+  it("marks searches as the current step and unlocks it once a query exists", () => {
+    expect(navStepFor("searches")).toBe("searches");
+    expect(navStepFor("feedback")).toBe("searches");
+    expect(navStepEnabled("searches", base)).toBe(false);
+    expect(navStepEnabled("searches", { ...base, hasQueries: true })).toBe(true);
   });
 });

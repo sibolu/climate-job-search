@@ -32,6 +32,8 @@ export interface RailProps {
   onPill: (key: PreferenceKey, pill: AnswerPill) => void;
   onChangeAnswer: (key: PreferenceKey | undefined) => void;
   onAsk: (profileKey: string, answer: string) => void;
+  /** Dismisses a live per-field ask without writing anything. */
+  onDismissAsk?: () => void;
   onOpenProfile: () => void;
 }
 
@@ -54,6 +56,7 @@ export default function Rail({
   onPill,
   onChangeAnswer,
   onAsk,
+  onDismissAsk,
   onOpenProfile,
 }: RailProps) {
   const [changing, setChanging] = useState(false);
@@ -143,7 +146,14 @@ export default function Rail({
                 >
                   Add to profile
                 </button>
-                <button type="button" className="cc-btn-outline" onClick={() => setDraft("")}>
+                <button
+                  type="button"
+                  className="cc-btn-outline"
+                  onClick={() => {
+                    setDraft("");
+                    onDismissAsk?.();
+                  }}
+                >
                   Not now
                 </button>
               </div>
