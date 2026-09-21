@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D36, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D43, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -47,30 +47,36 @@ Defaults; a decision in §5 overrides a row here.
 
 ## 2. UI shape
 
-**UI shape (desktop Chrome, ~1280px+):**
-- Left two thirds: chat. Assistant questions can render answer pills
-  (e.g. seniority levels, "browse industries" chips drawn from
-  `climate_fields`) so nontechnical users click rather than type, with free
-  text always available.
-- Right third: workspace with three tabs. **Profile** (paste/edit text,
-  cards list, export/import/start over). **Fields** (candidate fields with
-  accept / reject / unsure, click to explore). **Queries** (cards per board
-  with copy button, alert steps, and a "Tried it" control: good fit / bad
-  fit + why, which posts a feedback turn into the chat).
+Exploration-first, from the Claude Design handoff in
+`docs/design_handoff_climate_career_exploration/` (D37). Desktop Chrome,
+~1280px+, light-only. The handoff README is the visual spec: colours,
+type, spacing and interaction states are final; its sample content is not.
 
-**UI shape (desktop Chrome, ~1280px+):**
-- Left two thirds: chat. Assistant questions can render answer pills
-  (e.g. seniority levels, "browse industries" chips drawn from
-  `climate_fields`) so nontechnical users click rather than type, with free
-  text always available.
-- Right third: workspace with three tabs. **Profile** (paste/edit text,
-  cards list, export/import/start over). **Fields** (candidate fields with
-  accept / reject / unsure, click to explore). **Queries** (cards per board
-  with copy button, alert steps, and a "Tried it" control: good fit / bad
-  fit + why, which posts a feedback turn into the chat).
+- **One shell, no top-level tabs.** Header with the product mark and a
+  three-step nav: 1 Highlights, 2 Fields, 3 Searches. A collapsible
+  read-only profile drawer under the header with export, import and
+  "Delete everything". A 352px assistant rail on the right, absent on first
+  run.
+- **First run:** paste a resume or bio, optional notes, Start.
+- **Highlights:** the experience cards as a grid; Edit and Exclude per card.
+  The rail asks the three preference questions with pills. A "Match fields"
+  button starts discovery; it never auto-starts (D38).
+- **Field board:** ranked field cards with move type, a three-level fit
+  label, a blurb and chips; Interesting / Unsure / Not for me on each card.
+  Order is resolved on arrival, not live. A card expands in place to show
+  evidence lines, roles with checkboxes, an uncertainty with an optional
+  question, employers and sources, all from discovery data (D39). The
+  expanded card's CTA writes searches for the ticked roles (D40).
+- **Pending:** the board with a status strip, a skeleton card and a live log
+  in the rail while a turn runs. Elapsed time, real phases, no estimates.
+- **Searches:** per-field groups of query cards, one per board, with copy,
+  "Open <board>", alert steps and Good / Wrong results.
+- **Feedback:** verdict, reason chips, free text, "Send and revise"; the
+  revised query is shown for accept, edit or keep-the-old-one (D41).
+- **Rail:** questions with pills, per-field asks, the working log, errors
+  and warnings, and a "Change an answer" row. No free-text composer (D42).
 
-The chat-led shape is under review: PLAN.md's backlog item 2 proposes an
-exploration-first layout with chat as a supporting affordance.
+The chat-led two-pane layout that Phase 2 shipped is retired by Phase 2b.
 
 ---
 
@@ -481,6 +487,94 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 
     Whether these two should nonetheless be asked early for *some* fields is
     an open product decision, parked in PLAN.md backlog item 4.
+
+37. **Exploration-first UI from the design handoff (2026-09-20).** The
+    field board is the product spine; chat is demoted to a right rail; there
+    are no top-level tabs. The spec is
+    `docs/design_handoff_climate_career_exploration/README.md` plus the
+    prototype HTML read as markup, not ported: `support.js` is a prototype
+    runtime and stays out of `src/`. Shipped as is: the colour, type,
+    spacing, radius and shadow tokens (as CSS custom properties in
+    `globals.css`), Instrument Sans and IBM Plex Mono through `next/font`,
+    the three animations. Deliberately not shipped: the prototype state bar,
+    the dark scheme (light-only until the design has one), a responsive
+    layout below ~900px (the pilot is desktop Chrome), and the percentage fit
+    bar (D39). States the handoff has none for: turn errors and parser
+    warnings render as a bubble in the rail; the Fields step before
+    discovery, and a discovery that returns zero fields, show a "Match
+    fields" button with a one-line note.
+
+38. **The flow is sequential and discovery is started by the user.** Start
+    runs `cards` (which also infers preferences). The Highlights screen then
+    asks the three preference questions in the rail; pill answers apply
+    locally with no model call, so `interpretAnswer` is unreachable from the
+    UI and stays for scripts and a later composer. "Match fields" runs
+    `discover` and shows the pending screen. It never auto-starts: the person
+    excludes highlights first, and discovery costs about $0.50. One turn in
+    flight at a time stands (D34), so the handoff's concurrent matching,
+    field counts ("5 of 6 in", "two more fields") and time estimates are not
+    built; the pending screen shows elapsed time and the real progress lines
+    the server streams.
+
+39. **The expanded field card renders from discovery data; explore leaves
+    the beta path.** `discover.ts` gains, per field: `fitLevel`
+    (`strong | some | stretch` — three labels drawn at three fixed widths;
+    a model-produced percentage is false precision), `sector` (one line),
+    `summary` (two sentences), `chips` (3–4 transferable skills), `evidence`
+    (`{cardId, why}` per cited card, rendered as the evidence lines) and an
+    `ask` (`{question, key, placeholder}`) attached to the uncertainty.
+    `profile.md` gets them as known keys on fields (`Sector`, `Fit level`,
+    `Summary`, `Chips`, `Evidence`, `Ask`), cards get an optional `Years`,
+    and the fixtures are regenerated in the same commit. The first-run notes
+    box is appended to the pasted text under a `Notes:` label and the cards
+    step reads constraints from it into preferences. `explore.ts` and
+    `try:explore` are kept but no UI path reaches them: the handoff has no
+    place for example posts, keywords or day-to-day text. A "Dig deeper"
+    button that fills a fourth block is backlog, and PLAN.md's alpha goal
+    now counts expanded fields, not explored ones.
+
+40. **Queries are written per field from the roles the person ticked.**
+    Roles get a `Selected: yes | no` key. The expanded card's CTA sends a
+    `queries` turn naming one field (a new `TurnInput` kind carrying the
+    field id; the `GENERATE_QUERIES_TEXT` sentence convention is retired).
+    The call returns exactly three queries, one each for linkedin, indeed
+    and climatebase, every one serving that field only — never a query
+    across fields, because boards rank against a coherent role profile. The
+    2–4-per-board, twelve-total batch over accepted and unsure fields is
+    retired. The field's mark (Interesting / Unsure / Not for me, stored as
+    the existing `accepted | unsure | rejected` statuses) and its selected
+    roles go to the prompt as context, and the Searches screen orders groups
+    Interesting first. Revision (D32) is unchanged.
+
+41. **Feedback keeps the good/bad contract; accept-or-keep is a whole-turn
+    undo.** The four verdicts map to `good` (Good fit) and `bad` (Partly
+    right, Wrong roles, No results); the verdict label and the reason chips
+    are prefixed into the `reason` text, so `QueryFeedbackSchema` and the
+    revise prompt do not change. The browser keeps the pre-turn `profileMd`:
+    "Accept and use" keeps the returned profile, "Keep the old one" restores
+    the snapshot, and editing the revised text is a local `setQueryText`
+    edit. Copy timestamps ("copied 6 min ago") are client state only.
+
+42. **No free-text composer in the beta.** The rail holds the preference
+    questions, the per-field asks, the working log, errors and warnings, and
+    a "Change an answer" row that re-shows the preference pills (local, no
+    model call). Free text would need a general chat step — a new
+    `StepName`, the `llm_usage` CHECK migration (D22), a prompt module — and
+    would expose an open model chat behind the passcode. Fellows' feedback to
+    the builder goes through the external form link from step 3.3, never
+    through the app. The profile drawer is a read-only view with export,
+    import and delete: a hand edit of the whole file would need a re-run and
+    can break the sections the app writes. Corrections happen through the
+    UI: the card Edit form, Exclude, the marks, and "Change an answer".
+    User control over the profile (PRD) is met by those, and by export. A
+    scoped "ask about the open field" step (read-only, no tools) is the
+    first candidate after the pilot starts; it is backlog item 6.
+
+43. **A per-field ask writes a preference and does not re-rank.** Answering
+    a field's question appends `<key>: <answer>` to the profile's other
+    preferences locally, opens the drawer to show it, and flips the field's
+    button to "Noted". No model call; the next discovery or revision reads
+    it. The handoff's "it sharpens the ranking" is not promised in copy.
 
 ---
 

@@ -7,7 +7,7 @@ source of ground truth is added or removed.
 
 ```mermaid
 flowchart TD
-  YOU(["You: paste resume or bio, answer a few questions,<br/>accept or reject fields, rate queries"]):::person
+  YOU(["You: paste resume or bio, answer a few questions,<br/>mark fields, tick roles, rate queries"]):::person
 
   YOU --> CARDS{{"LLM turns the text into experience cards"}}:::llm
   CARDS --> PROFILE[("Your profile<br/>stored only in your browser,<br/>sent whole to the server each turn")]:::store
@@ -18,19 +18,13 @@ flowchart TD
   DISCOVER --> CHECK["Code keeps only fields and roles that<br/>cite one of your cards and a real, allowed source"]:::code
   CHECK --> PROFILE
 
-  PROFILE --> EXPLORE{{"LLM drills into a field you pick<br/>using its reference rows plus the web"}}:::llm
-  REF --> EXPLORE
-  WEB --> EXPLORE
-  EXPLORE --> PROFILE
-
-  PROFILE --> QUERIES{{"LLM writes board-ready search queries<br/>from your accepted fields, no web, no reference data"}}:::llm
+  PROFILE --> QUERIES{{"LLM writes three search queries for one field,<br/>one per board, from the roles you ticked; no web, no reference data"}}:::llm
   QUERIES --> PROFILE
   PROFILE --> BOARDS(["You run the queries on the job boards yourself<br/>and rate them good or bad fit"]):::person
   BOARDS --> REVISE{{"LLM revises the queries from your feedback"}}:::llm
   REVISE --> PROFILE
 
   DISCOVER -. "tokens and cost only, no content" .-> USAGE[("Anonymous usage log<br/>Supabase")]:::store
-  EXPLORE -.-> USAGE
   QUERIES -.-> USAGE
   REVISE -.-> USAGE
   CARDS -.-> USAGE
@@ -56,8 +50,12 @@ call. Orange is the open web. Grey is a plain code check.
 - The web: used only to confirm employers and to source fields the
   collection lacks, with the three job boards blocked.
 
+**What the diagram no longer shows.** The field drill-down with web search
+(`explore.ts`) is kept in the code but has no UI path since Phase 2b: an
+expanded field card renders from discovery data (technical-plan.md D39).
+
 **Where nothing is stored.** The server keeps no profile, chat or pasted
 text. Your profile lives in your browser and is resent every turn. The only
 server-side write is a usage row with token counts and cost.
 
-Last verified against the code: 2026-09-18.
+Updated 2026-09-20 for the Phase 2b design; last verified against the code 2026-09-18. Re-verify at Gate 2b.

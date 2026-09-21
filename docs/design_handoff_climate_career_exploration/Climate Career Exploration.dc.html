@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #eceeec; }
+  * { box-sizing: border-box; }
+  a { color: #12603f; text-decoration: none; }
+  a:hover { color: #0c4a30; text-decoration: underline; }
+  button { font: inherit; }
+  @keyframes shimmer { 0% { opacity: .45; } 50% { opacity: 1; } 100% { opacity: .45; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</helmet>
+
+<div style="font-family: 'Instrument Sans', Helvetica, sans-serif; color: #10201a; background: #eceeec; min-height: 100vh; padding: 0 0 48px;">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px; background: #10201a; color: #eceeec; position: sticky; top: 0; z-index: 30;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8aa79a; margin-right: 6px;">State</span>
+    <sc-for list="{{ screens }}" as="s" hint-placeholder-count="7">
+      <button onClick="{{ s.go }}" style="{{ s.chipStyle }}">{{ s.label }}</button>
+    </sc-for>
+    <span style="flex: 1;"></span>
+    <button onClick="{{ toggleRail }}" style="background: none; border: 1px solid #35473f; color: #b9c9c1; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;">{{ railToggleLabel }}</button>
+  </div>
+
+  <div style="max-width: 1440px; margin: 0 auto; padding: 20px 20px 0;">
+    <div style="background: #f7f8f7; border: 1px solid #dde2df; border-radius: 14px; overflow: clip; box-shadow: 0 1px 2px rgba(16,32,26,.05);">
+
+      <header style="display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #e2e6e3; background: #fff;">
+        <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+          <span style="width: 22px; height: 22px; border-radius: 6px; background: #12603f; display: inline-block; flex: none;"></span>
+          <strong style="font-size: 15px; letter-spacing: -.01em;">Climate Career Exploration</strong>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #12603f; background: #e8f2ed; border-radius: 4px; padding: 3px 6px;">Alpha</span>
+        </div>
+        <sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}">
+          <nav style="display: flex; gap: 4px; margin-left: 8px;">
+            <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+              <button onClick="{{ st.go }}" style="{{ st.style }}">{{ st.label }}</button>
+            </sc-for>
+          </nav>
+        </sc-if>
+        <span style="flex: 1;"></span>
+      </header>
+
+      <sc-if value="{{ dataOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 16px 20px; background: #10201a; color: #dfe8e3; border-bottom: 1px solid #e2e6e3;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <strong style="font-size: 14px;">Your profile</strong>
+            <span style="font-size: 12.5px; color: #8aa79a;">Stored on this device only. Never on a server.</span>
+            <button onClick="{{ togglePrivacy }}" style="width: 18px; height: 18px; flex: none; border-radius: 50%; border: 1px solid #4a5f55; background: none; color: #b9c9c1; font-size: 11px; font-style: italic; font-weight: 600; line-height: 1; cursor: pointer; padding: 0;" aria-label="How your data is handled">i</button>
+            <span style="flex: 1;"></span>
+            <button style="background: #12603f; border: 0; color: #fff; border-radius: 7px; padding: 6px 12px; font-size: 12.5px; cursor: pointer;">Export .txt</button>
+            <button style="background: none; border: 1px solid #35473f; color: #dfe8e3; border-radius: 7px; padding: 6px 12px; font-size: 12.5px; cursor: pointer;">Import</button>
+            <button style="background: none; border: 1px solid #6b3a34; color: #f0b7ae; border-radius: 7px; padding: 6px 12px; font-size: 12.5px; cursor: pointer;">Delete everything</button>
+          </div>
+          <sc-if value="{{ privacyOpen }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0 0 12px; font-size: 12.5px; line-height: 1.6; color: #b9c9c1; max-width: 620px; border-left: 2px solid #35473f; padding-left: 11px;">Your profile stays in this browser. Chats are sent to Anthropic's Claude Opus model to produce the matches, and are deleted when your web session ends. Nothing is used for training.</p>
+          </sc-if>
+          <pre style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.7; color: #b9c9c1; white-space: pre-wrap; max-height: 190px; overflow: auto;">{{ profileText }}</pre>
+        </div>
+      </sc-if>
+
+      <div style="display: grid; grid-template-columns: {{ shellCols }}; align-items: stretch; min-height: 620px;">
+
+        <main style="min-width: 0; padding: 22px 24px 32px;">
+
+          <sc-if value="{{ isFirstRun }}" hint-placeholder-val="{{ false }}">
+            <div style="max-width: 620px; margin: 28px auto 0;">
+              <h1 style="font-size: 30px; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 10px;">Start from what you have done, not from the word “climate”.</h1>
+              <p style="font-size: 15.5px; line-height: 1.6; color: #43544c; margin: 0 0 22px; text-wrap: pretty;">Paste your resume or bio. See climate fields your experience could open up, and the searches to run on job boards.</p>
+              <div style="background: #fff; border: 1px solid #dde2df; border-radius: 12px; padding: 14px; box-shadow: 0 1px 2px rgba(16,32,26,.04);">
+                <textarea placeholder="Paste your resume or bio…" style="width: 100%; min-height: 176px; resize: vertical; border: 0; outline: none; font-family: 'Instrument Sans', sans-serif; font-size: 14.5px; line-height: 1.6; color: #10201a; background: transparent;"></textarea>
+                <div style="border-top: 1px solid #eceeec; padding-top: 12px; margin-top: 6px;">
+                  <textarea placeholder="Notes: constraints, interests, what you don't want. Optional." style="width: 100%; min-height: 62px; resize: vertical; border: 0; outline: none; font-family: 'Instrument Sans', sans-serif; font-size: 13.5px; line-height: 1.6; color: #10201a; background: transparent;"></textarea>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; border-top: 1px solid #eceeec; padding-top: 12px;">
+                  <button onClick="{{ goConfirm }}" style="background: #12603f; border: 0; color: #fff; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer;">Start</button>
+                  <span style="font-size: 12.5px; color: #5c6b64;">About a minute. You can correct everything after.</span>
+                </div>
+              </div>
+              <p style="font-size: 12.5px; line-height: 1.6; color: #5c6b64; margin: 16px 0 0;"><a href="#" onClick="{{ toggleData }}">No account, nothing stored.</a></p>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isConfirm }}" hint-placeholder-val="{{ false }}">
+            <div>
+              <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; margin-bottom: 4px;">
+                <div style="min-width: 0;">
+                  <h2 style="font-size: 21px; letter-spacing: -.015em; margin: 0 0 5px;">Your highlights</h2>
+                  <p style="font-size: 13.5px; color: #5c6b64; margin: 0;">Fix anything wrong. Exclude what you do not want to be matched on.</p>
+                </div>
+                <span style="flex: 1;"></span>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #12603f; background: #e8f2ed; border: 1px solid #cfe3d8; border-radius: 8px; padding: 8px 11px;">Matching fields · 5 of 6 in</div>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 18px;">
+                <sc-for list="{{ expCards }}" as="c" hint-placeholder-count="4">
+                  <div style="{{ c.wrapStyle }}">
+                    <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px;">
+                      <strong style="font-size: 14.5px; letter-spacing: -.01em;">{{ c.title }}</strong>
+                      <span style="flex: 1;"></span>
+                      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #5c6b64;">{{ c.years }}</span>
+                    </div>
+                    <dl style="margin: 0; display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 6px 10px;">
+                      <dt style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #8a9790; padding-top: 2px;">Situation</dt>
+                      <dd style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #33443c;">{{ c.situation }}</dd>
+                      <dt style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #8a9790; padding-top: 2px;">Action</dt>
+                      <dd style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #33443c;">{{ c.action }}</dd>
+                      <dt style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #8a9790; padding-top: 2px;">Result</dt>
+                      <dd style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #33443c;">{{ c.result }}</dd>
+                    </dl>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 11px 0 12px;">
+                      <sc-for list="{{ c.skills }}" as="sk" hint-placeholder-count="3">
+                        <span style="font-size: 12px; color: #33443c; background: #eff2f0; border-radius: 6px; padding: 4px 8px;">{{ sk }}</span>
+                      </sc-for>
+                    </div>
+                    <div style="display: flex; gap: 8px; border-top: 1px solid #eceeec; padding-top: 11px;">
+                      <button style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 6px 11px; font-size: 12.5px; color: #33443c; cursor: pointer;">Edit</button>
+                      <button onClick="{{ c.toggle }}" style="{{ c.excludeStyle }}">{{ c.excludeLabel }}</button>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+            <div>
+              <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;">
+                <div style="min-width: 0;">
+                  <h2 style="font-size: 21px; letter-spacing: -.015em; margin: 0 0 5px;">Climate fields worth a look</h2>
+                  <p style="font-size: 13.5px; color: #5c6b64; margin: 0;">Click on a card to see more info and roles.</p>
+                </div>
+                <span style="flex: 1;"></span>
+              </div>
+
+              <sc-if value="{{ isPending }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px; background: #fff; border: 1px solid #cfe3d8; border-left: 3px solid #12603f; border-radius: 10px; padding: 12px 14px;">
+                  <span style="width: 15px; height: 15px; border-radius: 50%; border: 2px solid #cfe3d8; border-top-color: #12603f; animation: spin 900ms linear infinite; display: inline-block; flex: none;"></span>
+                  <div style="min-width: 0;">
+                    <div style="font-size: 13.5px; font-weight: 600;">Two more fields · ~90 sec left</div>
+                    <div style="font-size: 12.5px; color: #5c6b64;">Nothing to do until this finishes.</div>
+                  </div>
+                  <span style="flex: 1;"></span>
+                  <button onClick="{{ openLog }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 6px 11px; font-size: 12.5px; color: #33443c; cursor: pointer; white-space: nowrap;">Watch it work</button>
+                </div>
+              </sc-if>
+
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; margin-top: 18px; align-items: start;">
+
+                <sc-if value="{{ isPending }}" hint-placeholder-val="{{ false }}">
+                  <div style="background: #fff; border: 1px dashed #cfd8d3; border-radius: 14px; padding: 18px; animation: shimmer 1.6s ease-in-out infinite;">
+                    <div style="height: 15px; width: 62%; background: #e7ebe8; border-radius: 4px; margin-bottom: 10px;"></div>
+                    <div style="height: 11px; width: 40%; background: #eef1ef; border-radius: 4px; margin-bottom: 16px;"></div>
+                    <div style="height: 10px; background: #eef1ef; border-radius: 4px; margin-bottom: 7px;"></div>
+                    <div style="height: 10px; background: #eef1ef; border-radius: 4px; margin-bottom: 7px;"></div>
+                    <div style="height: 10px; width: 70%; background: #eef1ef; border-radius: 4px;"></div>
+                    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a9790; margin-top: 16px;">weighing 4 highlights against field 7 of 9…</div>
+                  </div>
+                </sc-if>
+
+                <sc-for list="{{ fields }}" as="f" hint-placeholder-count="6">
+                  <div style="{{ f.wrapStyle }}">
+                    <div onClick="{{ f.toggleOpen }}" style="padding: 18px 18px 0; cursor: pointer;">
+                      <div style="display: flex; align-items: flex-start; gap: 12px;">
+                        <span style="{{ f.rankStyle }}">{{ f.rank }}</span>
+                        <div style="min-width: 0; flex: 1;">
+                          <div style="font-size: 16px; font-weight: 600; letter-spacing: -.015em; line-height: 1.3;">{{ f.name }}</div>
+                          <div style="font-size: 13px; color: #5c6b64; margin-top: 3px;">{{ f.sector }}</div>
+                        </div>
+                        <span style="{{ f.expandStyle }}">{{ f.expandLabel }}</span>
+                      </div>
+                      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 12px 0 0; font-size: 13px;">
+                        <span style="display: flex; align-items: center; gap: 6px;">
+                          <span style="{{ f.moveDotStyle }}"></span>
+                          <span style="font-weight: 500;">{{ f.move }}</span>
+                        </span>
+                        <span style="display: flex; align-items: center; gap: 6px; color: #33443c;">
+                          <span style="{{ f.fitBarStyle }}"></span>
+                          {{ f.fitLabel }}
+                        </span>
+                      </div>
+                      <p style="font-size: 13.5px; line-height: 1.6; color: #33443c; margin: 12px 0 0; text-wrap: pretty;">{{ f.blurb }}</p>
+                      <div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0;">
+                        <sc-for list="{{ f.chips }}" as="ch" hint-placeholder-count="3">
+                          <span style="font-size: 12px; color: #33443c; background: #eff2f0; border-radius: 6px; padding: 4px 8px;">{{ ch }}</span>
+                        </sc-for>
+                      </div>
+                      <sc-if value="{{ f.open }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top: 16px; border-top: 1px solid #eceeec; padding-top: 14px;">
+                          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790; margin-bottom: 8px;">From your highlights</div>
+                          <sc-for list="{{ f.evidence }}" as="ev" hint-placeholder-count="3">
+                            <div style="display: flex; gap: 9px; margin-bottom: 8px;">
+                              <span style="width: 5px; height: 5px; border-radius: 50%; background: #12603f; margin-top: 7px; flex: none;"></span>
+                              <div style="font-size: 13.5px; line-height: 1.55; color: #33443c;"><strong style="font-weight: 600;">{{ ev.card }}</strong> — {{ ev.why }}</div>
+                            </div>
+                          </sc-for>
+
+                          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; margin-top: 16px; align-items: start;">
+                            <div style="background: #f7f8f7; border: 1px solid #e2e6e3; border-radius: 10px; padding: 12px 13px;">
+                              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790; margin-bottom: 4px;">Roles to look at</div>
+                              <div style="font-size: 12.5px; line-height: 1.5; color: #5c6b64; margin-bottom: 10px;">Select the ones you want searches for.</div>
+                              <div style="display: flex; flex-direction: column; gap: 6px;">
+                                <sc-for list="{{ f.roles }}" as="r" hint-placeholder-count="3">
+                                  <button onClick="{{ r.toggle }}" style="{{ r.style }}">
+                                    <span style="{{ r.boxStyle }}">{{ r.check }}</span>
+                                    <span style="flex: 1; min-width: 0; text-align: left;">{{ r.title }}</span>
+                                  </button>
+                                </sc-for>
+                              </div>
+                            </div>
+                            <div style="background: #fff; border: 1px solid #efdfbd; border-radius: 10px; padding: 12px 13px;">
+                              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a5a00; margin-bottom: 8px;">What is uncertain</div>
+                              <p style="margin: 0 0 11px; font-size: 13.5px; line-height: 1.55; color: #33443c;">{{ f.uncertain }}</p><button onClick="{{ f.resolve }}" style="{{ f.resolveStyle }}">{{ f.resolveLabel }}</button>
+                              
+                            </div>
+                          </div>
+
+                          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px;">
+                            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790;">Potential employers</div>
+                            <sc-for list="{{ f.employers }}" as="em" hint-placeholder-count="4">
+                              <span style="font-size: 12.5px; color: #33443c; border: 1px solid #e2e6e3; border-radius: 6px; padding: 4px 8px; background: #fff;">{{ em }}</span>
+                            </sc-for>
+                          </div>
+
+                          <sc-if value="{{ showSources }}" hint-placeholder-val="{{ true }}">
+                            <div style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790;">Sources</div>
+                              <sc-for list="{{ f.sources }}" as="src" hint-placeholder-count="2">
+                                <a href="#" style="font-size: 12.5px;">{{ src }}</a>
+                              </sc-for>
+                            </div>
+                          </sc-if>
+
+                          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px;">
+                            <button onClick="{{ f.goSearches }}" style="background: #12603f; border: 0; color: #fff; border-radius: 8px; padding: 9px 14px; font-size: 13.5px; font-weight: 600; cursor: pointer;">{{ f.searchLabel }}</button>
+                            <span style="font-size: 12.5px; color: #5c6b64;">{{ f.selectionNote }}</span>
+                          </div>
+                        </div>
+                      </sc-if>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 14px 18px 18px; margin-top: 14px; border-top: 1px solid #eceeec;">
+                      <button onClick="{{ f.markYes }}" style="{{ f.yesStyle }}">Interesting</button>
+                      <button onClick="{{ f.markUnsure }}" style="{{ f.unsureStyle }}">Unsure</button>
+                      <button onClick="{{ f.markNo }}" style="{{ f.noStyle }}">Not for me</button>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isQueries }}" hint-placeholder-val="{{ false }}">
+            <div>
+              <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;">
+                <div style="min-width: 0;">
+                  <h2 style="font-size: 21px; letter-spacing: -.015em; margin: 0 0 5px;">Searches to run</h2>
+                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <p style="font-size: 13.5px; color: #5c6b64; margin: 0;">Built from the roles you selected, grouped by field. Copy one, run it in your own tab, then tell us how it went.</p>
+                    <button onClick="{{ toggleGroupInfo }}" style="width: 18px; height: 18px; flex: none; border-radius: 50%; border: 1px solid #cfd8d3; background: #fff; color: #5c6b64; font-size: 11px; font-style: italic; font-weight: 600; line-height: 1; cursor: pointer; padding: 0;" aria-label="Why searches are grouped by field">i</button>
+                  </div>
+                </div>
+                <span style="flex: 1;"></span>
+                <button onClick="{{ goBoard }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #33443c; cursor: pointer;">Back to fields</button>
+              </div>
+
+              <sc-if value="{{ groupInfoOpen }}" hint-placeholder-val="{{ false }}">
+                <p style="max-width: 720px; margin: 14px 0 0; font-size: 13px; line-height: 1.6; color: #33443c; background: #fff; border: 1px solid #e2e6e3; border-radius: 10px; padding: 12px 13px;">One search per field, never across fields. Job boards rank results with matching models that expect a coherent role profile, so a query mixing unrelated fields scores badly on all of them and buries the good postings.</p>
+              </sc-if>
+
+              <sc-if value="{{ noQueries }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top: 20px; background: #fff; border: 1px dashed #cfd8d3; border-radius: 12px; padding: 18px; max-width: 560px;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px;">No roles selected yet</div>
+                  <p style="margin: 0 0 12px; font-size: 13.5px; line-height: 1.6; color: #5c6b64;">Open a field, tick the roles that interest you, and the searches for them appear here.</p>
+                  <button onClick="{{ goBoard }}" style="background: #12603f; border: 0; color: #fff; border-radius: 8px; padding: 9px 14px; font-size: 13.5px; font-weight: 600; cursor: pointer;">Back to fields</button>
+                </div>
+              </sc-if>
+
+              <sc-for list="{{ queryGroups }}" as="g" hint-placeholder-count="2">
+              <div style="margin-top: 22px;">
+              <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 6px;">
+                <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #12603f; background: #e8f2ed; border-radius: 6px; padding: 4px 7px; flex: none;">{{ g.rank }}</span>
+                <h3 style="font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; margin: 0;">{{ g.name }}</h3>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0 0 12px 34px;">
+                <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790;">Selected roles</span>
+                <sc-for list="{{ g.titles }}" as="t" hint-placeholder-count="2">
+                  <span style="font-size: 12.5px; color: #12603f; background: #e8f2ed; border: 1px solid #cfe3d8; border-radius: 6px; padding: 3px 8px;">{{ t }}</span>
+                </sc-for>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; align-items: start;">
+                <sc-for list="{{ g.queries }}" as="q" hint-placeholder-count="3">
+                  <div style="background: #fff; border: 1px solid #dde2df; border-radius: 14px; padding: 16px 16px 14px; box-shadow: 0 1px 2px rgba(16,32,26,.04);">
+                    <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 11px;">
+                      <span style="{{ q.dotStyle }}"></span>
+                      <strong style="font-size: 14.5px;">{{ q.board }}</strong>
+                      <span style="flex: 1;"></span>
+                      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #5c6b64;">{{ q.note }}</span>
+                    </div>
+                    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; line-height: 1.65; color: #10201a; background: #f5f7f6; border: 1px solid #e7ebe8; border-radius: 9px; padding: 11px 12px; word-break: break-word;">{{ q.text }}</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">
+                      <button onClick="{{ q.copy }}" style="{{ q.copyStyle }}">{{ q.copyLabel }}</button>
+                      <a href="#" style="border: 1px solid #cfd8d3; border-radius: 7px; padding: 7px 11px; font-size: 12.5px; color: #33443c;">Open {{ q.board }}</a>
+                    </div>
+                    <details style="margin-top: 12px;">
+                      <summary style="font-size: 12.5px; color: #12603f; cursor: pointer;">Turn it into an email alert</summary>
+                      <ol style="margin: 9px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #33443c;">
+                        <sc-for list="{{ q.alertSteps }}" as="stp" hint-placeholder-count="3">
+                          <li style="margin-bottom: 4px;">{{ stp }}</li>
+                        </sc-for>
+                      </ol>
+                    </details>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid #eceeec; margin-top: 13px; padding-top: 12px;">
+                      <span style="font-size: 12.5px; color: #5c6b64;">Ran it?</span>
+                      <button onClick="{{ goFeedback }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 6px 11px; font-size: 12.5px; color: #33443c; cursor: pointer;">Good results</button>
+                      <button onClick="{{ goFeedback }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 6px 11px; font-size: 12.5px; color: #33443c; cursor: pointer;">Wrong results</button>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isFeedback }}" hint-placeholder-val="{{ false }}">
+            <div style="max-width: 660px;">
+              <h2 style="font-size: 21px; letter-spacing: -.015em; margin: 0 0 5px;">How did that search go?</h2>
+              <p style="font-size: 13.5px; color: #5c6b64; margin: 0 0 18px;">Indeed · “interconnection study coordinator” OR “transmission planning analyst” · copied 6 min ago</p>
+
+              <div style="background: #fff; border: 1px solid #dde2df; border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(16,32,26,.04);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;">
+                  <sc-for list="{{ verdicts }}" as="v" hint-placeholder-count="4">
+                    <button onClick="{{ v.pick }}" style="{{ v.style }}">{{ v.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="margin-top: 14px;">
+                  <div style="font-size: 13px; color: #33443c; margin-bottom: 8px;">What was off?</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 7px;">
+                    <sc-for list="{{ reasons }}" as="rs" hint-placeholder-count="5">
+                      <button onClick="{{ rs.pick }}" style="{{ rs.style }}">{{ rs.label }}</button>
+                    </sc-for>
+                  </div>
+                  <textarea placeholder="e.g. mostly utility engineering roles asking for a PE licence" style="width: 100%; min-height: 78px; margin-top: 11px; resize: vertical; border: 1px solid #dde2df; border-radius: 9px; padding: 10px 11px; font-family: 'Instrument Sans', sans-serif; font-size: 13.5px; line-height: 1.55; color: #10201a; outline: none;"></textarea>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid #eceeec; margin-top: 14px; padding-top: 14px;">
+                  <button onClick="{{ goPending }}" style="background: #12603f; border: 0; color: #fff; border-radius: 8px; padding: 9px 14px; font-size: 13.5px; font-weight: 600; cursor: pointer;">Send and revise</button>
+                  <span style="font-size: 12.5px; color: #5c6b64;">Revises the query, ranking and profile. ~2 min.</span>
+                </div>
+              </div>
+
+              <div style="background: #fff; border: 1px solid #e2e6e3; border-radius: 12px; padding: 14px 16px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 9px;">
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790;">Revised search</div>
+                  <span style="flex: 1;"></span>
+                  <span style="font-size: 12px; color: #5c6b64;">{{ revisedNote }}</span>
+                </div>
+                <textarea value="{{ revisedQuery }}" onChange="{{ editRevised }}" spellcheck="false" style="width: 100%; min-height: 76px; resize: vertical; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; line-height: 1.65; color: #10201a; background: #f5f7f6; border: 1px solid #e7ebe8; border-radius: 9px; padding: 11px 12px; outline: none;"></textarea>
+                <sc-if value="{{ revisedPending }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px;">
+                    <button onClick="{{ acceptRevised }}" style="background: #12603f; border: 0; color: #fff; border-radius: 7px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer;">Accept and use</button>
+                    <button onClick="{{ rejectRevised }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 7px 12px; font-size: 12.5px; color: #33443c; cursor: pointer;">Keep the old one</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ revisedAccepted }}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-top: 11px; font-size: 12.5px; color: #12603f;">
+                    <span style="width: 7px; height: 7px; border-radius: 2px; background: #12603f; display: inline-block;"></span>
+                    Accepted. This replaces the Indeed search for this field.
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+        </main>
+
+        <sc-if value="{{ railOpen }}" hint-placeholder-val="{{ true }}">
+          <aside style="border-left: 1px solid #e2e6e3; background: #fff; display: flex; flex-direction: column; min-width: 0;">
+            <div style="display: flex; flex-direction: column; flex: 1; width: 100%; min-width: 0; position: sticky; top: 58px; max-height: calc(100vh - 74px);">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 13px 16px; border-bottom: 1px solid #eceeec;">
+              <strong style="font-size: 13.5px;">Assistant</strong>
+            </div>
+            <button onClick="{{ toggleData }}" style="display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: #f7f8f7; border: 0; border-bottom: 1px solid #eceeec; padding: 11px 16px; cursor: pointer;" style-hover="background: #eff2f0;">
+              <span style="width: 7px; height: 7px; border-radius: 2px; background: #12603f; display: inline-block; flex: none;"></span>
+              <span style="min-width: 0;">
+                <span style="display: block; font-size: 13px; font-weight: 600; color: #10201a;">Profile and Progress</span>
+                <span style="display: block; font-size: 11.5px; color: #5c6b64; margin-top: 2px;">Everything known about you, never stored. Download before you end your session.&nbsp;</span>
+              </span>
+              <span style="flex: 1;"></span>
+              
+              <span style="font-size: 12.5px; color: #12603f; font-weight: 600; white-space: nowrap;">{{ dataLinkLabel }}</span>
+            </button>
+
+            <div style="border-bottom: 1px solid #eceeec; padding: 12px 16px;">
+              <div style="display: flex; gap: 8px; align-items: flex-end;">
+                <textarea placeholder="Correct something, or ask why a field is here…" style="flex: 1; min-width: 0; min-height: 44px; resize: vertical; border: 1px solid #dde2df; border-radius: 9px; padding: 10px 11px; font-family: 'Instrument Sans', sans-serif; font-size: 13px; line-height: 1.5; outline: none; color: #10201a;"></textarea>
+                <button style="background: #12603f; border: 0; color: #fff; border-radius: 8px; padding: 11px 12px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">Send</button>
+              </div>
+              <div style="font-size: 11.5px; color: #8a9790; margin-top: 8px;">For corrections and questions.</div>
+            </div>
+
+            <div style="flex: 1; overflow: auto; padding: 14px 16px;">
+
+              <sc-if value="{{ isPending }}" hint-placeholder-val="{{ false }}">
+                <div style="background: #f7f8f7; border: 1px solid #e2e6e3; border-radius: 11px; padding: 12px; margin-bottom: 14px;">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 11px;">
+                    <span style="width: 13px; height: 13px; border-radius: 50%; border: 2px solid #cfe3d8; border-top-color: #12603f; animation: spin 900ms linear infinite; display: inline-block;"></span>
+                    <strong style="font-size: 12.5px;">Working · 2:14</strong>
+                  </div>
+                  <sc-for list="{{ logLines }}" as="l" hint-placeholder-count="5">
+                    <div style="display: flex; gap: 9px; margin-bottom: 8px;">
+                      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #8a9790; padding-top: 2px; white-space: nowrap;">{{ l.at }}</span>
+                      <span style="{{ l.textStyle }}">{{ l.text }}</span>
+                    </div>
+                  </sc-for>
+                  <div style="font-size: 12px; color: #5c6b64; border-top: 1px solid #e7ebe8; margin-top: 10px; padding-top: 9px;">Hold tight. Marking resumes when it lands.</div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ hasAsk }}" hint-placeholder-val="{{ false }}">
+                <div style="background: #fff; border: 1px solid #efdfbd; border-radius: 11px; padding: 12px; margin-bottom: 14px;">
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #8a5a00; margin-bottom: 7px;">More on this field</div>
+                  <div style="font-size: 12.5px; color: #5c6b64; margin-bottom: 6px;">{{ askField }}</div>
+                  <p style="margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; color: #33443c;">{{ askContext }}</p>
+                  <p style="margin: 0 0 10px; font-size: 13px; line-height: 1.55; color: #5c6b64;">{{ askQuestion }} Optional — it sharpens the ranking.</p>
+                  <textarea value="{{ draft }}" onChange="{{ editDraft }}" placeholder="{{ askPlaceholder }}" style="width: 100%; min-height: 64px; resize: vertical; border: 1px solid #dde2df; border-radius: 9px; padding: 9px 10px; font-family: 'Instrument Sans', sans-serif; font-size: 13px; line-height: 1.5; color: #10201a; outline: none;"></textarea>
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px;">
+                    <button onClick="{{ submitAsk }}" style="{{ submitAskStyle }}">Add to profile.txt</button>
+                    <button onClick="{{ dismissAsk }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 7px 11px; font-size: 12.5px; color: #33443c; cursor: pointer;">Not now</button>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ hasAdds }}" hint-placeholder-val="{{ false }}">
+                <div style="background: #f7f8f7; border: 1px solid #cfe3d8; border-radius: 11px; padding: 12px; margin-bottom: 14px;">
+                  <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 8px;">
+                    <span style="width: 7px; height: 7px; border-radius: 2px; background: #12603f; display: inline-block; flex: none;"></span>
+                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #12603f;">Added to profile.txt</span>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <sc-for list="{{ profileAdds }}" as="pa" hint-placeholder-count="1">
+                      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; line-height: 1.55; color: #33443c; word-break: break-word;">{{ pa }}</div>
+                    </sc-for>
+                  </div>
+                  <button onClick="{{ toggleData }}" style="background: none; border: 1px solid #cfd8d3; border-radius: 7px; padding: 6px 11px; font-size: 12.5px; color: #33443c; cursor: pointer; margin-top: 10px;">Open profile</button>
+                </div>
+              </sc-if>
+
+              <sc-for list="{{ messages }}" as="m" hint-placeholder-count="3">
+                <div style="{{ m.wrapStyle }}">
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #8a9790; margin-bottom: 5px;">{{ m.who }}</div>
+                  <div style="font-size: 13.5px; line-height: 1.6; color: #33443c;">{{ m.text }}</div>
+                  <sc-if value="{{ m.hasPills }}" hint-placeholder-val="{{ false }}">
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;">
+                      <sc-for list="{{ m.pills }}" as="p" hint-placeholder-count="3">
+                        <button style="background: #fff; border: 1px solid #cfe3d8; color: #12603f; border-radius: 7px; padding: 6px 10px; font-size: 12.5px; cursor: pointer;">{{ p }}</button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+
+            </div>
+          </aside>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <div style="max-width: 1440px; margin: 16px auto 0; font-size: 12.5px; line-height: 1.6; color: #5c6b64;">
+      The field board is the spine. Chat is a right rail, absent at kickoff and surfaced when it has a question. The old tabs do not survive: — Fields becomes the board, Queries a per-field view, Profile the <strong style="font-weight: 600; color: #33443c;">Your Profile</strong> drawer in the rail.
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;firstRun&quot;,&quot;confirm&quot;,&quot;board&quot;,&quot;explored&quot;,&quot;pending&quot;,&quot;queries&quot;,&quot;feedback&quot;],&quot;default&quot;:&quot;board&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;railOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;showSources&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;}}">
+const MONO = "'IBM Plex Mono', monospace";
+
+const FIELDS = [
+  {
+    id: "grid", rank: 1, name: "Grid Interconnection & Transmission Planning",
+    sector: "Utilities · Independent power · Consultancies",
+    move: "Sector move", fit: 0.92, fitLabel: "Strong overlap", roleCount: 9,
+    blurb: "Queue reform has created a backlog of studies and no one to project-manage them. The work is scheduling, stakeholder wrangling and document control against regulatory deadlines.",
+    chips: ["Program management", "Regulatory deadlines", "Vendor coordination", "Data QA"],
+    evidence: [
+      { card: "Regional rollout, 14 sites", why: "same shape as managing a study queue" },
+      { card: "Carrier contract renegotiation", why: "counterparty management under fixed deadlines" },
+      { card: "Ops dashboard build", why: "reporting against milestone dates is the core artifact" }
+    ],
+    roles: [
+      { title: "Interconnection Project Manager", level: "Mid" },
+      { title: "Transmission Planning Analyst", level: "Mid" },
+      { title: "Queue Reform Program Lead", level: "Senior" },
+      { title: "Regulatory Affairs Coordinator", level: "Mid" }
+    ],
+    dayToDay: "Track dozens of studies through milestones, chase data from developers, prep filings, sit in weekly stakeholder calls.",
+    uncertain: "Most postings name an ISO or utility by acronym. Unclear whether yours count as utility experience without a year inside one.",
+    employers: ["MISO", "Arevon", "1898 & Co.", "Grid United", "Pine Gate"],
+    uncertainAsk: "Have you worked with an ISO, RTO or utility — even as a vendor or counterparty?",
+    profileKey: "utility exposure",
+    askPlaceholder: "e.g. two years selling into MISO and Ameren",
+    sources: ["FERC Order 2023 summary", "LBNL queue report 2025"]
+  },
+  {
+    id: "disclosure", rank: 2, name: "Corporate Climate Disclosure & Reporting",
+    sector: "In-house sustainability · Assurance · Software",
+    move: "Adjacent role", fit: 0.84, fitLabel: "Strong overlap", roleCount: 7,
+    blurb: "CSRD and California rules turned emissions accounting into a reporting function with audit deadlines. Teams need people who can run a data collection cycle, not climate scientists.",
+    chips: ["Data collection cycles", "Audit prep", "Cross-functional reporting", "Excel / SQL"],
+    evidence: [
+      { card: "Ops dashboard build", why: "you already own a recurring metric cycle with named data owners" },
+      { card: "Cost-per-unit reporting", why: "scope 3 spend-based accounting starts from exactly this data" }
+    ],
+    roles: [
+      { title: "Sustainability Reporting Analyst", level: "Mid" },
+      { title: "GHG Accounting Manager", level: "Mid/Senior" },
+      { title: "ESG Data Program Manager", level: "Senior" }
+    ],
+    dayToDay: "Chase data from facilities and finance, reconcile it, write the methodology notes, survive the assurance review.",
+    uncertain: "Some listings want a GHG Protocol certificate up front. Worth a two-week course rather than a degree.",
+    employers: ["Watershed", "Persefoni", "Schneider", "KPMG", "Nestlé"],
+    uncertainAsk: "Do you already hold a GHG Protocol certificate, or would you take one?",
+    profileKey: "ghg certificate",
+    askPlaceholder: "e.g. none yet, would do the two-week course",
+    sources: ["GHG Protocol scope 3 guidance", "CSRD timeline note"]
+  },
+  {
+    id: "adaptation", rank: 3, name: "Climate Adaptation & Resilience Planning",
+    sector: "Cities · State agencies · Engineering firms",
+    move: "Sector move", fit: 0.71, fitLabel: "Some overlap", roleCount: 6,
+    blurb: "Public bodies have adaptation money and thin delivery capacity. Roles are heavy on grant administration, community process and contractor oversight.",
+    chips: ["Grant administration", "Public process", "Contractor oversight"],
+    evidence: [
+      { card: "Regional rollout, 14 sites", why: "multi-site delivery with local stakeholders at each one" },
+      { card: "Emergency reroute during floods", why: "direct, named climate-risk experience" }
+    ],
+    roles: [
+      { title: "Resilience Program Manager", level: "Mid" },
+      { title: "Hazard Mitigation Planner", level: "Mid" },
+      { title: "Climate Adaptation Specialist", level: "Mid" }
+    ],
+    dayToDay: "Write and administer grants, run public meetings, keep consultants on scope, report to council.",
+    uncertain: "Public-sector pay bands sit below your current salary in most of these postings.",
+    employers: ["City of Austin", "AECOM", "WSP", "State of NJ"],
+    uncertainAsk: "What is the lowest base salary you would take for the right role?",
+    profileKey: "salary floor",
+    askPlaceholder: "e.g. $120k floor, would flex for a city role",
+    sources: ["FEMA BRIC program page", "NJ state adaptation plan"]
+  },
+  {
+    id: "heat", rank: 4, name: "Industrial Heat Decarbonization",
+    sector: "Heavy industry · Heat-pump and thermal startups",
+    move: "Retraining", fit: 0.52, fitLabel: "Stretch", roleCount: 5,
+    blurb: "Electrifying process heat is capital-project work. Commercial and delivery roles are open to outsiders; anything technical assumes a thermal background.",
+    chips: ["Capital projects", "Site logistics", "Customer delivery"],
+    evidence: [
+      { card: "Warehouse automation retrofit", why: "you have run a physical retrofit inside a live facility" }
+    ],
+    roles: [
+      { title: "Deployment Project Manager", level: "Mid" },
+      { title: "Customer Delivery Lead", level: "Mid" }
+    ],
+    dayToDay: "Sit between an industrial customer's plant team and your own engineers through a first install.",
+    uncertain: "Expect a technical screen on thermal basics. Two or three courses would close most of the gap.",
+    employers: ["AtmosZero", "Rondo", "Skyven", "Arcadia eFuels"],
+    uncertainAsk: "How would a technical screen on thermal basics go for you?",
+    profileKey: "thermal background",
+    askPlaceholder: "e.g. mechanical undergrad, rusty but teachable",
+    sources: ["DOE industrial demonstrations list", "Rondo technology brief"]
+  },
+  {
+    id: "mrv", rank: 5, name: "Carbon Market Integrity & MRV",
+    sector: "Registries · Ratings · Project developers",
+    move: "Retraining", fit: 0.44, fitLabel: "Stretch", roleCount: 4,
+    blurb: "Measurement, reporting and verification is turning into a compliance discipline. Junior analyst roles are plentiful; the seniority you want mostly is not.",
+    chips: ["Verification workflows", "Documentation", "Standards"],
+    evidence: [
+      { card: "Cost-per-unit reporting", why: "evidence trails and methodology notes are the same craft" }
+    ],
+    roles: [
+      { title: "MRV Analyst", level: "Junior/Mid" },
+      { title: "Project Documentation Lead", level: "Mid" }
+    ],
+    dayToDay: "Read project documents against a methodology and write up whether the claim holds.",
+    uncertain: "Weakest evidence in the list. Marked stretch mostly on interest, not transfer.",
+    employers: ["Verra", "Isometric", "Sylvera", "BeZero"],
+    uncertainAsk: "Would you accept an analyst-level title to get into MRV?",
+    profileKey: "title flexibility",
+    askPlaceholder: "e.g. only at manager pay band",
+    sources: ["Verra methodology index", "Sylvera ratings primer"]
+  },
+  {
+    id: "battery", rank: 6, name: "Battery Supply Chain & Manufacturing Ops",
+    sector: "Gigafactories · Cell suppliers · Recyclers",
+    move: "Sector move", fit: 0.78, fitLabel: "Strong overlap", roleCount: 8,
+    blurb: "New plants are hiring supply chain and production planning people from any industry. Logistics experience transfers almost directly.",
+    chips: ["Supply chain", "Production planning", "Supplier quality", "S&OP"],
+    evidence: [
+      { card: "Carrier contract renegotiation", why: "inbound freight and supplier terms are the daily work" },
+      { card: "Regional rollout, 14 sites", why: "ramping a new line is the same coordination problem" }
+    ],
+    roles: [
+      { title: "Supply Chain Manager", level: "Mid/Senior" },
+      { title: "Production Planner", level: "Mid" },
+      { title: "Supplier Quality Manager", level: "Senior" }
+    ],
+    dayToDay: "Hold the build plan together against late parts, run supplier calls, escalate on the floor.",
+    uncertain: "Most plants are in Michigan, Georgia, Nevada. Almost nothing remote.",
+    employers: ["Redwood Materials", "Form Energy", "Ascend Elements", "LGES"],
+    uncertainAsk: "Would you relocate for a plant role in Michigan, Georgia or Nevada?",
+    profileKey: "relocation",
+    askPlaceholder: "e.g. no relocation, Chicago only",
+    sources: ["DOE battery manufacturing grants", "Argonne battery supply chain report"]
+  }
+];
+
+const EXP = [
+  { id: "rollout", title: "Regional rollout, 14 sites", years: "2021–2024",
+    situation: "Distribution network expanding into three new states with no standard site playbook.",
+    action: "Ran the rollout program: site sequencing, local permitting, vendor onboarding, weekly exec reporting.",
+    result: "All 14 sites live within two quarters of plan; playbook adopted company-wide.",
+    skills: ["Program management", "Permitting", "Vendor onboarding", "Exec reporting"] },
+  { id: "carrier", title: "Carrier contract renegotiation", years: "2022",
+    situation: "Freight costs up 19% year over year across six regional carriers.",
+    action: "Rebuilt the lane-level cost model, ran a competitive RFP, renegotiated four of six contracts.",
+    result: "Cut cost per shipment 11% with no service-level loss.",
+    skills: ["Contract negotiation", "Cost modeling", "RFP process"] },
+  { id: "dashboard", title: "Ops dashboard build", years: "2020–2021",
+    situation: "Leadership had no shared view of on-time performance across regions.",
+    action: "Defined the metric set with data owners, specced and shipped a weekly reporting pipeline.",
+    result: "Became the standing input to the weekly ops review; still in use.",
+    skills: ["SQL", "Metric definition", "Stakeholder alignment", "Data QA"] },
+  { id: "floods", title: "Emergency reroute during floods", years: "2023",
+    situation: "Two weeks of flooding closed the primary corridor through the Midwest.",
+    action: "Stood up a daily reroute cell with carriers and customers; rebuilt priority rules on the fly.",
+    result: "Held delivery commitments for 94% of priority accounts.",
+    skills: ["Crisis operations", "Risk assessment", "Customer comms"] },
+  { id: "retrofit", title: "Warehouse automation retrofit", years: "2019–2020",
+    situation: "Aging pick line at the largest facility, no room for downtime.",
+    action: "Managed a phased retrofit inside a live building, coordinating engineers, contractors and shift leads.",
+    result: "Throughput up 27%, two days of planned downtime total.",
+    skills: ["Capital project delivery", "Contractor management", "Site logistics"] },
+  { id: "intern", title: "Campus recruiting program", years: "2018",
+    situation: "Thin junior pipeline in the ops organization.",
+    action: "Built a summer program with four universities and ran the interview loop.",
+    result: "Nine hires, six converted full time.",
+    skills: ["Recruiting", "Program design"] }
+];
+
+const quoted = (t) => '"' + t.toLowerCase() + '"';
+
+const BOARDS = [
+  { id: "li", board: "LinkedIn", note: "paste into keyword field",
+    build: (t) => "(" + t.map(quoted).join(" OR ") + ') NOT (engineer OR "PE license")',
+    alertSteps: ["Paste the query, set Location to your metro plus Remote.", "Filter Experience level to Mid-Senior.", "Click the Set alert toggle above the results and choose Daily."] },
+  { id: "in", board: "Indeed", note: "supports quoted phrases",
+    build: (t) => "(" + t.map(quoted).join(" OR ") + ") -intern -\"senior engineer\"",
+    alertSteps: ["Search, then scroll to the bottom of page one.", "Enter your email under Activate alert.", "Save a second alert with the location left blank for remote roles."] },
+  { id: "cb", board: "Climatebase", note: "narrower index, keep it broad",
+    build: (t) => t.map(quoted).join(" OR ") + " — no location filter",
+    alertSteps: ["Run the search with no location filter first.", "Save the search from the bookmark icon.", "Enable the weekly digest in your account settings."] }
+];
+
+const LOG = [
+  { at: "0:04", text: "Read 6 highlights, 5 included." },
+  { at: "0:31", text: "Shortlisted 11 candidate fields from your skill set." },
+  { at: "1:12", text: "Dropped 2 fields: no transferable evidence." },
+  { at: "1:48", text: "Ranked 6 fields. Writing evidence lines for each." },
+  { at: "2:14", text: "Field 7 of 9: checking seniority bands against your answers." }
+];
+
+const MSG = {
+  firstRun: [],
+  confirm: [
+    { who: "Assistant", text: "One question while fields are matching: which pulls you most?", pills: ["Energy systems", "Built environment", "Industry & materials", "Nature & land", "No preference"] },
+    { who: "You", text: "Energy systems, and I would look at built environment." },
+    { who: "Assistant", text: "Noted. How much retraining would you take on?", pills: ["None", "A short course", "A certificate", "A degree"] }
+  ],
+  board: [
+    { who: "You", text: "Why is industrial heat above MRV?" },
+    { who: "Assistant", text: "Your warehouse retrofit is capital-project delivery, which industrial heat companies hire for directly. MRV has only your reporting highlight behind it." }
+  ],
+  queries: [
+    { who: "You", text: "Can you widen the Climatebase one?" },
+    { who: "Assistant", text: "Done — dropped the location filter, kept the two function tags. Its index is small enough that tight queries return nothing." }
+  ],
+  feedback: [
+    { who: "Assistant", text: "Tell me what came back and I will revise the query. If a whole field is noise, mark it Not for me on the board." }
+  ],
+  pending: [
+    { who: "You", text: "Mostly utility engineering roles asking for a PE licence." },
+    { who: "Assistant", text: "Revising. Also re-checking whether grid interconnection stays at rank 1." }
+  ]
+};
+
+const SCREENS = [
+  { id: "firstRun", label: "First run" },
+  { id: "confirm", label: "Highlights" },
+  { id: "board", label: "Field board" },
+  { id: "explored", label: "Field explored" },
+  { id: "pending", label: "Pending turn" },
+  { id: "queries", label: "Query list" },
+  { id: "feedback", label: "Post-search" }
+];
+
+const chip = (on) => ({
+  background: on ? "#eceeec" : "transparent",
+  border: "1px solid " + (on ? "#eceeec" : "#35473f"),
+  color: on ? "#10201a" : "#b9c9c1",
+  borderRadius: 6, padding: "5px 10px", fontSize: 12,
+  fontWeight: on ? 600 : 400, cursor: "pointer"
+});
+
+const stepStyle = (on) => ({
+  background: on ? "#e8f2ed" : "transparent",
+  border: "1px solid " + (on ? "#cfe3d8" : "transparent"),
+  color: on ? "#12603f" : "#5c6b64",
+  borderRadius: 7, padding: "6px 10px", fontSize: 13,
+  fontWeight: on ? 600 : 400, cursor: "pointer"
+});
+
+const markStyle = (active, kind) => {
+  const tone = {
+    yes: { fg: "#12603f", bg: "#e8f2ed", br: "#cfe3d8" },
+    unsure: { fg: "#8a5a00", bg: "#fbf1dd", br: "#efdfbd" },
+    no: { fg: "#4a5b53", bg: "#eff2f0", br: "#dde2df" }
+  }[kind];
+  return {
+    background: active ? tone.bg : "#fff",
+    border: "1px solid " + (active ? tone.br : "#dde2df"),
+    color: active ? tone.fg : "#5c6b64",
+    borderRadius: 8, padding: "8px 6px", fontSize: 12.5,
+    fontWeight: active ? 600 : 500, cursor: "pointer", width: "100%"
+  };
+};
+
+const roleStyle = (on) => ({
+  display: "flex", alignItems: "center", gap: 9, width: "100%",
+  background: on ? "#e8f2ed" : "#fff",
+  border: "1px solid " + (on ? "#cfe3d8" : "#dde2df"),
+  borderRadius: 8, padding: "7px 9px", fontSize: 13.5, lineHeight: 1.4,
+  color: on ? "#12603f" : "#33443c", fontWeight: on ? 600 : 400,
+  cursor: "pointer", textAlign: "left"
+});
+
+const boxStyle = (on) => ({
+  width: 15, height: 15, flex: "none", borderRadius: 4, display: "inline-block",
+  border: "1px solid " + (on ? "#12603f" : "#cfd8d3"),
+  background: on ? "#12603f" : "#fff", color: "#fff",
+  fontSize: 10, lineHeight: "13px", textAlign: "center"
+});
+
+const pillStyle = (active) => ({
+  background: active ? "#e8f2ed" : "#fff",
+  border: "1px solid " + (active ? "#cfe3d8" : "#dde2df"),
+  color: active ? "#12603f" : "#33443c",
+  borderRadius: 7, padding: "6px 10px", fontSize: 12.5, cursor: "pointer"
+});
+
+class Component extends DCLogic {
+  state = {
+    screen: "board",
+    railOpen: true,
+    dataOpen: false,
+    open: { grid: false },
+    marks: { grid: "yes", disclosure: "yes", adaptation: "unsure", mrv: "no" },
+    excluded: { intern: true },
+    copied: null,
+    selectedRoles: {
+      "grid|Interconnection Project Manager": true,
+      "grid|Transmission Planning Analyst": true,
+      "disclosure|Sustainability Reporting Analyst": true
+    },
+    ask: null,
+    draft: "",
+    profileAdds: [],
+    verdict: "partly",
+    reasons: { "Too senior": true, "Wrong discipline": true },
+    groupInfoOpen: false,
+    privacyOpen: false,
+    revised: '("interconnection project manager" OR "transmission planning analyst") NOT (engineer OR "PE license" OR "professional engineer")',
+    revisedState: "proposed"
+  };
+
+  componentDidMount() {
+    if (this.props.screen) this.setState({ screen: this.props.screen });
+    if (this.props.railOpen === false) this.setState({ railOpen: false });
+    this.setState({ boardOrder: this.markOrder() });
+  }
+
+  // Interesting → Unsure → unmarked → Not for me, resolved on arrival so cards
+  // do not jump out from under the cursor while the user is marking.
+  markOrder() {
+    const weight = { yes: 0, unsure: 1, no: 3 };
+    const m = this.state.marks;
+    return FIELDS.map((f, i) => ({ id: f.id, i, w: weight[m[f.id]] === undefined ? 2 : weight[m[f.id]] }))
+      .sort((a, b) => a.w - b.w || a.i - b.i)
+      .map((x) => x.id);
+  }
+
+  go = (id) => () => {
+    const boardish = id === "board" || id === "explored" || id === "pending";
+    const wasBoardish = ["board", "explored", "pending"].indexOf(this.state.screen) > -1;
+    const open = id === "explored" ? { grid: true } : id === "board" || id === "pending" ? {} : this.state.open;
+    const next = { screen: id, open };
+    if (boardish && !wasBoardish) next.boardOrder = this.markOrder();
+    this.setState(next);
+  };
+
+  renderVals() {
+    const s = this.state.screen;
+    const isBoardish = s === "board" || s === "explored" || s === "pending";
+    const marks = this.state.marks;
+    const count = (k) => Object.keys(marks).filter((id) => marks[id] === k).length;
+
+    const railOpen = this.state.railOpen && s !== "firstRun";
+    const showSources = this.props.showSources !== false;
+
+    const order = this.state.boardOrder;
+    const sortedFields = order
+      ? order.map((id) => FIELDS.filter((f) => f.id === id)[0]).filter(Boolean)
+      : FIELDS;
+
+    const fields = sortedFields.map((f) => {
+      const mark = marks[f.id] || null;
+      const open = !!this.state.open[f.id];
+      const dimmed = mark === "no";
+      const sel = this.selectedTitles(f.id);
+      const resolved = this.state.profileAdds.some((a) => a.fieldId === f.id);
+      return {
+        ...f,
+        open,
+        fitLabel: f.fitLabel,
+        roles: f.roles.map((r) => {
+          const key = f.id + "|" + r.title;
+          const on = !!this.state.selectedRoles[key];
+          return {
+            ...r, on, check: on ? "✓" : "",
+            style: roleStyle(on), boxStyle: boxStyle(on),
+            toggle: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.toggleRole(key); }
+          };
+        }),
+        searchLabel: sel.length ? "Get searches for these roles" : "Select a role first",
+        selectionNote: sel.length ? sel.length + (sel.length === 1 ? " role selected" : " roles selected") : "Tick the roles you want searched.",
+        goSearches: (e) => {
+          if (e && e.stopPropagation) e.stopPropagation();
+          if (!this.selectedTitles(f.id).length) return;
+          this.setState({ screen: "queries" });
+        },
+        resolve: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ railOpen: true, ask: f.id, draft: "" }); },
+        resolveLabel: resolved ? "Noted — in profile.txt" : this.state.ask === f.id ? "Open in the chat rail" : "Add info in chat",
+        resolveStyle: {
+          background: resolved ? "#eff2f0" : "#fff",
+          border: "1px solid " + (resolved ? "#cfd8d3" : "#efdfbd"),
+          color: resolved ? "#4a5b53" : "#8a5a00",
+          borderRadius: 7, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer"
+        },
+        wrapStyle: {
+          background: "#fff",
+          border: "1px solid " + (open ? "#cfe3d8" : "#dde2df"),
+          borderRadius: 14,
+          boxShadow: open ? "0 4px 18px rgba(16,32,26,.09)" : "0 1px 2px rgba(16,32,26,.04)",
+          opacity: dimmed ? 0.55 : 1,
+          gridColumn: open ? "1 / -1" : "auto",
+          display: "flex", flexDirection: "column", justifyContent: "space-between",
+          transition: "box-shadow 160ms ease, opacity 160ms ease"
+        },
+        rankStyle: {
+          fontFamily: MONO, fontSize: 11, color: "#12603f", background: "#e8f2ed",
+          borderRadius: 6, padding: "4px 7px", flex: "none", lineHeight: 1.2, marginTop: 2
+        },
+        expandLabel: open ? "Close" : "See Roles",
+        expandStyle: {
+          fontSize: 12.5, fontWeight: 600, color: "#12603f", background: "#e8f2ed",
+          border: "1px solid #cfe3d8", borderRadius: 7, padding: "5px 9px",
+          flex: "none", whiteSpace: "nowrap", marginTop: 1
+        },
+        caretStyle: {
+          color: "#8a9790", fontSize: 20, lineHeight: 1, flex: "none",
+          transform: open ? "rotate(90deg)" : "none", transition: "transform 160ms ease"
+        },
+        moveDotStyle: {
+          width: 8, height: 8, borderRadius: 2, display: "inline-block", flex: "none",
+          background: f.move === "Sector move" ? "#12603f" : f.move === "Adjacent role" ? "#4fbf8b" : "#c99a3e"
+        },
+        fitBarStyle: {
+          display: "inline-block", width: 44, height: 6, borderRadius: 3, flex: "none",
+          background: "linear-gradient(to right, #12603f " + Math.round(f.fit * 100) + "%, #e7ebe8 " + Math.round(f.fit * 100) + "%)"
+        },
+        yesStyle: markStyle(mark === "yes", "yes"),
+        unsureStyle: markStyle(mark === "unsure", "unsure"),
+        noStyle: markStyle(mark === "no", "no"),
+        markYes: () => this.setMark(f.id, "yes"),
+        markUnsure: () => this.setMark(f.id, "unsure"),
+        markNo: () => this.setMark(f.id, "no"),
+        toggleOpen: () => this.setState((st) => ({ open: { ...st.open, [f.id]: !st.open[f.id] } }))
+      };
+    });
+
+    const expCards = EXP.map((c) => {
+      const off = !!this.state.excluded[c.id];
+      return {
+        ...c,
+        wrapStyle: {
+          background: "#fff", border: "1px solid " + (off ? "#e7ebe8" : "#dde2df"),
+          borderRadius: 14, padding: "16px 16px 14px", opacity: off ? 0.5 : 1,
+          boxShadow: "0 1px 2px rgba(16,32,26,.04)"
+        },
+        excludeLabel: off ? "Excluded — include" : "Exclude",
+        excludeStyle: {
+          background: off ? "#eff2f0" : "none", border: "1px solid #cfd8d3",
+          borderRadius: 7, padding: "6px 11px", fontSize: 12.5, color: "#33443c", cursor: "pointer"
+        },
+        toggle: () => this.setState((st) => ({ excluded: { ...st.excluded, [c.id]: !st.excluded[c.id] } }))
+      };
+    });
+
+    const queryGroups = FIELDS.map((f) => {
+      const titles = this.selectedTitles(f.id);
+      if (!titles.length) return null;
+      return {
+        id: f.id, rank: f.rank, name: f.name, titles,
+        queries: BOARDS.map((b) => {
+          const qid = f.id + "-" + b.id;
+          const done = this.state.copied === qid;
+          return {
+            id: qid, board: b.board, note: b.note, text: b.build(titles), alertSteps: b.alertSteps,
+            copyLabel: done ? "Copied" : "Copy query",
+            copyStyle: {
+              background: done ? "#e8f2ed" : "#12603f",
+              border: done ? "1px solid #cfe3d8" : "0",
+              color: done ? "#12603f" : "#fff",
+              borderRadius: 7, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer"
+            },
+            dotStyle: {
+              width: 8, height: 8, borderRadius: 2, display: "inline-block",
+              background: b.board === "Climatebase" ? "#4fbf8b" : "#12603f"
+            },
+            copy: () => this.setState({ copied: qid })
+          };
+        })
+      };
+    }).filter(Boolean);
+
+    const askF = FIELDS.filter((x) => x.id === this.state.ask)[0] || null;
+
+    const msgs = (MSG[s] || MSG.board).map((m) => ({
+      ...m,
+      hasPills: !!m.pills,
+      pills: m.pills || [],
+      wrapStyle: {
+        background: m.who === "You" ? "#f7f8f7" : "#fff",
+        border: "1px solid " + (m.who === "You" ? "#eceeec" : "#e2e6e3"),
+        borderRadius: 11, padding: "11px 12px", marginBottom: 10
+      }
+    }));
+
+    return {
+      screens: SCREENS.map((x) => ({ ...x, chipStyle: chip(x.id === s), go: this.go(x.id) })),
+      steps: [
+        { id: "confirm", label: "1 Highlights" },
+        { id: "board", label: "2 Fields" },
+        { id: "queries", label: "3 Searches" }
+      ].map((x) => ({
+        ...x,
+        style: stepStyle(x.id === s || (x.id === "board" && isBoardish) || (x.id === "queries" && s === "feedback")),
+        go: this.go(x.id)
+      })),
+      isFirstRun: s === "firstRun",
+      showNav: s !== "firstRun",
+      isConfirm: s === "confirm",
+      isBoard: isBoardish,
+      isPending: s === "pending",
+      isQueries: s === "queries",
+      isFeedback: s === "feedback",
+      railOpen,
+      shellCols: railOpen ? "minmax(0, 1fr) 352px" : "minmax(0, 1fr)",
+      railToggleLabel: railOpen ? "Hide chat rail" : "Show chat rail",
+      toggleRail: () => this.setState((st) => ({ railOpen: !st.railOpen })),
+      dataOpen: this.state.dataOpen,
+      toggleData: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState((st) => ({ dataOpen: !st.dataOpen })); },
+      profileText: [
+        "# profile.txt — edited 4 minutes ago",
+        "",
+        "seniority: manager, 8 yrs ops / logistics",
+        "location: Chicago; remote acceptable, relocation no",
+        "climate interests: energy systems, built environment (secondary)",
+        "retraining appetite: short course yes, certificate maybe, degree no",
+        "hard no: PE licensure track, roles below manager level",
+        "excluded highlights: campus recruiting program",
+        "search feedback: Indeed interconnection query returned utility engineering roles (bad fit)",
+        ...this.state.profileAdds.map((a) => a.line)
+      ].join("\n"),
+      fields, expCards, queryGroups,
+      noQueries: queryGroups.length === 0,
+      hasAsk: !!askF,
+      askField: askF ? askF.name : "",
+      askContext: askF ? askF.uncertain : "",
+      askQuestion: askF ? askF.uncertainAsk : "",
+      askPlaceholder: askF ? askF.askPlaceholder : "",
+      draft: this.state.draft,
+      editDraft: (e) => this.setState({ draft: e.target.value }),
+      submitAsk: () => this.submitAsk(),
+      submitAskStyle: {
+        background: this.state.draft.trim() ? "#12603f" : "#c3cdc8",
+        border: 0, color: "#fff", borderRadius: 7, padding: "7px 12px",
+        fontSize: 12.5, fontWeight: 600, cursor: this.state.draft.trim() ? "pointer" : "default"
+      },
+      dismissAsk: () => this.setState({ ask: null, draft: "" }),
+      hasAdds: this.state.profileAdds.length > 0,
+      profileAdds: this.state.profileAdds.map((a) => a.line),
+      groupInfoOpen: this.state.groupInfoOpen,
+      toggleGroupInfo: () => this.setState((st) => ({ groupInfoOpen: !st.groupInfoOpen })),
+      privacyOpen: this.state.privacyOpen,
+      togglePrivacy: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState((st) => ({ privacyOpen: !st.privacyOpen, dataOpen: st.privacyOpen ? st.dataOpen : true })); },
+      revisedQuery: this.state.revised,
+      editRevised: (e) => { const v = e.target.value; this.setState({ revised: v, revisedState: "edited" }); },
+      revisedAccepted: this.state.revisedState === "accepted",
+      revisedPending: this.state.revisedState !== "accepted",
+      revisedNote: this.state.revisedState === "accepted" ? "" : this.state.revisedState === "edited" ? "Edited by you. Not applied yet." : "Proposed from your feedback. Edit it before accepting.",
+      acceptRevised: () => this.setState({ revisedState: "accepted" }),
+      rejectRevised: () => this.setState({ revisedState: "proposed", revised: '("interconnection study coordinator" OR "transmission planning analyst")' }),
+      logLines: LOG.map((l, i) => ({
+        ...l,
+        textStyle: { fontSize: 12.5, lineHeight: 1.5, color: i === LOG.length - 1 ? "#10201a" : "#5c6b64", fontWeight: i === LOG.length - 1 ? 600 : 400 }
+      })),
+      messages: msgs,
+      dataLinkLabel: this.state.dataOpen ? "Hide" : "Download",
+      railStatus: "",
+      railDotStyle: {
+        width: 8, height: 8, borderRadius: "50%", display: "inline-block",
+        background: s === "pending" ? "#c99a3e" : s === "confirm" ? "#12603f" : "#cfd8d3"
+      },
+      verdicts: [
+        { id: "good", label: "Good fit" },
+        { id: "partly", label: "Partly right" },
+        { id: "wrong", label: "Wrong roles" },
+        { id: "none", label: "No results" }
+      ].map((v) => ({
+        ...v,
+        style: { ...pillStyle(this.state.verdict === v.id), padding: "10px 12px", fontSize: 13.5, fontWeight: 600 },
+        pick: () => this.setState({ verdict: v.id })
+      })),
+      reasons: ["Too senior", "Too junior", "Wrong discipline", "Wrong location", "Needs a licence", "Too few postings"].map((r) => ({
+        label: r,
+        style: pillStyle(!!this.state.reasons[r]),
+        pick: () => this.setState((st) => ({ reasons: { ...st.reasons, [r]: !st.reasons[r] } }))
+      })),
+      showSources,
+      openLog: () => this.setState({ railOpen: true }),
+      goConfirm: this.go("confirm"),
+      goBoard: this.go("board"),
+      goQueries: this.go("queries"),
+      goFeedback: this.go("feedback"),
+      goPending: this.go("pending")
+    };
+  }
+
+  toggleRole(key) {
+    this.setState((st) => ({ selectedRoles: { ...st.selectedRoles, [key]: !st.selectedRoles[key] } }));
+  }
+
+  selectedTitles(fid) {
+    const f = FIELDS.filter((x) => x.id === fid)[0];
+    if (!f) return [];
+    return f.roles.map((r) => r.title).filter((t) => this.state.selectedRoles[fid + "|" + t]);
+  }
+
+  submitAsk() {
+    const f = FIELDS.filter((x) => x.id === this.state.ask)[0];
+    const v = this.state.draft.trim();
+    if (!f || !v) return;
+    this.setState((st) => ({
+      profileAdds: st.profileAdds.filter((a) => a.fieldId !== f.id).concat([{ fieldId: f.id, line: f.profileKey + ": " + v }]),
+      ask: null, draft: "", dataOpen: true
+    }));
+  }
+
+  setMark(id, val) {
+    this.setState((st) => ({ marks: { ...st.marks, [id]: st.marks[id] === val ? null : val } }));
+  }
+}
+</script>
+</body>
+</html>
