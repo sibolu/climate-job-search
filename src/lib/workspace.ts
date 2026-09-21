@@ -16,6 +16,7 @@ import type { Card, Field, FieldStatus, Profile, Role } from "./profile";
 import {
   activeCards,
   parseProfile,
+  rolesForField as profileRolesForField,
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
@@ -26,6 +27,7 @@ import type {
   QueryFeedback,
   SessionState,
   StepName,
+  TurnInput,
   TurnResponse,
 } from "./session";
 import { appendMessage } from "./session";
@@ -161,9 +163,9 @@ export function exploreChatText(field: Field): string {
   return `Explore ${field.id}: ${field.name}`;
 }
 
-/** The roles from the Role Shortlist that belong to a field, in file order. */
-export function rolesForField(profile: Profile, fieldId: string): Role[] {
-  return profile.roles.filter((r) => r.fieldId === fieldId);
+/** The roles from the Role Shortlist that belong to a field, in file order; `profile.ts` owns the rule. */
+export function rolesForField(profile: Profile, fieldId: string, selectedOnly = false): Role[] {
+  return profileRolesForField(profile, fieldId, selectedOnly);
 }
 
 /** Roles whose `fieldId` names no field in the profile; shown ungrouped. */
@@ -176,15 +178,26 @@ export function unassignedRoles(profile: Profile): Role[] {
 // Queries tab
 // ---------------------------------------------------------------------------
 
-/** The user message the Generate queries button posts. */
-export const GENERATE_QUERIES_TEXT = "Generate search queries for my accepted fields";
+/**
+ * The turn input the expanded field card's CTA sends: one `queries` turn for
+ * one field (technical-plan.md D40). Built here so the UI has one place for it.
+ */
+export function buildFieldTurnInput(fieldId: string): TurnInput {
+  return { kind: "field", fieldId };
+}
+
+/** The chat bubble shown for a per-field `queries` turn. */
+export function queriesChatText(field: Field): string {
+  return `Write searches for ${field.id}: ${field.name}`;
+}
 
 /**
- * Queries are only worth generating once the user has told us which fields to
- * aim at: at least one field accepted, or still under consideration.
+ * A field can have searches written once it is still in play and the person
+ * has ticked at least one of its roles; `generateQueries` enforces the same.
  */
-export function canGenerateQueries(profile: Profile): boolean {
-  return profile.fields.some((f) => f.status === "accepted" || f.status === "unsure");
+export function canWriteQueriesFor(profile: Profile, fieldId: string): boolean {
+  const field = profile.fields.find((f) => f.id === fieldId);
+  return field !== undefined && field.status !== "rejected" && rolesForField(profile, fieldId, true).length > 0;
 }
 
 /** The longest "why" the feedback box keeps (`QueryFeedbackSchema`'s cap). */

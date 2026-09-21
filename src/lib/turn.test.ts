@@ -10,7 +10,6 @@ import {
   discoverMessage,
   explorePills,
   fieldIdIn,
-  GENERATE_QUERIES_PILL,
   GO_PILL,
   queriesMessage,
   reviseMessage,
@@ -19,7 +18,6 @@ import {
   TurnInputError,
   turnErrorMessage,
 } from "./turn";
-import { GENERATE_QUERIES_TEXT } from "./workspace";
 
 const SESSION_ID = "a".repeat(32);
 const METRICS: CallMetrics = { usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as never, costUsd: 0, durationMs: 0, continuations: 0, stopReason: "end_turn" };
@@ -103,11 +101,11 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         message: `Explored ${fieldId}`,
       } as never);
     },
-    generateQueries: ({ profile }) => {
-      calls.push("generateQueries");
-      const next = upsertQuery(profile, { board: "linkedin", query: "grid AND video", fieldIds: ["F1"], status: "untried", reason: "", extra: {} });
+    generateQueries: ({ profile, fieldId }) => {
+      calls.push(`generateQueries:${fieldId}`);
+      const next = upsertQuery(profile, { board: "linkedin", query: "grid AND video", fieldIds: [fieldId], status: "untried", reason: "", extra: {} });
       const added = next.queries[next.queries.length - 1]!;
-      return Promise.resolve({ profile: next, added: [added], updated: [], dropped: {} as never, metrics: METRICS });
+      return Promise.resolve({ profile: next, added: [added], updated: [], superseded: [], dropped: {} as never, metrics: METRICS });
     },
     reviseQueries: ({ profile, feedback }) => {
       calls.push(`reviseQueries:${feedback.queryId}`);
@@ -183,7 +181,7 @@ describe("runTurn — discover / explore / queries / revise", () => {
     expect(deps.calls).toEqual(["exploreField:F3"]);
     expect(res.message).toContain("Explored F3");
     expect(parseProfile(res.profileMd!).profile.fields.find((f) => f.id === "F3")?.explored).toBe(true);
-    expect(res.pills?.[0]).toEqual(GENERATE_QUERIES_PILL);
+    expect(res.pills?.every((p) => p.value.startsWith("Explore "))).toBe(true);
     expect(res.pills?.some((p) => p.value.startsWith("Explore F3"))).toBe(false);
   });
 
@@ -192,14 +190,19 @@ describe("runTurn — discover / explore / queries / revise", () => {
     const res = await runTurn(request("explore", fixture(), "tell me more"), deps);
     expect(deps.calls).toEqual([]);
     expect(res.message).toContain("Which field");
-    expect(res.pills?.some((p) => p.value === GENERATE_QUERIES_TEXT)).toBe(true);
+    expect(res.pills?.every((p) => p.value.startsWith("Explore "))).toBe(true);
   });
 
-  it("explore routes the generate-queries text to the queries step", async () => {
+  it("queries needs a field input and writes for that field only", async () => {
     const deps = fakeDeps();
-    const res = await runTurn(request("explore", fixture(), GENERATE_QUERIES_TEXT), deps);
-    expect(deps.calls).toEqual(["generateQueries"]);
+    await expect(runTurn(request("queries", fixture(), "write queries"), deps)).rejects.toBeInstanceOf(TurnInputError);
+    expect(deps.calls).toEqual([]);
+    const req: TurnRequest = { ...request("queries", fixture()), input: { kind: "field", fieldId: "F1" } };
+    const res = await runTurn(req, deps);
+    expect(deps.calls).toEqual(["generateQueries:F1"]);
+    expect(res.message).toContain("F1: ");
     expect(res.message).toContain("grid AND video");
+    expect(res.pills).toBeUndefined();
   });
 
   it("revise needs feedback input and returns the explanation with the change list", async () => {
@@ -232,7 +235,7 @@ describe("pure helpers", () => {
 
   it("messages render without throwing on empty results", () => {
     expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, fieldsUnsourced: 0, rolesUncited: 0, rolesUnsourced: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 }, calls: [], strategy: "single" })).toContain("could not find");
-    expect(queriesMessage({ profile: emptyProfile(), added: [], updated: [], dropped: {} as never, metrics: METRICS })).toContain("did not come up");
+    expect(queriesMessage({ profile: emptyProfile(), added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS }, "F1")).toContain("could not write");
     expect(reviseMessage({ profile: emptyProfile(), explanation: "Nothing.", retired: [], added: [], narrowed: [], fieldChanges: [], dropped: {} as never, metrics: METRICS })).toContain("No queries changed");
   });
 });
@@ -246,7 +249,7 @@ describe("turnErrorMessage", () => {
   });
 
   it("never leaks model or SDK text", () => {
-    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "ReferenceReadError", "SomethingElse"]) {
+    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "ReferenceReadError", "QueriesOutputError", "SomethingElse"]) {
       expect(turnErrorMessage(named(name))).not.toContain("SECRET");
     }
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 429 }))).toContain("busy");
