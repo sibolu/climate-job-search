@@ -481,6 +481,7 @@ export function applyExplore(profile: Profile, fieldId: string, v: ValidatedExpl
       fieldId,
       companies: r.companies,
       why: r.why,
+      selected: match?.selected ?? false,
       sources: r.sources,
       extra: match?.extra ?? {},
     });

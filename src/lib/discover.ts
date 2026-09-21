@@ -471,8 +471,14 @@ export function applyDiscovery(profile: Profile, fields: readonly ValidatedField
       status: existing?.status ?? "candidate",
       explored: existing?.explored ?? false,
       move: f.move,
+      sector: existing?.sector ?? "",
+      ...(existing?.fitLevel === undefined ? {} : { fitLevel: existing.fitLevel }),
+      summary: existing?.summary ?? "",
+      chips: existing?.chips ?? [],
       fit: f.fit,
+      evidence: existing?.evidence ?? [],
       uncertain: f.uncertain,
+      ...(existing?.ask === undefined ? {} : { ask: existing.ask }),
       sources: f.sources,
       extra,
     });
@@ -490,6 +496,7 @@ export function applyDiscovery(profile: Profile, fields: readonly ValidatedField
         fieldId: field.id,
         companies: r.companies,
         why: r.why,
+        selected: existingRole?.selected ?? false,
         sources: r.sources,
         extra: rExtra,
       });

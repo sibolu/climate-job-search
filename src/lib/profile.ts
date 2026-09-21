@@ -30,6 +30,7 @@
  * ## Experience Cards
  *
  * ### C1: Documentary series on regenerative farms
+ * - **Years:** 2019–2022
  * - **Situation:** Small studio, three-person crew, six-month shoot.
  * - **Actions:** Planned shoots, interviewed farmers, edited 8 episodes.
  * - **Results:** 1.2M views; series licensed by a public broadcaster.
@@ -48,9 +49,20 @@
  * - **Status:** accepted
  * - **Explored:** yes
  * - **Move:** sector
+ * - **Sector:** Renewable energy development
+ * - **Fit level:** strong
+ * - **Summary:** Developers tell site stories to regulators and neighbours.
+ *   Your field production maps onto that directly.
+ * - **Chips:** field production, interviewing, community storytelling
  * - **Fit:** Developers need site stories for permitting and community
  *   meetings; C1 shows exactly that kind of field production.
+ * - **Evidence:**
+ *   - C1: Shot and edited farm stories for a public audience under a small budget.
  * - **Uncertain:** Whether in-house video roles exist below the top 10 developers.
+ * - **Ask:**
+ *   - Question: Would you take a role that is half video, half written content?
+ *   - Key: Content mix
+ *   - Placeholder: e.g. video only, or happy to write too
  * - **Sources:**
  *   - https://example.com/solar-developer-careers
  *
@@ -60,6 +72,7 @@
  * - **Field:** F1
  * - **Companies:** Example Solar, Sample Renewables
  * - **Why:** Same craft as C1 aimed at permitting audiences.
+ * - **Selected:** yes
  * - **Sources:**
  *   - https://example.com/careers/video-producer
  *
@@ -83,9 +96,17 @@
  *   comma-separated on one line. `Sources` are one URL per indented `-` line.
  *   Any list may also be written one item per indented `-` line.
  * - A value may continue on following lines indented by two spaces.
- * - `Excluded` on a card, `Explored` on a field: `yes` or `no`.
+ * - `Excluded` on a card, `Explored` on a field, `Selected` on a role:
+ *   `yes` or `no`.
+ * - `Years` on a card is free text (`2019–2022`, `since 2020`); blank means unknown.
  * - Field `Status`: `candidate | accepted | rejected | unsure`.
  *   Field `Move`: `sector | adjacent | retraining`.
+ *   Field `Fit level`: `strong | some | stretch` (technical-plan.md D39); blank means unrated.
+ * - Field `Evidence` is one indented `- C1: why` line per cited card;
+ *   `Chips` is a short comma list of transferable skills.
+ * - Field `Ask` is the question the assistant would put to the person about the
+ *   uncertainty, as indented `- Question:` / `- Key:` / `- Placeholder:` lines.
+ *   `Key` is the preference label the answer is filed under (D43).
  *   Query `Board`: `linkedin | indeed | climatebase | other`.
  *   Query `Status`: `untried | good | bad`.
  * - Fit reasoning cites cards by ID in the text, e.g. `(C1, C3)`;
@@ -166,6 +187,8 @@ export type Extra = z.infer<typeof ExtraSchema>;
 export const CardSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** Free-text period, e.g. `2019–2022`; absent when the resume gave none. */
+  years: z.string().optional(),
   situation: z.string(),
   actions: z.string(),
   results: z.string(),
@@ -191,15 +214,47 @@ export type FieldStatus = z.infer<typeof FieldStatusSchema>;
 export const MoveTypeSchema = z.enum(["sector", "adjacent", "retraining"]);
 export type MoveType = z.infer<typeof MoveTypeSchema>;
 
+/** Three fixed fit labels; a percentage would be false precision (technical-plan.md D39). */
+export const FitLevelSchema = z.enum(["strong", "some", "stretch"]);
+export type FitLevel = z.infer<typeof FitLevelSchema>;
+
+/** One evidence line on the expanded field card: which card, and why it counts. */
+export const EvidenceSchema = z.object({
+  cardId: z.string(),
+  why: z.string(),
+});
+export type Evidence = z.infer<typeof EvidenceSchema>;
+
+/**
+ * The question attached to a field's uncertainty. `key` is the preference
+ * label the answer is filed under via `addOtherPreference` (technical-plan.md D43).
+ */
+export const AskSchema = z.object({
+  question: z.string(),
+  key: z.string(),
+  placeholder: z.string(),
+});
+export type Ask = z.infer<typeof AskSchema>;
+
 export const FieldSchema = z.object({
   id: z.string(),
   name: z.string(),
   status: FieldStatusSchema,
   explored: z.boolean(),
   move: MoveTypeSchema.optional(),
+  /** One line naming the sector the field sits in. */
+  sector: z.string(),
+  fitLevel: FitLevelSchema.optional(),
+  /** Two-sentence blurb shown on the collapsed card. */
+  summary: z.string(),
+  /** 3–4 transferable skills shown as chips. */
+  chips: z.array(z.string()),
   /** Fit reasoning; cites cards by ID in the text (see `citedCardIds`). */
   fit: z.string(),
+  /** One line per cited card, shown as the evidence lines when expanded. */
+  evidence: z.array(EvidenceSchema),
   uncertain: z.string(),
+  ask: AskSchema.optional(),
   sources: z.array(z.string()),
   extra: ExtraSchema,
 });
@@ -212,6 +267,8 @@ export const RoleSchema = z.object({
   fieldId: z.string(),
   companies: z.array(z.string()),
   why: z.string(),
+  /** Ticked on the expanded field card; selected roles drive query writing (technical-plan.md D40). */
+  selected: z.boolean(),
   sources: z.array(z.string()),
   extra: ExtraSchema,
 });
@@ -342,6 +399,7 @@ const LABELS = {
   confirmed: "Confirmed",
   inferred: "Inferred",
   excludedSkills: "Excluded",
+  years: "Years",
   situation: "Situation",
   actions: "Actions",
   results: "Results",
@@ -350,9 +408,19 @@ const LABELS = {
   status: "Status",
   explored: "Explored",
   move: "Move",
+  sector: "Sector",
+  fitLevel: "Fit level",
+  summary: "Summary",
+  chips: "Chips",
   fit: "Fit",
+  evidence: "Evidence",
   uncertain: "Uncertain",
+  ask: "Ask",
+  askQuestion: "Question",
+  askKey: "Key",
+  askPlaceholder: "Placeholder",
   sources: "Sources",
+  selected: "Selected",
   field: "Field",
   companies: "Companies",
   why: "Why",
@@ -403,8 +471,13 @@ const SKILL_ALIASES: Record<string, SkillBucket> = {
   rejected: "excluded",
 };
 
-type CardKey = "situation" | "actions" | "results" | "skills" | "excluded";
+type CardKey = "years" | "situation" | "actions" | "results" | "skills" | "excluded";
 const CARD_ALIASES: Record<string, CardKey> = {
+  years: "years",
+  year: "years",
+  period: "years",
+  dates: "years",
+  when: "years",
   situation: "situation",
   context: "situation",
   actions: "actions",
@@ -420,13 +493,38 @@ const CARD_ALIASES: Record<string, CardKey> = {
   exclude: "excluded",
 };
 
-type FieldKey = "status" | "explored" | "move" | "fit" | "uncertain" | "sources";
+type FieldKey =
+  | "status"
+  | "explored"
+  | "move"
+  | "sector"
+  | "fitLevel"
+  | "summary"
+  | "chips"
+  | "fit"
+  | "evidence"
+  | "uncertain"
+  | "ask"
+  | "sources";
 const FIELD_ALIASES: Record<string, FieldKey> = {
   status: "status",
   explored: "explored",
   move: "move",
   movetype: "move",
   type: "move",
+  sector: "sector",
+  industry: "sector",
+  fitlevel: "fitLevel",
+  level: "fitLevel",
+  summary: "summary",
+  blurb: "summary",
+  chips: "chips",
+  chip: "chips",
+  transferableskills: "chips",
+  transferable: "chips",
+  evidence: "evidence",
+  ask: "ask",
+  question: "ask",
   fit: "fit",
   fitreasoning: "fit",
   why: "fit",
@@ -441,8 +539,11 @@ const FIELD_ALIASES: Record<string, FieldKey> = {
   links: "sources",
 };
 
-type RoleKey = "field" | "companies" | "why" | "sources";
+type RoleKey = "field" | "companies" | "why" | "selected" | "sources";
 const ROLE_ALIASES: Record<string, RoleKey> = {
+  selected: "selected",
+  ticked: "selected",
+  checked: "selected",
   field: "field",
   fieldid: "field",
   companies: "companies",
@@ -489,6 +590,16 @@ const FIELD_STATUS_ALIASES: Record<string, FieldStatus> = {
   unsure: "unsure",
   maybe: "unsure",
   undecided: "unsure",
+};
+
+const FIT_LEVEL_ALIASES: Record<string, FitLevel> = {
+  strong: "strong",
+  strongfit: "strong",
+  some: "some",
+  somefit: "some",
+  partial: "some",
+  stretch: "stretch",
+  stretchfit: "stretch",
 };
 
 const MOVE_ALIASES: Record<string, MoveType> = {
@@ -847,6 +958,56 @@ function listPreferenceValue(lines: string[]): { values: string[]; source: Prefe
   return { values: listValue(stripped), source };
 }
 
+const EVIDENCE_ITEM_RE = /^([A-Za-z]\d+)\s*[:\-–—]\s*(.*)$/;
+
+/** `- C1: why` lines. A line without a card ID keeps its text with an empty `cardId`. */
+function evidenceValue(lines: string[]): Evidence[] {
+  return listValue(lines).map((item) => {
+    const m = EVIDENCE_ITEM_RE.exec(item);
+    return m ? { cardId: m[1].toUpperCase(), why: m[2].trim() } : { cardId: "", why: item };
+  });
+}
+
+const ASK_SUBKEYS: Record<string, keyof Ask> = {
+  question: "question",
+  q: "question",
+  key: "key",
+  preference: "key",
+  placeholder: "placeholder",
+  hint: "placeholder",
+  example: "placeholder",
+};
+const ASK_LINE_RE = /^[-*+]\s+([A-Za-z][A-Za-z ]{0,20}?)\s*:\s*(.*)$/;
+
+/**
+ * The `Ask` block: text on the label line is the question; indented
+ * `- Question:` / `- Key:` / `- Placeholder:` lines fill the three parts.
+ * Returns `undefined` when every part is empty.
+ */
+function askValue(lines: string[], where: string, warnings: string[]): Ask | undefined {
+  const ask: Ask = { question: "", key: "", placeholder: "" };
+  const questionParts: string[] = [];
+  lines.forEach((raw, i) => {
+    const l = raw.trim();
+    if (l === "") return;
+    const m = i > 0 ? ASK_LINE_RE.exec(l) : null;
+    if (!m) {
+      questionParts.push(l.replace(/^[-*+]\s+/, ""));
+      return;
+    }
+    const sub = ASK_SUBKEYS[norm(m[1])];
+    if (!sub) {
+      warnings.push(`${where}: unknown Ask part "${m[1]}", kept as question text`);
+      questionParts.push(l.replace(/^[-*+]\s+/, ""));
+      return;
+    }
+    if (sub === "question") questionParts.push(m[2].trim());
+    else ask[sub] = m[2].trim();
+  });
+  ask.question = questionParts.join(" ");
+  return ask.question === "" && ask.key === "" && ask.placeholder === "" ? undefined : ask;
+}
+
 function addExtra(extra: Extra, label: string, value: string, where: string, warnings: string[]): void {
   if (label in extra) {
     warnings.push(`${where}: duplicate key "${label}"; values were joined.`);
@@ -949,6 +1110,11 @@ function parseCards(section: RawSection | undefined, warnings: string[]): Card[]
     for (const { label, lines } of it.entries) {
       const key = CARD_ALIASES[norm(label)];
       switch (key) {
+        case "years": {
+          const v = textValue(lines);
+          if (v) card.years = v;
+          break;
+        }
         case "situation":
         case "actions":
         case "results":
@@ -977,7 +1143,11 @@ function parseFields(section: RawSection | undefined, warnings: string[]): Field
       name: it.title,
       status: "candidate",
       explored: false,
+      sector: "",
+      summary: "",
+      chips: [],
       fit: "",
+      evidence: [],
       uncertain: "",
       sources: [],
       extra: {},
@@ -997,10 +1167,28 @@ function parseFields(section: RawSection | undefined, warnings: string[]): Field
           if (move) field.move = move;
           break;
         }
+        case "fitLevel": {
+          const level = enumValue(lines, FIT_LEVEL_ALIASES, where, warnings);
+          if (level) field.fitLevel = level;
+          break;
+        }
+        case "sector":
+        case "summary":
         case "fit":
         case "uncertain":
           field[key] = textValue(lines);
           break;
+        case "chips":
+          field.chips.push(...listValue(lines));
+          break;
+        case "evidence":
+          field.evidence.push(...evidenceValue(lines));
+          break;
+        case "ask": {
+          const ask = askValue(lines, where, warnings);
+          if (ask) field.ask = ask;
+          break;
+        }
         case "sources":
           field.sources.push(...listValue(lines));
           break;
@@ -1022,12 +1210,16 @@ function parseRoles(section: RawSection | undefined, warnings: string[]): Role[]
       fieldId: "",
       companies: [],
       why: "",
+      selected: false,
       sources: [],
       extra: {},
     };
     for (const { label, lines } of it.entries) {
       const key = ROLE_ALIASES[norm(label)];
       switch (key) {
+        case "selected":
+          role.selected = boolValue(lines, `${role.id} ${label}`, warnings);
+          break;
         case "field":
           role.fieldId = textValue(lines).toUpperCase();
           break;
@@ -1211,6 +1403,7 @@ function serializePreferences(p: Preferences): string[] {
 function serializeCard(c: Card): string[] {
   return [
     itemHeading(c.id, c.title),
+    keyLine(LABELS.years, c.years ?? ""),
     keyLine(LABELS.situation, c.situation),
     keyLine(LABELS.actions, c.actions),
     keyLine(LABELS.results, c.results),
@@ -1235,10 +1428,36 @@ function serializeField(f: Field): string[] {
     keyLine(LABELS.status, f.status),
     keyLine(LABELS.explored, yesNo(f.explored)),
     keyLine(LABELS.move, f.move ?? ""),
+    keyLine(LABELS.sector, f.sector),
+    keyLine(LABELS.fitLevel, f.fitLevel ?? ""),
+    keyLine(LABELS.summary, f.summary),
+    inlineListLine(LABELS.chips, f.chips),
     keyLine(LABELS.fit, f.fit),
+    bulletListLine(
+      LABELS.evidence,
+      f.evidence.map((e) => (e.cardId ? `${e.cardId}: ${e.why}` : e.why)),
+    ),
     keyLine(LABELS.uncertain, f.uncertain),
+    ...askLines(f.ask),
     bulletListLine(LABELS.sources, f.sources),
     ...extraLines(f.extra),
+  ];
+}
+
+/** The `Ask` block; only the non-empty parts are written, on one line each. */
+function askLines(ask: Ask | undefined): string[] {
+  if (!ask) return [`- **${LABELS.ask}:**`];
+  const parts: Array<[string, string]> = [
+    [LABELS.askQuestion, ask.question],
+    [LABELS.askKey, ask.key],
+    [LABELS.askPlaceholder, ask.placeholder],
+  ];
+  return [
+    `- **${LABELS.ask}:**`,
+    ...parts
+      .map(([label, v]) => [label, v.replace(/\s+/g, " ").trim()] as const)
+      .filter(([, v]) => v !== "")
+      .map(([label, v]) => `  - ${label}: ${v}`),
   ];
 }
 
@@ -1248,6 +1467,7 @@ function serializeRole(r: Role): string[] {
     keyLine(LABELS.field, r.fieldId),
     inlineListLine(LABELS.companies, r.companies),
     keyLine(LABELS.why, r.why),
+    keyLine(LABELS.selected, yesNo(r.selected)),
     bulletListLine(LABELS.sources, r.sources),
     ...extraLines(r.extra),
   ];
@@ -1382,6 +1602,49 @@ export function setFieldStatus(p: Profile, id: string, status: FieldStatus): Pro
 
 export function setFieldExplored(p: Profile, id: string, explored = true): Profile {
   return { ...p, fields: p.fields.map((f) => (f.id === id ? { ...f, explored } : f)) };
+}
+
+/** Ticks or unticks a role on the expanded field card (technical-plan.md D40). */
+export function setRoleSelected(p: Profile, id: string, selected: boolean): Profile {
+  return { ...p, roles: p.roles.map((r) => (r.id === id ? { ...r, selected } : r)) };
+}
+
+/** Roles that belong to a field, in file order; `selectedOnly` keeps the ticked ones. */
+export function rolesForField(p: Profile, fieldId: string, selectedOnly = false): Role[] {
+  return p.roles.filter((r) => r.fieldId === fieldId && (!selectedOnly || r.selected));
+}
+
+/**
+ * Replaces a query's text (the person editing a revised query locally,
+ * technical-plan.md D41). Status and reason are untouched.
+ */
+export function setQueryText(p: Profile, id: string, text: string): Profile {
+  const query = text.replace(/\s+/g, " ").trim();
+  return { ...p, queries: p.queries.map((q) => (q.id === id ? { ...q, query } : q)) };
+}
+
+/**
+ * Files an answer under a free-form preference key (a field's ask, technical-plan.md D43).
+ * An existing key (case-insensitive) is replaced in place; otherwise the pair is
+ * appended. An empty value removes the key.
+ */
+export function addOtherPreference(
+  p: Profile,
+  key: string,
+  value: string,
+  source: PreferenceSource = "stated",
+): Profile {
+  const cleanKey = key.replace(/\s+/g, " ").trim();
+  const cleanValue = value.replace(/\s+/g, " ").trim();
+  if (cleanKey === "") return p;
+  const same = (k: string) => norm(k) === norm(cleanKey);
+  const kept = p.preferences.other.filter((o) => !same(o.key));
+  if (cleanValue === "") return { ...p, preferences: { ...p.preferences, other: kept } };
+  const entry: OtherPreference = { key: cleanKey, value: cleanValue, source };
+  const idx = p.preferences.other.findIndex((o) => same(o.key));
+  const other =
+    idx === -1 ? [...kept, entry] : p.preferences.other.map((o, i) => (i === idx ? entry : o));
+  return { ...p, preferences: { ...p.preferences, other } };
 }
 
 /**

@@ -77,7 +77,7 @@ is the spine, the rail is the assistant, there is no free-text composer.
 
 | Step | What | Owner | Done when | Status |
 |---|---|---|---|---|
-| 2b.1 | `profile.ts`: new known keys (`Sector`, `Fit level`, `Summary`, `Chips`, `Evidence`, `Ask` on fields; `Selected` on roles; `Years` on cards), helpers (`setRoleSelected`, `setQueryText`, `addOtherPreference`), fixtures regenerated | Fable | Round-trip tests pass with every new key; fixture diff reviewed by hand | `[TODO]` |
+| 2b.1 | `profile.ts`: new known keys (`Sector`, `Fit level`, `Summary`, `Chips`, `Evidence`, `Ask` on fields; `Selected` on roles; `Years` on cards), helpers (`setRoleSelected`, `setQueryText`, `addOtherPreference`), fixtures regenerated | Fable | Round-trip tests pass with every new key; fixture diff reviewed by hand | `[DONE]` |
 | 2b.2 | `discover.ts` and `cards.ts`: fit level, sector, summary, chips, evidence lines and an ask per field; years per card; first-run notes read into preferences | Fable | `pnpm try:discover` prints every field with a fit level, sector, one evidence line per cited card and an ask | `[TODO]` |
 | 2b.3 | `queries.ts`, `session.ts`, `turn.ts`: per-field, role-driven generation via a field-id turn input; the twelve-query batch and the `GENERATE_QUERIES_TEXT` convention retired | Fable | `pnpm try:queries` on a field with two selected roles prints exactly three queries, one per board, each naming that field only | `[TODO]` |
 | 2b.4 | Shell, tokens and fonts, header nav, read-only profile drawer, rail (questions with pills, asks, log, errors, "Change an answer"), First run, Highlights (Edit form, Exclude), Pending | Opus | A paste reaches Highlights, the three questions answer by pills, "Match fields" runs discovery behind the pending screen | `[TODO]` |

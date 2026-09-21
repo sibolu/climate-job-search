@@ -11,6 +11,7 @@
 ## Experience Cards
 
 ### C1: HVAC controls retrofits for a commercial portfolio
+- **Years:**
 - **Situation:** Mechanical engineer at a building-controls integrator serving office and lab campuses.
 - **Actions:** Sized and specified heat-recovery and VRF systems, wrote sequences of operations, commissioned controls, and modeled loads in EnergyPlus.
 - **Results:** Portfolio-wide 18% HVAC energy reduction; two projects won utility incentive funding.
@@ -18,6 +19,7 @@
 - **Excluded:** no
 
 ### C2: Product engineering for rooftop units
+- **Years:**
 - **Situation:** Product engineer at an HVAC manufacturer.
 - **Actions:** Ran thermal tests, owned the refrigerant-circuit design for a low-GWP product line, and wrote the test plans the certification lab used.
 - **Results:** Product line certified a quarter early; warranty claims fell by a third.
@@ -36,8 +38,14 @@
 - **Status:** accepted
 - **Explored:** yes
 - **Move:** sector
+- **Sector:**
+- **Fit level:**
+- **Summary:**
+- **Chips:**
 - **Fit:** Electrification studies and heat-pump retrofits use exactly the load modeling and system design in C1.
+- **Evidence:**
 - **Uncertain:** Many MEP consultancies list a PE license as required for senior design roles.
+- **Ask:**
 - **Sources:**
   - https://example.com/mep-firm/careers
 
@@ -45,8 +53,14 @@
 - **Status:** accepted
 - **Explored:** yes
 - **Move:** adjacent
+- **Sector:**
+- **Fit level:**
+- **Summary:**
+- **Chips:**
 - **Fit:** Low-GWP refrigerant design and certification testing in C2 are what heat pump makers hire for.
+- **Evidence:**
 - **Uncertain:** Whether senior roles are near Denver or all at plants elsewhere.
+- **Ask:**
 - **Sources:**
   - https://example.com/heat-pump-maker/jobs
 
@@ -54,8 +68,14 @@
 - **Status:** unsure
 - **Explored:** no
 - **Move:** sector
+- **Sector:**
+- **Fit level:**
+- **Summary:**
+- **Chips:**
 - **Fit:** Commissioning and sequences of operations from C1 map onto retro-commissioning work.
+- **Evidence:**
 - **Uncertain:** Pay may be below current level.
+- **Ask:**
 - **Sources:**
   - https://example.org/retrocx-provider/careers
 
@@ -63,8 +83,14 @@
 - **Status:** candidate
 - **Explored:** no
 - **Move:** adjacent
+- **Sector:**
+- **Fit level:**
+- **Summary:**
+- **Chips:**
 - **Fit:** Incentive-program work in C1 gives context for utility DSM engineering.
+- **Evidence:**
 - **Uncertain:** Not yet discussed with the user.
+- **Ask:**
 - **Sources:**
   - https://example.com/utility/careers
 
@@ -72,8 +98,14 @@
 - **Status:** rejected
 - **Explored:** no
 - **Move:** adjacent
+- **Sector:**
+- **Fit level:**
+- **Summary:**
+- **Chips:**
 - **Fit:** Refrigerant leak testing (C2) resembles methane leak detection.
+- **Evidence:**
 - **Uncertain:** User does not want to work for oil and gas operators.
+- **Ask:**
 - **Sources:**
   - https://example.com/methane-sensing/jobs
 
@@ -83,6 +115,7 @@
 - **Field:** F1
 - **Companies:** Example MEP Firm, Sample Decarbonization Consultants
 - **Why:** Load modeling and heat-pump retrofit design from C1.
+- **Selected:** no
 - **Sources:**
   - https://example.com/mep-firm/careers/senior-mechanical-engineer
 
@@ -90,6 +123,7 @@
 - **Field:** F2
 - **Companies:** Example Heat Pump Maker
 - **Why:** Refrigerant circuit design and certification testing from C2.
+- **Selected:** no
 - **Sources:**
   - https://example.com/heat-pump-maker/jobs/senior-product-engineer
 
@@ -97,6 +131,7 @@
 - **Field:** F3
 - **Companies:** Example RetroCx Provider
 - **Why:** Controls commissioning from C1.
+- **Selected:** no
 - **Sources:**
   - https://example.org/retrocx-provider/careers/rcx-engineer
 
