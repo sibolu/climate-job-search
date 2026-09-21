@@ -23,7 +23,13 @@ import { z } from "zod";
 
 import type { CallMetrics, Llm, LlmTool } from "./llm";
 import {
+  type Ask,
+  AskSchema,
+  type Evidence,
+  EvidenceSchema,
   type Field,
+  type FitLevel,
+  FitLevelSchema,
   type MoveType,
   MoveTypeSchema,
   type Profile,
@@ -44,6 +50,8 @@ export const MAX_FIELDS = 7;
 export const MAX_ROLES_PER_FIELD = 4;
 export const MAX_SOURCES = 5;
 export const MAX_UNCERTAINTIES = 3;
+/** Transferable-skill chips per field on the collapsed card (technical-plan.md D39). */
+export const MAX_CHIPS = 4;
 /** Reference description shown in the catalogue, in characters. */
 const DESCRIPTION_CHARS = 160;
 /** Reference sources listed per field / role in the catalogue. */
@@ -104,9 +112,26 @@ export const FieldDraftSchema = z.object({
   ref: z.string().nullable(),
   name: z.string(),
   move: MoveTypeSchema,
+  /** One line naming the sector the field sits in. */
+  sector: z.string().describe('One line naming the sector this field sits in, e.g. "Utility-scale solar development".'),
+  fitLevel: FitLevelSchema.describe(
+    '"strong": employers hire for this function from this background today. "some": they hire for it, but expect a gap you name in the fit. "stretch": needs retraining or a rare path.',
+  ),
+  summary: z
+    .string()
+    .describe("Two sentences, second person, no hedging: what the work is and why this person fits it."),
+  chips: z
+    .array(z.string())
+    .describe("Three to four short transferable-skill phrases from the cards, two to four words each."),
   /** Must name the card IDs (C1, C2, …) it draws on. */
   fit: z.string(),
+  evidence: z
+    .array(EvidenceSchema)
+    .describe("One entry per card the field draws on: the card ID and one sentence naming what in that card counts."),
   uncertainties: z.array(z.string()),
+  ask: AskSchema.describe(
+    'The one question whose answer would most change the fit. "key" is a short preference label such as "Content mix"; "placeholder" an example answer.',
+  ),
   sources: z.array(z.string()),
   roles: z.array(RoleDraftSchema),
 });
@@ -137,6 +162,8 @@ Rules that decide whether your answer is usable:
 5. Respect preferences. Location, work mode, seniority, retraining appetite and climate interests are constraints when stated. Do not use excluded cards; they are not shown to you.
 
 6. Roles: give 2-4 per field with a concrete title, 1-4 real example companies or organisation types, a "why" that cites cards, and sources. Do not repeat the same role across fields.
+
+7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means employers hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
 
 Use web search sparingly (a few targeted searches) to confirm employers, find sources for fields outside the catalogue, and check that the roles you name are real. Then answer with the JSON only.`;
 
@@ -278,6 +305,10 @@ export interface DroppedCounts {
   sourcesRemoved: number;
   /** Fields beyond {@link MAX_FIELDS} or duplicating an earlier field. */
   fieldsSurplus: number;
+  /** Evidence entries dropped for citing no active card, being blank, or repeating a card. */
+  evidenceDropped: number;
+  /** Fields whose ask came back without a question or key and so got none. */
+  asksDropped: number;
 }
 
 function zeroDropped(): DroppedCounts {
@@ -288,6 +319,8 @@ function zeroDropped(): DroppedCounts {
     rolesUnsourced: 0,
     sourcesRemoved: 0,
     fieldsSurplus: 0,
+    evidenceDropped: 0,
+    asksDropped: 0,
   };
 }
 
@@ -324,10 +357,64 @@ export interface ValidatedField {
   ref: string | null;
   name: string;
   move: MoveType;
+  sector: string;
+  fitLevel: FitLevel;
+  summary: string;
+  chips: string[];
   fit: string;
+  evidence: Evidence[];
   uncertain: string;
+  ask?: Ask;
   sources: string[];
   roles: ValidatedRole[];
+}
+
+/** Trims, drops blanks, dedupes case-insensitively, caps at `limit`. */
+function cleanPhrases(list: readonly string[], limit: number): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of list) {
+    const text = raw.replace(/\s+/g, " ").trim();
+    const key = text.toLowerCase();
+    if (text === "" || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length === limit) break;
+  }
+  return out;
+}
+
+/**
+ * Evidence lines that resolve to an active card, one per card, in the
+ * model's order. Anything else is counted and dropped, never rendered.
+ */
+function cleanEvidence(
+  drafts: readonly Evidence[],
+  profile: Profile,
+): { kept: Evidence[]; removed: number } {
+  const active = new Map(activeCards(profile).map((c) => [c.id.toUpperCase(), c.id]));
+  const kept: Evidence[] = [];
+  const seen = new Set<string>();
+  let removed = 0;
+  for (const e of drafts) {
+    const cardId = active.get(e.cardId.trim().toUpperCase());
+    const why = e.why.replace(/\s+/g, " ").trim();
+    if (cardId === undefined || why === "" || seen.has(cardId)) {
+      removed += 1;
+      continue;
+    }
+    seen.add(cardId);
+    kept.push({ cardId, why });
+  }
+  return { kept, removed };
+}
+
+/** The ask, trimmed; `undefined` when the model left the question or key blank. */
+function cleanAsk(ask: Ask): Ask | undefined {
+  const question = ask.question.replace(/\s+/g, " ").trim();
+  const key = ask.key.replace(/\s+/g, " ").trim();
+  if (question === "" || key === "") return undefined;
+  return { question, key, placeholder: ask.placeholder.replace(/\s+/g, " ").trim() };
 }
 
 export interface ValidatedOutput {
@@ -366,7 +453,8 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
       dropped.fieldsSurplus += 1;
       continue;
     }
-    if (citedActiveCardIds(draft.fit, profile).length === 0) {
+    const citedIds = citedActiveCardIds(draft.fit, profile);
+    if (citedIds.length === 0) {
       dropped.fieldsUncited += 1;
       continue;
     }
@@ -402,11 +490,30 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
       });
     }
     for (const k of keys) seen.add(k);
+    let chips = cleanPhrases(draft.chips, MAX_CHIPS);
+    if (chips.length === 0) {
+      // No chips from the model: fall back to the skills of the cards the fit cites.
+      const cited = new Set(citedIds);
+      chips = cleanPhrases(
+        activeCards(profile).filter((c) => cited.has(c.id)).flatMap((c) => c.skills),
+        MAX_CHIPS,
+      );
+    }
+    const evidence = cleanEvidence(draft.evidence, profile);
+    dropped.evidenceDropped += evidence.removed;
+    const ask = cleanAsk(draft.ask);
+    if (ask === undefined) dropped.asksDropped += 1;
     fields.push({
       ref: trimmedRef(draft.ref),
       name: draft.name.trim(),
       move: draft.move,
+      sector: draft.sector.replace(/\s+/g, " ").trim(),
+      fitLevel: draft.fitLevel,
+      summary: draft.summary.replace(/\s+/g, " ").trim(),
+      chips,
       fit: draft.fit.trim(),
+      evidence: evidence.kept,
+      ...(ask === undefined ? {} : { ask }),
       uncertain: draft.uncertainties
         .map((u) => u.trim())
         .filter((u) => u !== "")
@@ -471,14 +578,14 @@ export function applyDiscovery(profile: Profile, fields: readonly ValidatedField
       status: existing?.status ?? "candidate",
       explored: existing?.explored ?? false,
       move: f.move,
-      sector: existing?.sector ?? "",
-      ...(existing?.fitLevel === undefined ? {} : { fitLevel: existing.fitLevel }),
-      summary: existing?.summary ?? "",
-      chips: existing?.chips ?? [],
+      sector: f.sector,
+      fitLevel: f.fitLevel,
+      summary: f.summary,
+      chips: f.chips,
       fit: f.fit,
-      evidence: existing?.evidence ?? [],
+      evidence: f.evidence,
       uncertain: f.uncertain,
-      ...(existing?.ask === undefined ? {} : { ask: existing.ask }),
+      ...(f.ask === undefined ? {} : { ask: f.ask }),
       sources: f.sources,
       extra,
     });
@@ -622,6 +729,6 @@ export function droppedSummary(d: DroppedCounts): string {
   return (
     `${String(total)} dropped (fields: ${String(d.fieldsUncited)} uncited, ${String(d.fieldsUnsourced)} unsourced, ` +
     `${String(d.fieldsSurplus)} surplus; roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesUnsourced)} unsourced; ` +
-    `${String(d.sourcesRemoved)} source URLs removed)`
+    `${String(d.sourcesRemoved)} source URLs removed; ${String(d.evidenceDropped)} evidence lines, ${String(d.asksDropped)} asks dropped)`
   );
 }

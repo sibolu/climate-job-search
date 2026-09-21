@@ -11,6 +11,7 @@ import {
   DISCOVER_SYSTEM_PROMPT,
   type DiscoverOutput,
   DiscoverInputError,
+  MAX_CHIPS,
   MAX_FIELDS,
   REF_KEY,
   type ReferenceReader,
@@ -26,6 +27,7 @@ import {
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
 import {
   type Profile,
+  activeCards,
   emptyProfile,
   parseProfile,
   serializeProfile,
@@ -109,8 +111,17 @@ function output(overrides: Partial<DiscoverOutput["fields"][number]> = {}): Disc
         ref: "ag-nonprofits",
         name: "Regenerative agriculture nonprofits",
         move: "sector",
+        sector: "Regenerative agriculture",
+        fitLevel: "strong",
+        summary: "You already make films about farms changing practice. Nonprofits in this space hire for exactly that.",
+        chips: ["field production", "documentary interviewing", "client management"],
         fit: "C1 is exactly this work; C2 shows the client relationships.",
+        evidence: [
+          { cardId: "C1", why: "An eight-part series on no-till farming is the work itself." },
+          { cardId: "C2", why: "Land trusts and a watershed council were already clients." },
+        ],
         uncertainties: ["In-house or freelance?"],
+        ask: { question: "Would you take in-house work over freelance?", key: "Work setup", placeholder: "In-house, if it pays" },
         sources: ["https://example.org/regen", "https://www.linkedin.com/company/x"],
         roles: [
           {
@@ -202,6 +213,61 @@ describe("post-validation", () => {
     expect(v.dropped.fieldsUncited).toBe(1);
   });
 
+  it("keeps only evidence that cites an active card, once per card", () => {
+    const v = validateOutput(
+      output({
+        evidence: [
+          { cardId: "c1", why: " Series on farms. " },
+          { cardId: "C1", why: "Repeated card." },
+          { cardId: "C9", why: "No such card." },
+          { cardId: "C2", why: "   " },
+        ],
+      }),
+      profile,
+    );
+    expect(v.fields[0]!.evidence).toEqual([{ cardId: "C1", why: "Series on farms." }]);
+    expect(v.dropped.evidenceDropped).toBe(3);
+
+    const excluded = setCardExcluded(profile, "C2", true);
+    const w = validateOutput(output(), excluded);
+    expect(w.fields[0]!.evidence.map((e) => e.cardId)).toEqual(["C1"]);
+    expect(w.dropped.evidenceDropped).toBe(1);
+  });
+
+  it("trims, dedupes and caps chips, and derives them from cited cards when the model gives none", () => {
+    const v = validateOutput(
+      output({ chips: [" Field production", "field  production", "", "editing", "budgeting", "pitching", "one more"] }),
+      profile,
+    );
+    expect(v.fields[0]!.chips).toEqual(["Field production", "editing", "budgeting", "pitching"]);
+    expect(v.fields[0]!.chips).toHaveLength(MAX_CHIPS);
+
+    const derived = validateOutput(output({ chips: [], fit: "Only C2 counts." }), profile);
+    const c2 = activeCards(profile).find((c) => c.id === "C2")!;
+    expect(derived.fields[0]!.chips).toEqual(c2.skills.slice(0, MAX_CHIPS));
+    expect(derived.fields[0]!.chips.length).toBeGreaterThan(0);
+  });
+
+  it("drops an ask without a question or key and counts it", () => {
+    const v = validateOutput(output({ ask: { question: "  ", key: "Travel", placeholder: "" } }), profile);
+    expect(v.fields[0]!.ask).toBeUndefined();
+    expect(v.dropped.asksDropped).toBe(1);
+    const kept = validateOutput(output(), profile);
+    expect(kept.fields[0]!.ask).toEqual({
+      question: "Would you take in-house work over freelance?",
+      key: "Work setup",
+      placeholder: "In-house, if it pays",
+    });
+    expect(kept.dropped.asksDropped).toBe(0);
+  });
+
+  it("carries sector, fit level and summary through, whitespace collapsed", () => {
+    const v = validateOutput(output({ sector: "  Regen   ag ", fitLevel: "stretch", summary: " Two\nsentences. " }), profile);
+    expect(v.fields[0]!.sector).toBe("Regen ag");
+    expect(v.fields[0]!.fitLevel).toBe("stretch");
+    expect(v.fields[0]!.summary).toBe("Two sentences.");
+  });
+
   it("caps fields and dedups by ref", () => {
     const many: DiscoverOutput = { fields: Array.from({ length: MAX_FIELDS + 2 }, () => output().fields[0]!) };
     const v = validateOutput(many, profile);
@@ -242,6 +308,37 @@ describe("profile writes", () => {
     const reparsed = parseProfile(serializeProfile(second.profile)).profile;
     expect(reparsed.fields[0]!.extra[REF_KEY]).toBe("ag-nonprofits");
     expect(applyDiscovery(reparsed, validateOutput(output(), reparsed).fields).fields[0]!.id).toBe("F1");
+  });
+
+  it("writes the exploration-first keys and replaces them on the next run", () => {
+    const profile = fixture("videographer");
+    const first = applyDiscovery(profile, validateOutput(output(), profile).fields);
+    const f1 = first.fields[0]!;
+    expect(f1.sector).toBe("Regenerative agriculture");
+    expect(f1.fitLevel).toBe("strong");
+    expect(f1.chips).toEqual(["field production", "documentary interviewing", "client management"]);
+    expect(f1.evidence.map((e) => e.cardId)).toEqual(["C1", "C2"]);
+    expect(f1.ask?.key).toBe("Work setup");
+    expect(f1.summary).toMatch(/^You already/);
+
+    const reparsed = parseProfile(serializeProfile(first.profile)).profile;
+    expect(reparsed.fields[0]).toEqual(f1);
+
+    const accepted = setFieldStatus(reparsed, "F1", "accepted");
+    const second = applyDiscovery(
+      accepted,
+      validateOutput(
+        output({ fitLevel: "some", chips: ["editing"], ask: { question: "", key: "", placeholder: "" }, evidence: [] }),
+        accepted,
+      ).fields,
+    );
+    const f2 = second.fields[0]!;
+    expect(f2.id).toBe("F1");
+    expect(f2.status).toBe("accepted");
+    expect(f2.fitLevel).toBe("some");
+    expect(f2.chips).toEqual(["editing"]);
+    expect(f2.evidence).toEqual([]);
+    expect(f2.ask).toBeUndefined();
   });
 
   it("appends new fields after existing ones without renumbering", () => {

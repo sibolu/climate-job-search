@@ -5,8 +5,11 @@
  * It reads a `profile.md`, runs `discoverFields` (one live `discover` call
  * through `src/lib/llm.ts` with web search, or two if the API refuses
  * structured output alongside server tools), prints the updated `profile.md`
- * to stdout and a usage/cost line to stderr, and exits non-zero if any field
- * or role written this run lacks a card citation or a source.
+ * to stdout, a usage/cost line and each field's exploration-first card
+ * (sector, fit level, summary, chips, evidence lines, ask) to stderr, and
+ * exits non-zero if any field or role written this run lacks a card citation
+ * or a source, or any field lacks a fit level, a sector, an evidence line per
+ * cited card, or an ask (technical-plan.md D39).
  *
  *   pnpm try:discover src/lib/__fixtures__/discover/videographer.md
  *   pnpm try:discover profile.md out/profile.md
@@ -73,9 +76,19 @@ async function main(): Promise<void> {
       `${droppedSummary(result.dropped)} | ${tok.join(" + ")} tok | $${cost.toFixed(4)} | ` +
       `${String(Math.round((Date.now() - started) / 100) / 10)}s\n`,
   );
-  process.stderr.write(
-    `fields: ${result.fields.map((f) => `${f.id} ${f.name} [${f.move ?? "?"}]`).join("; ")}\n`,
-  );
+  for (const f of result.fields) {
+    const roles = result.roles.filter((r) => r.fieldId === f.id).map((r) => r.title);
+    process.stderr.write(
+      [
+        `\n${f.id} ${f.name} [${f.move ?? "?"}] fit=${f.fitLevel ?? "?"} sector=${f.sector || "?"}`,
+        `  summary: ${f.summary || "?"}`,
+        `  chips: ${f.chips.join(" | ") || "?"}`,
+        ...f.evidence.map((e) => `  evidence ${e.cardId}: ${e.why}`),
+        `  ask: ${f.ask === undefined ? "?" : `${f.ask.question} [${f.ask.key}; e.g. ${f.ask.placeholder}]`}`,
+        `  roles: ${roles.join("; ") || "?"}`,
+      ].join("\n") + "\n",
+    );
+  }
 
   // The acceptance rule, checked here so the exit code carries it.
   const problems: string[] = [];
@@ -84,13 +97,24 @@ async function main(): Promise<void> {
     if (citedActiveCardIds(f.fit, result.profile).length === 0) problems.push(`${f.id} cites no card`);
     if (f.sources.length === 0) problems.push(`${f.id} has no source`);
     if (!result.roles.some((r) => r.fieldId === f.id)) problems.push(`${f.id} has no role`);
+    if (f.fitLevel === undefined) problems.push(`${f.id} has no fit level`);
+    if (f.sector.trim() === "") problems.push(`${f.id} has no sector`);
+    if (f.summary.trim() === "") problems.push(`${f.id} has no summary`);
+    if (f.chips.length === 0) problems.push(`${f.id} has no chips`);
+    const evidenced = new Set(f.evidence.map((e) => e.cardId));
+    for (const id of citedActiveCardIds(f.fit, result.profile)) {
+      if (!evidenced.has(id)) problems.push(`${f.id} cites ${id} without an evidence line`);
+    }
+    if (f.ask === undefined) problems.push(`${f.id} has no ask`);
   }
   for (const r of result.roles) {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
     if (r.sources.length === 0) problems.push(`${r.id} has no source`);
   }
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
-  process.stderr.write("PASS: every field and role cites a card and has a source\n");
+  process.stderr.write(
+    "PASS: every field has a fit level, sector, an evidence line per cited card and an ask; every field and role cites a card and has a source\n",
+  );
 }
 
 main().catch((error: unknown) => {
