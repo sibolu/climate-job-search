@@ -1,9 +1,5 @@
-import Workspace from "@/components/Workspace";
+import AppShell from "@/components/shell/AppShell";
 
 export default function Home() {
-  return (
-    <main className="workspace-main">
-      <Workspace />
-    </main>
-  );
+  return <AppShell />;
 }
