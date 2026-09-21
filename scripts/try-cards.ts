@@ -5,7 +5,9 @@
  * It reads a plain-text resume, runs it through `extractCards` (one live
  * `cards` call through `src/lib/llm.ts`), prints the resulting `profile.md` to
  * stdout and a one-line usage/cost summary to stderr, and exits non-zero if
- * any card is missing Situation, Actions, Results or has no skills.
+ * any card is missing Situation, Actions, Results or has no skills. Each
+ * card's years and any preferences read from a trailing `Notes:` block are
+ * printed to stderr (technical-plan.md D39).
  *
  *   pnpm try:cards src/lib/__fixtures__/resumes/videographer.txt
  *   pnpm try:cards ~/resume.txt out/profile.md
@@ -71,6 +73,19 @@ async function main(): Promise<void> {
       `out ${String(usage.output)} tok | $${costUsd.toFixed(4)} | ` +
       `${String(Math.round((Date.now() - started) / 100) / 10)}s\n`,
   );
+
+  for (const card of result.cards) {
+    process.stderr.write(`${card.id} ${card.title} — years: ${card.years ?? "(none)"}\n`);
+  }
+  const prefs = result.profile.preferences;
+  const noted = result.noted.map((key) => {
+    if (key === "climateInterests") return `climateInterests=${(prefs.climateInterests?.values ?? []).join(", ")}`;
+    if (key === "location" || key === "workMode" || key === "seniority" || key === "retrainingAppetite") {
+      return `${key}=${prefs[key]?.value ?? ""}`;
+    }
+    return `${key}=${prefs.other.find((o) => o.key === key)?.value ?? ""}`;
+  });
+  process.stderr.write(`notes → preferences: ${noted.length === 0 ? "(none)" : noted.join("; ")}\n`);
 
   // The acceptance rule, checked here so the exit code carries it.
   const problems: string[] = [];

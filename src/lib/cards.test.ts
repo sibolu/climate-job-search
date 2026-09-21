@@ -11,6 +11,9 @@ import {
   MAX_INFERRED_SKILLS,
   MAX_SKILLS_PER_CARD,
   MIN_CARDS,
+  NOTES_LABEL,
+  appendNotes,
+  applyNotedPreferences,
   buildExtractMessage,
   buildReviseMessage,
   cardsSummary,
@@ -25,7 +28,7 @@ import {
   reviseCards,
 } from "./cards";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, emptyProfile, setCardExcluded, upsertCard } from "./profile";
+import { type Profile, emptyProfile, setCardExcluded, setPreference, upsertCard } from "./profile";
 import { MAX_MESSAGE_CHARS } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -64,9 +67,19 @@ function fakeLlm(values: readonly unknown[]): FakeLlm {
 
 const SESSION_ID = "a".repeat(32);
 
+const NO_NOTES = {
+  seniority: null,
+  retrainingAppetite: null,
+  location: null,
+  workMode: null,
+  climateInterests: [],
+  other: [],
+};
+
 function draft(n: number, skills: string[] = ["field production", "scheduling"]) {
   return {
     title: `Role ${String(n)}`,
+    years: null,
     situation: `Situation ${String(n)}`,
     actions: `Actions ${String(n)}`,
     results: `Results ${String(n)}`,
@@ -78,6 +91,7 @@ function threeCards() {
   return {
     cards: [draft(1), draft(2, ["editing"]), draft(3, ["budgeting", "client handoff"])],
     inferredSkills: ["storytelling"],
+    notedPreferences: NO_NOTES,
   };
 }
 
@@ -255,7 +269,7 @@ describe("extractCards", () => {
       sessionId: SESSION_ID,
       text: "resume",
     });
-    const second = await extractCards(fakeLlm([{ cards: [draft(9)], inferredSkills: [] }]), {
+    const second = await extractCards(fakeLlm([{ cards: [draft(9)], inferredSkills: [], notedPreferences: NO_NOTES }]), {
       sessionId: SESSION_ID,
       text: "more resume",
       profile: first.profile,
@@ -267,11 +281,78 @@ describe("extractCards", () => {
 
   it("drops unusable cards rather than storing an empty one", async () => {
     const { profile } = await extractCards(
-      fakeLlm([{ cards: [draft(1), { ...draft(2), actions: "" }, draft(3)], inferredSkills: [] }]),
+      fakeLlm([{ cards: [draft(1), { ...draft(2), actions: "" }, draft(3)], inferredSkills: [], notedPreferences: NO_NOTES }]),
       { sessionId: SESSION_ID, text: "resume" },
     );
     expect(profile.cards).toHaveLength(2);
     for (const card of profile.cards) expect(card.actions).not.toBe("");
+  });
+});
+
+describe("years", () => {
+  it("stores the period when given and leaves it absent when null", async () => {
+    const { profile } = await extractCards(
+      fakeLlm([{ cards: [{ ...draft(1), years: " 2019–2022 " }, draft(2), draft(3)], inferredSkills: [], notedPreferences: NO_NOTES }]),
+      { sessionId: SESSION_ID, text: "resume" },
+    );
+    expect(profile.cards[0]!.years).toBe("2019–2022");
+    expect("years" in profile.cards[1]!).toBe(false);
+  });
+
+  it("is editable and clearable through editCard", async () => {
+    const { profile } = await extractCards(fakeLlm([threeCards()]), { sessionId: SESSION_ID, text: "resume" });
+    const set = editCard(profile, "C1", { years: " 2020–2021 " });
+    expect(set.cards[0]!.years).toBe("2020–2021");
+    const cleared = editCard(set, "C1", { years: "" });
+    expect("years" in cleared.cards[0]!).toBe(false);
+  });
+});
+
+describe("notes → preferences", () => {
+  it("appendNotes adds the labelled block and skips blank notes", () => {
+    expect(appendNotes("resume text\n", "  ")).toBe("resume text\n");
+    expect(appendNotes("resume text\n\n", " senior, no retraining ")).toBe(
+      `resume text\n\n${NOTES_LABEL}\nsenior, no retraining`,
+    );
+    expect(buildExtractMessage(appendNotes("r", "n"), emptyProfile())).toContain(`${NOTES_LABEL}\nn\n</pasted_text>`);
+  });
+
+  it("writes noted preferences as stated, clipped, without overwriting what is there", async () => {
+    const existing = setPreference(emptyProfile(), "location", "Portland", "inferred");
+    const result = await extractCards(
+      fakeLlm([
+        {
+          ...threeCards(),
+          notedPreferences: {
+            seniority: " senior IC ",
+            retrainingAppetite: "x".repeat(300),
+            location: "Berlin",
+            workMode: null,
+            climateInterests: ["soil", " Soil ", "water"],
+            other: [
+              { key: "Travel", value: "up to 20%" },
+              { key: "travel", value: "never" },
+              { key: "", value: "dropped" },
+            ],
+          },
+        },
+      ]),
+      { sessionId: SESSION_ID, text: "resume", profile: existing },
+    );
+    const p = result.profile.preferences;
+    expect(p.seniority).toEqual({ value: "senior IC", source: "stated" });
+    expect(p.retrainingAppetite?.value).toHaveLength(200);
+    expect(p.location).toEqual({ value: "Portland", source: "inferred" });
+    expect(p.workMode).toBeUndefined();
+    expect(p.climateInterests).toEqual({ values: ["soil", "water"], source: "stated" });
+    expect(p.other).toEqual([{ key: "Travel", value: "up to 20%", source: "stated" }]);
+    expect(result.noted).toEqual(["seniority", "retrainingAppetite", "climateInterests", "Travel"]);
+  });
+
+  it("writes nothing when the notes block is absent", () => {
+    const { profile, noted } = applyNotedPreferences(emptyProfile(), NO_NOTES);
+    expect(profile).toEqual(emptyProfile());
+    expect(noted).toEqual([]);
   });
 });
 
