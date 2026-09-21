@@ -69,7 +69,7 @@ and a Vercel preview deploy (needs a linked project).
 Post-phase changes so far: location and work mode became board filters
 rather than chat questions (D36); the chat stays readable during slow turns.
 
-### Phase 2b — Exploration-first UI `[TODO]`
+### Phase 2b — Exploration-first UI `[IN PROGRESS]`
 
 Rebuild the UI on the Claude Design handoff in
 `docs/design_handoff_climate_career_exploration/` (D37–D43). The field board
@@ -78,16 +78,21 @@ is the spine, the rail is the assistant, there is no free-text composer.
 | Step | What | Owner | Done when | Status |
 |---|---|---|---|---|
 | 2b.1 | `profile.ts`: new known keys (`Sector`, `Fit level`, `Summary`, `Chips`, `Evidence`, `Ask` on fields; `Selected` on roles; `Years` on cards), helpers (`setRoleSelected`, `setQueryText`, `addOtherPreference`), fixtures regenerated | Fable | Round-trip tests pass with every new key; fixture diff reviewed by hand | `[DONE]` |
-| 2b.2 | `discover.ts` and `cards.ts`: fit level, sector, summary, chips, evidence lines and an ask per field; years per card; first-run notes read into preferences | Fable | `pnpm try:discover` prints every field with a fit level, sector, one evidence line per cited card and an ask | `[TODO]` |
-| 2b.3 | `queries.ts`, `session.ts`, `turn.ts`: per-field, role-driven generation via a field-id turn input; the twelve-query batch and the `GENERATE_QUERIES_TEXT` convention retired | Fable | `pnpm try:queries` on a field with two selected roles prints exactly three queries, one per board, each naming that field only | `[TODO]` |
-| 2b.4 | Shell, tokens and fonts, header nav, read-only profile drawer, rail (questions with pills, asks, log, errors, "Change an answer"), First run, Highlights (Edit form, Exclude), Pending | Opus | A paste reaches Highlights, the three questions answer by pills, "Match fields" runs discovery behind the pending screen | `[TODO]` |
-| 2b.5 | Field board, expanded card, Searches and Feedback screens, with accept / keep-the-old-one on the revised query | Opus | In the browser: mark, expand, tick roles, get searches, copy, give feedback, see the revision and keep or accept it | `[TODO]` |
-| 2b.6 | Integration: remove the tabs and `ChatPane`, end-to-end run, CLAUDE.md conventions and `docs/data-flow.md` verified against the code | Fable | Full loop runs locally; `pnpm test`, `pnpm lint`, `pnpm build` pass | `[TODO]` |
+| 2b.2 | `discover.ts` and `cards.ts`: fit level, sector, summary, chips, evidence lines and an ask per field; years per card; first-run notes read into preferences | Fable | `pnpm try:discover` prints every field with a fit level, sector, one evidence line per cited card and an ask | `[DONE]` |
+| 2b.3 | `queries.ts`, `session.ts`, `turn.ts`: per-field, role-driven generation via a field-id turn input; the twelve-query batch and the `GENERATE_QUERIES_TEXT` convention retired | Fable | `pnpm try:queries` on a field with two selected roles prints exactly three queries, one per board, each naming that field only | `[DONE]` |
+| 2b.4 | Shell, tokens and fonts, header nav, read-only profile drawer, rail (questions with pills, asks, log, errors, "Change an answer"), First run, Highlights (Edit form, Exclude), Pending | Opus | A paste reaches Highlights, the three questions answer by pills, "Match fields" runs discovery behind the pending screen | `[DONE]` |
+| 2b.5 | Field board, expanded card, Searches and Feedback screens, with accept / keep-the-old-one on the revised query | Opus | In the browser: mark, expand, tick roles, get searches, copy, give feedback, see the revision and keep or accept it | `[DONE]` |
+| 2b.6 | Integration: remove the tabs and `ChatPane`, end-to-end run, CLAUDE.md conventions and `docs/data-flow.md` verified against the code | Fable | Full loop runs locally; `pnpm test`, `pnpm lint`, `pnpm build` pass | `[DONE]` |
 
 2b.1 first. 2b.2, 2b.3 and 2b.4 in parallel (2b.4 builds against the
 2b.1 fixtures). 2b.5 after 2b.3 and 2b.4; 2b.6 last. Gate 2b: the user's
 browser run of the whole loop, `/code-review`, and `/security-review`
 because the turn input shape changes.
+
+All six steps landed 2026-09-20; the loop ran live through the try scripts
+(about $0.90, see docs/technical-plan.md §6). **Gate 2b is open:** the
+user's browser run, then `/code-review` and `/security-review` in a fresh
+session.
 
 Not in 2b, by decision: a composer (D42), explore and example posts (D39),
 an editable profile drawer (D42), re-ranking on a per-field answer (D43),

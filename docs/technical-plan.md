@@ -103,10 +103,12 @@ src/
     explore.ts      # field drill-down, example posts, LinkedIn guidance (2.2)
     queries.ts      # query generation and revision from feedback (2.3)
     boards.ts       # client-safe board labels, alert steps, query extra keys (2.4; D32)
-    workspace.ts    # browser-side step policy and profile edits for the UI (2.1/2.4)
+    workspace.ts    # browser-side step policy and profile edits for the UI (2.1/2.4/2b.3)
+    screens.ts      # pure screen and rail state for the shell (2b.4/2b.5)
     turn-stream.ts  # NDJSON wire codec + sendTurn (2.1)
     turn.ts         # server dispatcher: TurnRequest → TurnResponse (2.5; D31)
-  components/       # Workspace, ChatPane, ProfileTab, FieldsTab, QueriesTab (client)
+  components/shell/ # AppShell, Header, ProfileDrawer, Rail, FirstRun, Highlights,
+                    # Pending, FieldBoard, FieldCard, Searches, QueryCard, Feedback (2b.4/2b.5)
   app/
     api/turn/       # the one turn endpoint (NDJSON stream; 2.5)
     api/enter/      # passcode check
@@ -121,7 +123,7 @@ scripts/
   try-cards.ts         # stage 1.1 live check
   try-discover.ts      # stage 1.4 live check (web search)
   try-explore.ts       # stage 2.2 live check (blocked-host assertion)
-  try-queries.ts       # stage 2.3 live check (generate + scripted revise)
+  try-queries.ts       # stage 2b.3 live check (three per-field queries + scripted revise)
   check-rls.ts         # asserts the RLS shape against a live stack
   smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
 docs/
@@ -580,7 +582,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 
 ## 6. Verification log
 
-What each gate ran and found, in date order. Gate 3 has not run.
+What each gate ran and found, in date order. Gates 2b and 3 have not run.
 
 ### Phase 1 and Gate 1
 
@@ -674,3 +676,25 @@ Anthropic's infrastructure, not ours, so it is not SSRF against this app).
 
 The user's own Gate 2 run — the browser pass over the React components and two
 real job-board searches — is still outstanding.
+
+### Phase 2b (pre-gate)
+
+**Phase 2b status (2026-09-20).** All six steps committed on `phase-2b`
+(2b.1 by the orchestrator; 2b.2, 2b.3 and 2b.4 in parallel worktrees, merged
+with one trivial conflict in `turn.test.ts`; 2b.5 and 2b.6 sequential). The
+old tab components are deleted; `src/components/shell/` and `screens.ts`
+replace them. `pnpm test` (346), `pnpm lint`, `pnpm typecheck` and
+`pnpm build` pass.
+
+**Live loop (2026-09-20, step 2b.6).** Run through the try scripts against
+the local stack, videographer resume plus a `Notes:` block:
+
+| Stage | Result | Cost | Time |
+|---|---|---|---|
+| `try:cards` | 4 cards with `Years`; notes became stated seniority, retraining appetite and climate interests | $0.05 | 14s |
+| `try:discover` | 6 fields, 16 roles; every field has fit level, sector, summary, chips, one evidence line per cited card and an ask; 0 dropped | $0.72 | 252s |
+| `try:queries F1` (two roles ticked) | exactly 3 queries, one per board, `Fields: F1`; scripted bad-fit revision replaced the judged board's query | $0.11 | 47s |
+
+About $0.90 for the loop. Gate 2b itself — the user's browser run,
+`/code-review` and `/security-review` — has not run; it must run in a
+separate session (AGENTS.md).

@@ -58,4 +58,4 @@ expanded field card renders from discovery data (technical-plan.md D39).
 text. Your profile lives in your browser and is resent every turn. The only
 server-side write is a usage row with token counts and cost.
 
-Updated 2026-09-20 for the Phase 2b design; last verified against the code 2026-09-18. Re-verify at Gate 2b.
+Updated 2026-09-20 for the Phase 2b design and verified against the code the same day (step 2b.6): every box maps to a step in `turn.ts` or a store in `supabase/migrations/`; the field drill-down is the only module with no arrow.

@@ -64,7 +64,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or a skill |
 | `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data + web search → ranked fields and roles; non-zero if any lacks a card citation or a source |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
-| `pnpm try:queries <profile.md> [out.md]` | Stage 2.3 live: generate queries, then revise from a scripted "bad fit" feedback |
+| `pnpm try:queries <profile.md> <fieldId> [out.md]` | Stage 2b.3 live: three queries for one field from its selected roles (one per board), then revise from a scripted "bad fit" feedback |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -242,16 +242,23 @@ dispatches and returns the assistant message, pills, and the **whole**
 canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 `delta`s, a heartbeat every 15s, then one `final` or one `error`.
 
-- Message conventions the server parses live in one place each:
-  `exploreChatText(field)` / `GENERATE_QUERIES_TEXT` in `workspace.ts`,
-  `GO_PILL` in `turn.ts`. Change the text there, never inline.
+- The browser names what it wants through `TurnInput`: `message` (paste,
+  pills), `field` (write searches for one field, technical-plan.md D40) and
+  `feedback` (revise). The one remaining text convention, `exploreChatText`
+  in `workspace.ts`, serves the `explore` step that only scripts reach (D39);
+  `GO_PILL` lives in `turn.ts`. Change text there, never inline.
 - User-facing error text comes only from `turnErrorMessage`; the route logs
   the error class and step, never the message or the body.
 - `maxDuration` in a route file must be a numeric literal and the file may
   export nothing but segment config and handlers (Next 16 build check);
   `route.test.ts` pins the literal to `MAX_DURATION_SECONDS`.
 - Client components import only browser-safe modules: `profile.ts`,
-  `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`.
+  `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`, `elicit.ts`
+  (its `llm` import is type-only) and `screens.ts`. `cards.ts` is server-only.
+- The UI is `src/components/shell/` (technical-plan.md §2, D37–D43): one
+  shell, no tabs, no composer. Pure screen logic (which screen, question
+  order, log lines, the pre-turn snapshot for accept-or-keep) is in
+  `src/lib/screens.ts` with unit tests; components hold no policy.
 
 ## Passcode gate
 
