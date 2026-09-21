@@ -19,16 +19,17 @@ import {
   appendUserMessage,
   applyQueryFeedback,
   applyTurnResponse,
-  canGenerateQueries,
+  buildFieldTurnInput,
+  canWriteQueriesFor,
   confirmProfileSkill,
   EXPORT_FILENAME,
   exploreChatText,
   feedbackChatText,
-  GENERATE_QUERIES_TEXT,
   MAX_FEEDBACK_REASON,
   nextStep,
   normalizeFeedbackReason,
   profileView,
+  queriesChatText,
   rejectProfileSkill,
   rolesForField,
   setProfileFieldStatus,
@@ -287,15 +288,24 @@ describe("fields tab helpers", () => {
     expect(exploreChatText(field("F1"))).toBe("Explore F1: Grid software");
   });
 
-  it("offers query generation only once a field is accepted or unsure", () => {
-    expect(canGenerateQueries(profile)).toBe(false);
-    const withStatus = (status: Field["status"]) => ({
+  it("offers searches for a field only once it is in play and has a ticked role", () => {
+    const withStatus = (status: Field["status"], selected: boolean) => ({
       ...profile,
       fields: [{ ...field("F1"), status }],
+      roles: profile.roles.map((r) => ({ ...r, selected })),
     });
-    expect(canGenerateQueries(withStatus("rejected"))).toBe(false);
-    expect(canGenerateQueries(withStatus("unsure"))).toBe(true);
-    expect(canGenerateQueries(withStatus("accepted"))).toBe(true);
+    expect(canWriteQueriesFor(profile, "F1")).toBe(false);
+    expect(canWriteQueriesFor(withStatus("accepted", false), "F1")).toBe(false);
+    expect(canWriteQueriesFor(withStatus("rejected", true), "F1")).toBe(false);
+    expect(canWriteQueriesFor(withStatus("candidate", true), "F1")).toBe(true);
+    expect(canWriteQueriesFor(withStatus("accepted", true), "F1")).toBe(true);
+    expect(canWriteQueriesFor(withStatus("accepted", true), "F9")).toBe(false);
+    expect(rolesForField(withStatus("accepted", true), "F1", true).map((r) => r.id)).toEqual(["R1"]);
+  });
+
+  it("builds the per-field queries turn input and its chat bubble", () => {
+    expect(buildFieldTurnInput("F1")).toEqual({ kind: "field", fieldId: "F1" });
+    expect(queriesChatText(field("F1"))).toBe("Write searches for F1: Grid software");
   });
 });
 
@@ -352,6 +362,5 @@ describe("query feedback", () => {
     const long = "x".repeat(MAX_FEEDBACK_REASON + 100);
     expect(normalizeFeedbackReason(long)).toHaveLength(MAX_FEEDBACK_REASON);
     expect(normalizeFeedbackReason("  hi  ")).toBe("hi");
-    expect(GENERATE_QUERIES_TEXT.length).toBeGreaterThan(0);
   });
 });

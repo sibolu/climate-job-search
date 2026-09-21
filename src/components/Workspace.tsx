@@ -40,13 +40,14 @@ import {
   appendUserMessage,
   applyQueryFeedback,
   applyTurnResponse,
-  canGenerateQueries,
+  buildFieldTurnInput,
+  canWriteQueriesFor,
   confirmProfileSkill,
   EXPORT_FILENAME,
   exploreChatText,
   feedbackChatText,
-  GENERATE_QUERIES_TEXT,
   nextStep,
+  queriesChatText,
   profileView,
   rejectProfileSkill,
   setProfileFieldStatus,
@@ -253,12 +254,15 @@ export default function Workspace() {
     [send],
   );
 
+  // Compile-only bridge until 2b.6 replaces this component: writes for the
+  // first field that has a ticked role.
   const onGenerateQueries = useCallback(() => {
-    void send(
-      { kind: "message", content: GENERATE_QUERIES_TEXT },
-      "queries",
-      GENERATE_QUERIES_TEXT,
-    );
+    const current = stateRef.current;
+    if (current === null) return;
+    const { profile: p } = profileView(current);
+    const field = p.fields.find((f) => canWriteQueriesFor(p, f.id));
+    if (field === undefined) return;
+    void send(buildFieldTurnInput(field.id), "queries", queriesChatText(field));
   }, [send]);
 
   /**
@@ -397,7 +401,7 @@ export default function Workspace() {
           <QueriesTab
             profile={profile}
             busy={busy}
-            canGenerate={canGenerateQueries(profile)}
+            canGenerate={profile.fields.some((f) => canWriteQueriesFor(profile, f.id))}
             onGenerateQueries={onGenerateQueries}
             onFeedback={onQueryFeedback}
           />

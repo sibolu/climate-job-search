@@ -15,8 +15,8 @@
  * - `discover` ranked fields and roles from cards + reference data + web.
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
  *              with no field id is answered with a list of fields to pick;
- *              the "generate queries" pill text is routed to `queries`.
- * - `queries`  search queries per board for accepted / unsure fields.
+ * - `queries`  three searches (one per board) for the one field named by a
+ *              `field` input, from the roles ticked on it (technical-plan.md D40).
  * - `revise`   one piece of "Tried it" feedback → revised queries and an
  *              explanation.
  *
@@ -42,7 +42,7 @@ import type { Llm } from "./llm";
 import { activeCards, type Field, type MoveType, parseProfile, type Profile, serializeProfile } from "./profile";
 import { generateQueries, type GenerateQueriesResult, reviseQueries, type ReviseQueriesResult } from "./queries";
 import type { AnswerPill, TurnRequest, TurnResponse } from "./session";
-import { canGenerateQueries, exploreChatText, GENERATE_QUERIES_TEXT } from "./workspace";
+import { exploreChatText } from "./workspace";
 
 // ---------------------------------------------------------------------------
 // Dependencies (injectable for tests; the defaults are the real modules)
@@ -103,7 +103,6 @@ export class TurnInputError extends Error {
 export const GO_PILL: AnswerPill = { label: "Find climate fields for me", value: "go" };
 
 /** Offered after explore and discover when the profile has fields to search on. */
-export const GENERATE_QUERIES_PILL: AnswerPill = { label: "Write search queries", value: GENERATE_QUERIES_TEXT };
 
 export const FIELD_ID_PATTERN = /\bF\d+\b/;
 
@@ -171,16 +170,17 @@ export function discoverMessage(result: DiscoverResult): string {
   return parts.join("\n\n");
 }
 
-/** The chat message after query generation. */
-export function queriesMessage(result: GenerateQueriesResult): string {
-  const { added, updated } = result;
-  if (added.length === 0 && updated.length === 0) {
-    return "I did not come up with any new queries this time. Accept a field or two on the Fields tab and try again.";
-  }
+/** The chat message after query generation: the field and its three searches, one per board. */
+export function queriesMessage(result: GenerateQueriesResult, fieldId: string): string {
+  const written = [...result.updated, ...result.added];
+  const field = result.profile.fields.find((f) => f.id === fieldId);
+  const name = field === undefined ? fieldId : `${field.id}: ${field.name}`;
+  if (written.length === 0) return `I could not write any searches for ${name} this time. Try again.`;
+  const refreshed = result.updated.length === 0 ? "" : ` (${String(result.updated.length)} replaced an earlier untried search)`;
   const lines = [
-    `I wrote ${String(added.length)} new search quer${added.length === 1 ? "y" : "ies"}${updated.length > 0 ? ` and refreshed ${String(updated.length)}` : ""}.`,
-    ...[...added, ...updated].map((q) => `- **${q.id}** (${q.board}): ${q.query}`),
-    "Open the Queries tab to copy each one, set an email alert, and tell me how it went with \"Tried it\" — that feedback is what improves the next round.",
+    `Here are ${String(written.length)} searches for **${name}**, one per board${refreshed}:`,
+    ...written.map((q) => `- **${q.id}** (${q.board}): ${q.query}`),
+    "Open Searches to copy each one, set an email alert, and say how it went — that feedback is what improves the next round.",
   ];
   return lines.join("\n");
 }
@@ -222,7 +222,7 @@ function respond(profile: Profile, parts: readonly string[], pills: readonly Ans
 
 function messageContent(request: TurnRequest): string {
   if (request.input.kind !== "message") {
-    throw new TurnInputError(`The ${request.step} step needs a message, not query feedback.`);
+    throw new TurnInputError(`The ${request.step} step needs a message.`);
   }
   return request.input.content;
 }
@@ -284,19 +284,15 @@ export async function runTurn(
       messageContent(request);
       onProgress("Matching your experience against climate fields and checking sources — this can take a few minutes…");
       const result = await d.discoverFields({ sessionId, profile });
-      const pills = [...explorePills(result.profile)];
-      if (canGenerateQueries(result.profile)) pills.push(GENERATE_QUERIES_PILL);
-      return respond(result.profile, [discoverMessage(result), ...note], pills);
+      return respond(result.profile, [discoverMessage(result), ...note], explorePills(result.profile));
     }
 
     case "explore": {
       const text = messageContent(request);
-      if (text.trim() === GENERATE_QUERIES_TEXT) return runTurn({ ...request, step: "queries" }, d, onProgress);
       const fieldId = fieldIdIn(text);
       const field = fieldId === undefined ? undefined : profile.fields.find((f) => f.id === fieldId);
       if (field === undefined) {
         const pills = explorePills(profile);
-        if (canGenerateQueries(profile)) pills.push(GENERATE_QUERIES_PILL);
         const ask =
           profile.fields.length === 0
             ? "There are no fields on file yet. Say \"go\" and I will look for climate fields that fit your experience."
@@ -306,15 +302,18 @@ export async function runTurn(
       onProgress(`Looking into ${field.name}: titles, employers, example posts…`);
       const result = await d.exploreField({ sessionId, profile, fieldId: field.id });
       const pills = explorePills(result.profile).filter((p) => p.value !== exploreChatText(field));
-      if (canGenerateQueries(result.profile)) pills.unshift(GENERATE_QUERIES_PILL);
       return respond(result.profile, [result.message, ...note], pills);
     }
 
     case "queries": {
-      messageContent(request);
-      onProgress("Writing search queries for your accepted fields…");
-      const result = await d.generateQueries({ sessionId, profile });
-      return respond(result.profile, [queriesMessage(result), ...note]);
+      if (request.input.kind !== "field") {
+        throw new TurnInputError("The queries step needs a field to write searches for.");
+      }
+      const { fieldId } = request.input;
+      const field = profile.fields.find((f) => f.id === fieldId);
+      onProgress(`Writing searches for ${field?.name ?? fieldId}…`);
+      const result = await d.generateQueries({ sessionId, profile, fieldId });
+      return respond(result.profile, [queriesMessage(result, fieldId), ...note]);
     }
 
     case "revise": {
@@ -356,6 +355,8 @@ export function turnErrorMessage(error: unknown): string {
       return "That search ran too long. Try again; it usually completes on a second attempt.";
     case "LlmOutputError":
       return "The model returned something I could not read. Try again.";
+    case "QueriesOutputError":
+      return "The searches for that field did not come back complete. Try again.";
     case "LlmConfigError":
     case "LlmToolPolicyError":
     case "LlmSessionIdError":

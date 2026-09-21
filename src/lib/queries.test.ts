@@ -6,14 +6,14 @@ import type { z } from "zod";
 import { describe, expect, it } from "vitest";
 
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, emptyProfile, parseProfile, serializeProfile } from "./profile";
+import { type Profile, parseProfile, serializeProfile, setRoleSelected, upsertQuery } from "./profile";
 import {
   ALERT_STEPS,
   BOARDS,
-  BOARD_NAME_KEY,
   type GenerateOutput,
-  MAX_QUERIES_PER_BOARD,
+  QUERY_BOARDS,
   QueriesInputError,
+  QueriesOutputError,
   RETIRED_KEY,
   RETIRED_REASON_KEY,
   type ReviseOutput,
@@ -62,7 +62,7 @@ function engineer(): Profile {
   return parseProfile(readFileSync(FIXTURE, "utf8")).profile;
 }
 
-type Draft = GenerateOutput["queries"][number];
+type Draft = ReviseOutput["add"][number];
 const draft = (d: Partial<Draft>): Draft => ({
   board: "linkedin",
   query: "x",
@@ -70,6 +70,12 @@ const draft = (d: Partial<Draft>): Draft => ({
   boardName: null,
   rationale: "r",
   ...d,
+});
+
+const fieldOutput = (o: Partial<Record<(typeof QUERY_BOARDS)[number], string>> = {}): GenerateOutput => ({
+  linkedin: { query: o.linkedin ?? '"mechanical engineer" AND electrification', rationale: "r-li" },
+  indeed: { query: o.indeed ?? '"mechanical engineer" electrification', rationale: "r-in" },
+  climatebase: { query: o.climatebase ?? "electrification engineer", rationale: "r-cb" },
 });
 
 describe("fixture", () => {
@@ -91,73 +97,92 @@ describe("ALERT_STEPS", () => {
 });
 
 describe("generateQueries", () => {
-  const output: GenerateOutput = {
-    queries: [
-      // Same key as the untried Q1 (whitespace and case differ): updated, not duplicated.
-      draft({ query: '  "Mechanical Engineer" AND (electrification OR "heat pump")   AND (decarbonization OR MEP) ' }),
-      // F9 is unknown and dropped; the draft survives on F2.
-      draft({ query: '"senior engineer" AND "heat pump" AND NOT "PE required"', fieldIds: ["F2", "F9"] }),
-      draft({ board: "indeed", query: '"retro-commissioning" engineer', fieldIds: ["F3"] }),
-      // F4 is a candidate: not eligible, so unfielded.
-      draft({ board: "indeed", query: "utility dsm engineer", fieldIds: ["F4"] }),
-      // "other" without a board name.
-      draft({ board: "other", query: "heat pump engineer", fieldIds: ["F2"] }),
-      draft({ board: "other", query: "heat pump engineer", fieldIds: ["F2"], boardName: "Google Jobs" }),
-      // Matches the good Q4: never overwritten.
-      draft({ board: "climatebase", query: "Heat Pump Product Engineer", fieldIds: ["F2"] }),
-      // Duplicate of an earlier draft.
-      draft({ board: "indeed", query: '"retro-commissioning"   ENGINEER', fieldIds: ["F3"] }),
-      draft({ query: "" }),
-    ],
-  };
+  it("writes exactly one query per board for the field, replacing its untried ones in place", async () => {
+    const llm = fakeLlm([fieldOutput()]);
+    const result = await generateQueries({ sessionId: SESSION_ID, profile: engineer(), fieldId: "F1" }, { llm });
 
-  it("upserts by (board, normalized query), adds the rest, and counts every drop", async () => {
-    const llm = fakeLlm([output]);
-    const result = await generateQueries({ sessionId: SESSION_ID, profile: engineer() }, { llm });
+    const request = llm.requests[0];
+    expect(request?.step).toBe("queries");
+    const content = request?.messages[0]?.content;
+    // The ticked roles go to the prompt; the unticked one (R2, on F2) does not.
+    expect(content).toContain("R1: ");
+    expect(content).toContain("R4: ");
+    expect(content).not.toContain("R2: ");
+    expect(content).toContain("Mark: Interesting");
+    expect(content).toContain("F1: Building electrification");
 
-    expect(llm.requests[0]?.step).toBe("queries");
-    expect(result.updated.map((q) => q.id)).toEqual(["Q1"]);
-    expect(result.added.map((q) => q.id)).toEqual(["Q5", "Q6", "Q7"]);
-    expect(result.profile.queries).toHaveLength(7);
-    expect(result.dropped).toEqual({
-      emptyQuery: 1,
-      unfielded: 1,
-      unnamedBoard: 1,
-      duplicate: 1,
-      surplus: 0,
-      judgedQueries: 1,
-      unknownQueryIds: 0,
-      unknownFieldIds: 1,
-      fieldsProtected: 0,
-    });
-
-    const q1 = result.profile.queries.find((q) => q.id === "Q1");
-    expect(q1?.query).toBe('"Mechanical Engineer" AND (electrification OR "heat pump") AND (decarbonization OR MEP)');
-    expect(q1?.status).toBe("untried");
-    expect(q1?.extra[WHY_KEY]).toBe("r");
-    expect(result.profile.queries.find((q) => q.id === "Q5")?.fieldIds).toEqual(["F2"]);
-    expect(result.profile.queries.find((q) => q.id === "Q7")?.extra[BOARD_NAME_KEY]).toBe("Google Jobs");
-    expect(result.profile.queries.find((q) => q.id === "Q4")?.status).toBe("good");
-    // Round-trips through the contract.
+    // Q1 (linkedin) and Q2 (indeed) were untried on F1: replaced in place; climatebase is new.
+    expect(result.updated.map((q) => q.id)).toEqual(["Q1", "Q2"]);
+    expect(result.added.map((q) => q.id)).toEqual(["Q5"]);
+    expect(result.superseded).toEqual([]);
+    const written = [...result.updated, ...result.added];
+    expect(written.map((q) => q.board)).toEqual([...QUERY_BOARDS]);
+    for (const q of written) {
+      expect(q.fieldIds).toEqual(["F1"]);
+      expect(q.status).toBe("untried");
+      expect(q.reason).toBe("");
+    }
+    expect(result.profile.queries.find((q) => q.id === "Q1")?.query).toBe('"mechanical engineer" AND electrification');
+    expect(result.profile.queries.find((q) => q.id === "Q1")?.extra[WHY_KEY]).toBe("r-li");
+    expect(result.profile.queries).toHaveLength(5);
+    // Other fields' queries are untouched.
+    expect(result.profile.queries.find((q) => q.id === "Q3")?.query).toBe('"product engineer" "heat pump" refrigerant');
     expect(parseProfile(serializeProfile(result.profile)).profile).toEqual(result.profile);
   });
 
-  it("caps queries per board and counts the surplus", async () => {
-    const many = Array.from({ length: MAX_QUERIES_PER_BOARD + 2 }, (_, i) =>
-      draft({ query: `"heat pump" AND term${i}`, fieldIds: ["F2"] }),
-    );
+  it("keeps a judged query on the field untouched and adds beside it", async () => {
+    const profile = setRoleSelected(engineer(), "R2", true);
     const result = await generateQueries(
-      { sessionId: SESSION_ID, profile: engineer() },
-      { llm: fakeLlm([{ queries: many }]) },
+      { sessionId: SESSION_ID, profile, fieldId: "F2" },
+      { llm: fakeLlm([fieldOutput({ climatebase: "heat pump design engineer" })]) },
     );
-    expect(result.added).toHaveLength(MAX_QUERIES_PER_BOARD);
-    expect(result.dropped.surplus).toBe(2);
+    // Q3 (indeed, untried) replaced; Q4 (climatebase, good) survives; linkedin and climatebase added.
+    expect(result.updated.map((q) => q.id)).toEqual(["Q3"]);
+    expect(result.added.map((q) => `${q.id}/${q.board}`)).toEqual(["Q5/linkedin", "Q6/climatebase"]);
+    const q4 = result.profile.queries.find((q) => q.id === "Q4");
+    expect(q4?.status).toBe("good");
+    expect(q4?.query).toBe("heat pump product engineer");
   });
 
-  it("refuses a profile with no accepted or unsure field", async () => {
-    await expect(
-      generateQueries({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]) }),
-    ).rejects.toBeInstanceOf(QueriesInputError);
+  it("retires a second untried query on the same field and board as superseded", async () => {
+    const profile = upsertQuery(engineer(), {
+      board: "linkedin",
+      query: '"HVAC engineer" AND electrification',
+      fieldIds: ["F1"],
+      status: "untried",
+      reason: "",
+      extra: {},
+    });
+    const result = await generateQueries({ sessionId: SESSION_ID, profile, fieldId: "F1" }, { llm: fakeLlm([fieldOutput()]) });
+    expect(result.updated.map((q) => q.id)).toEqual(["Q1", "Q2"]);
+    expect(result.superseded).toEqual(["Q5"]);
+    const q5 = result.profile.queries.find((q) => q.id === "Q5");
+    expect(q5?.status).toBe("untried");
+    expect(q5?.extra[RETIRED_KEY]).toBe("yes");
+    expect(q5?.extra[RETIRED_REASON_KEY]).toBe("Superseded by Q1");
+  });
+
+  it("fails typed, with counters only, when a draft repeats a judged query or is empty", async () => {
+    const profile = setRoleSelected(engineer(), "R2", true);
+    const llm = fakeLlm([fieldOutput({ climatebase: "Heat Pump  Product Engineer", indeed: "  " })]);
+    const error = await generateQueries({ sessionId: SESSION_ID, profile, fieldId: "F2" }, { llm }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(QueriesOutputError);
+    if (error instanceof QueriesOutputError) {
+      expect(error.missingBoards).toEqual(["indeed", "climatebase"]);
+      expect(error.dropped.judgedQueries).toBe(1);
+      expect(error.dropped.emptyQuery).toBe(1);
+      expect(error.message).not.toContain("Heat Pump");
+    }
+  });
+
+  it("refuses a missing, rejected or untouched field before calling the model", async () => {
+    const llm = fakeLlm([]);
+    for (const fieldId of ["F9", "F5", "F3"]) {
+      await expect(generateQueries({ sessionId: SESSION_ID, profile: engineer(), fieldId }, { llm })).rejects.toBeInstanceOf(
+        QueriesInputError,
+      );
+    }
+    expect(llm.requests).toHaveLength(0);
   });
 });
 

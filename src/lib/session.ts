@@ -93,6 +93,8 @@ export type QueryFeedback = z.infer<typeof QueryFeedbackSchema>;
 export const TurnInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message"), content: z.string().min(1).max(MAX_MESSAGE_CHARS) }),
   z.object({ kind: z.literal("feedback"), feedback: QueryFeedbackSchema }),
+  /** The expanded field card's CTA: write searches for this one field (technical-plan.md D40). */
+  z.object({ kind: z.literal("field"), fieldId: z.string().regex(/^F\d+$/) }),
 ]);
 export type TurnInput = z.infer<typeof TurnInputSchema>;
 

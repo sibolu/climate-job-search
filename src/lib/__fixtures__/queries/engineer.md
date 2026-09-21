@@ -115,7 +115,7 @@
 - **Field:** F1
 - **Companies:** Example MEP Firm, Sample Decarbonization Consultants
 - **Why:** Load modeling and heat-pump retrofit design from C1.
-- **Selected:** no
+- **Selected:** yes
 - **Sources:**
   - https://example.com/mep-firm/careers/senior-mechanical-engineer
 
@@ -135,6 +135,14 @@
 - **Sources:**
   - https://example.org/retrocx-provider/careers/rcx-engineer
 
+### R4: Electrification Project Engineer
+- **Field:** F1
+- **Companies:** Sample Decarbonization Consultants
+- **Why:** Retrofit delivery and controls commissioning from C1.
+- **Selected:** yes
+- **Sources:**
+  - https://example.com/decarb-consultants/careers/project-engineer
+
 ## Queries
 
 ### Q1: "mechanical engineer" AND (electrification OR "heat pump") AND (decarbonization OR MEP)
@@ -144,8 +152,8 @@
 - **Reason:**
 - **Changed:**
 
-### Q2: "senior mechanical engineer" AND "building electrification"
-- **Board:** linkedin
+### Q2: "senior mechanical engineer" "building electrification"
+- **Board:** indeed
 - **Fields:** F1
 - **Status:** untried
 - **Reason:**
