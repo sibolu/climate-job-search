@@ -17,7 +17,10 @@ agreement: how phases are run, who does what, and what each turn may cost.
 ## Where things are written down
 
 - [PLAN.md](PLAN.md): the roadmap. Step statuses are updated there as steps
-  finish, so a fresh session resumes where the last one ended.
+  finish, so a fresh session resumes where the last one ended. Anything
+  that needs the user (a browser run, a review session, a merge, accounts
+  or secrets, an approval) is its own row with **`YOU`** in the Who column,
+  gates included, and is mirrored in "Waiting on you" at the top.
 - [docs/technical-plan.md](docs/technical-plan.md): architecture, the
   numbered decisions (`D1`…), and the verification log. A decision made
   mid-phase is appended there in the same commit as the change; if it
