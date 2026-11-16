@@ -14,8 +14,7 @@ flowchart TD
 
   PROFILE --> DISCOVER{{"LLM matches your cards and preferences<br/>to climate fields and roles"}}:::llm
   REF[("Reference collection<br/>climate fields, example roles, example job posts<br/>curated in the repo, mirrored to Supabase")]:::store --> DISCOVER
-  WEB(["Web search and fetch<br/>LinkedIn, Indeed and Climatebase blocked"]):::web --> DISCOVER
-  DISCOVER --> CHECK["Code keeps only fields and roles that<br/>cite one of your cards and a real, allowed source"]:::code
+  DISCOVER --> CHECK["Code keeps only fields and roles that cite one of your cards,<br/>and only source links the reference collection lists"]:::code
   CHECK --> PROFILE
 
   PROFILE --> QUERIES{{"LLM writes three search queries for one field,<br/>one per board, from the roles you ticked; no web, no reference data"}}:::llm
@@ -32,12 +31,11 @@ flowchart TD
   classDef person fill:#dcfce7,stroke:#15803d,color:#111
   classDef store fill:#dbeafe,stroke:#1d4ed8,color:#111
   classDef llm fill:#ede9fe,stroke:#6d28d9,color:#111
-  classDef web fill:#ffedd5,stroke:#c2410c,color:#111
   classDef code fill:#f3f4f6,stroke:#4b5563,color:#111
 ```
 
 **Reading the colours.** Green is you. Blue is stored data. Purple is a model
-call. Orange is the open web. Grey is a plain code check.
+call. Grey is a plain code check. No step the UI reaches uses the web.
 
 **Where the ground truth is.**
 
@@ -47,12 +45,15 @@ call. Orange is the open web. Grey is a plain code check.
 - The reference collection: a small, hand-curated set of climate fields,
   example roles and example job posts kept as YAML in the repo. It explains
   fields and roles; it never powers a search.
-- The web: used only to confirm employers and to source fields the
-  collection lacks, with the three job boards blocked.
+- The model's own knowledge: discovery has no web access (technical-plan.md
+  D44). A field or role the collection lacks comes from what the model
+  knows and carries no source link, because a link it recalls could be
+  wrong.
 
 **What the diagram no longer shows.** The field drill-down with web search
-(`explore.ts`) is kept in the code but has no UI path since Phase 2b: an
-expanded field card renders from discovery data (technical-plan.md D39).
+(`explore.ts`, LinkedIn, Indeed and Climatebase blocked) is kept in the code
+but has no UI path since Phase 2b: an expanded field card renders from
+discovery data (technical-plan.md D39).
 
 **Where nothing is stored.** The server keeps no profile, chat or pasted
 text. Your profile lives in your browser and is resent every turn. The only

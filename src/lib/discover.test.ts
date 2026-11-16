@@ -18,6 +18,8 @@ import {
   applyDiscovery,
   buildDiscoverMessage,
   citedActiveCardIds,
+  catalogueSourceUrls,
+  cleanCatalogueSources,
   cleanSources,
   discoverFields,
   renderCardsForDiscover,
@@ -53,7 +55,7 @@ function fakeLlm(values: readonly unknown[]): FakeLlm {
   return {
     requests,
     streamText(): StreamText {
-      throw new Error("single-call discover must not stream");
+      throw new Error("discover must not stream");
     },
     structured<S extends z.ZodType>(request: StructuredRequest<S>) {
       requests.push(request as unknown as StructuredRequest<z.ZodType>);
@@ -103,6 +105,7 @@ const reference: ReferenceReader = {
   listFields: () => Promise.resolve(CAT_FIELDS),
   listRoles: () => Promise.resolve(CAT_ROLES),
 };
+const ALLOWED = catalogueSourceUrls(CAT_FIELDS, CAT_ROLES);
 
 function output(overrides: Partial<DiscoverOutput["fields"][number]> = {}): DiscoverOutput {
   return {
@@ -189,27 +192,55 @@ describe("post-validation", () => {
     expect(removed).toBe(3);
   });
 
+  it("keeps only catalogue sources for discovery, then strips blocked and malformed ones", () => {
+    const allowed = new Set(["https://example.org/a", "https://www.linkedin.com/x", "not a url"]);
+    const { kept, removed } = cleanCatalogueSources(
+      [
+        "https://example.org/a",
+        "https://uk.indeed.com/job",
+        "https://www.linkedin.com/x",
+        "not a url",
+        "https://example.org/remembered",
+        "https://example.org/a",
+      ],
+      allowed,
+    );
+    expect(kept).toEqual(["https://example.org/a"]);
+    expect(removed).toBe(4);
+  });
+
+  it("allows every source the catalogue lists, trimmed", () => {
+    expect([...catalogueSourceUrls([{ ...CAT_FIELDS[0]!, sources: [" https://example.org/t "] }], [{ ...CAT_ROLES[0]!, sources: null }])]).toEqual([
+      "https://example.org/t",
+    ]);
+    expect(ALLOWED.has("https://example.org/offshore-wind/jobs/video")).toBe(true);
+  });
+
   it("drops uncited fields and roles and counts them", () => {
-    const v = validateOutput(output(), profile);
+    const v = validateOutput(output(), profile, ALLOWED);
     expect(v.fields).toHaveLength(1);
     expect(v.fields[0]!.sources).toEqual(["https://example.org/regen"]);
     expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video Producer, farmer outreach"]);
+    // The role's URL is not in the catalogue: removed, and the role is kept without one.
+    expect(v.fields[0]!.roles[0]!.sources).toEqual([]);
     expect(v.dropped.rolesUncited).toBe(1);
-    expect(v.dropped.sourcesRemoved).toBe(1);
+    expect(v.dropped.sourcesRemoved).toBe(2);
 
-    const uncited = validateOutput(output({ fit: "Everyone is needed in climate." }), profile);
+    const uncited = validateOutput(output({ fit: "Everyone is needed in climate." }), profile, ALLOWED);
     expect(uncited.fields).toHaveLength(0);
     expect(uncited.dropped.fieldsUncited).toBe(1);
 
-    const blockedOnly = validateOutput(output({ sources: ["https://climatebase.org/x"] }), profile);
-    expect(blockedOnly.fields).toHaveLength(0);
-    expect(blockedOnly.dropped.fieldsUnsourced).toBe(1);
+    // A field the model named from memory keeps its place, with no sources.
+    const recalled = validateOutput(output({ ref: null, sources: ["https://example.org/remembered"] }), profile, ALLOWED);
+    expect(recalled.fields).toHaveLength(1);
+    expect(recalled.fields[0]!.sources).toEqual([]);
+    expect(recalled.dropped.sourcesRemoved).toBe(2);
   });
 
   it("only counts citations of active cards", () => {
     const excluded = setCardExcluded(profile, "C1", true);
     expect(citedActiveCardIds("C1 and C2", excluded)).toEqual(["C2"]);
-    const v = validateOutput(output({ fit: "Only C1 fits." }), excluded);
+    const v = validateOutput(output({ fit: "Only C1 fits." }), excluded, ALLOWED);
     expect(v.dropped.fieldsUncited).toBe(1);
   });
 
@@ -223,13 +254,13 @@ describe("post-validation", () => {
           { cardId: "C2", why: "   " },
         ],
       }),
-      profile,
+      profile, ALLOWED,
     );
     expect(v.fields[0]!.evidence).toEqual([{ cardId: "C1", why: "Series on farms." }]);
     expect(v.dropped.evidenceDropped).toBe(3);
 
     const excluded = setCardExcluded(profile, "C2", true);
-    const w = validateOutput(output(), excluded);
+    const w = validateOutput(output(), excluded, ALLOWED);
     expect(w.fields[0]!.evidence.map((e) => e.cardId)).toEqual(["C1"]);
     expect(w.dropped.evidenceDropped).toBe(1);
   });
@@ -237,22 +268,22 @@ describe("post-validation", () => {
   it("trims, dedupes and caps chips, and derives them from cited cards when the model gives none", () => {
     const v = validateOutput(
       output({ chips: [" Field production", "field  production", "", "editing", "budgeting", "pitching", "one more"] }),
-      profile,
+      profile, ALLOWED,
     );
     expect(v.fields[0]!.chips).toEqual(["Field production", "editing", "budgeting", "pitching"]);
     expect(v.fields[0]!.chips).toHaveLength(MAX_CHIPS);
 
-    const derived = validateOutput(output({ chips: [], fit: "Only C2 counts." }), profile);
+    const derived = validateOutput(output({ chips: [], fit: "Only C2 counts." }), profile, ALLOWED);
     const c2 = activeCards(profile).find((c) => c.id === "C2")!;
     expect(derived.fields[0]!.chips).toEqual(c2.skills.slice(0, MAX_CHIPS));
     expect(derived.fields[0]!.chips.length).toBeGreaterThan(0);
   });
 
   it("drops an ask without a question or key and counts it", () => {
-    const v = validateOutput(output({ ask: { question: "  ", key: "Travel", placeholder: "" } }), profile);
+    const v = validateOutput(output({ ask: { question: "  ", key: "Travel", placeholder: "" } }), profile, ALLOWED);
     expect(v.fields[0]!.ask).toBeUndefined();
     expect(v.dropped.asksDropped).toBe(1);
-    const kept = validateOutput(output(), profile);
+    const kept = validateOutput(output(), profile, ALLOWED);
     expect(kept.fields[0]!.ask).toEqual({
       question: "Would you take in-house work over freelance?",
       key: "Work setup",
@@ -262,7 +293,7 @@ describe("post-validation", () => {
   });
 
   it("carries sector, fit level and summary through, whitespace collapsed", () => {
-    const v = validateOutput(output({ sector: "  Regen   ag ", fitLevel: "stretch", summary: " Two\nsentences. " }), profile);
+    const v = validateOutput(output({ sector: "  Regen   ag ", fitLevel: "stretch", summary: " Two\nsentences. " }), profile, ALLOWED);
     expect(v.fields[0]!.sector).toBe("Regen ag");
     expect(v.fields[0]!.fitLevel).toBe("stretch");
     expect(v.fields[0]!.summary).toBe("Two sentences.");
@@ -270,7 +301,7 @@ describe("post-validation", () => {
 
   it("caps fields and dedups by ref", () => {
     const many: DiscoverOutput = { fields: Array.from({ length: MAX_FIELDS + 2 }, () => output().fields[0]!) };
-    const v = validateOutput(many, profile);
+    const v = validateOutput(many, profile, ALLOWED);
     expect(v.fields).toHaveLength(1);
     expect(v.dropped.fieldsSurplus).toBe(MAX_FIELDS + 1);
   });
@@ -279,8 +310,8 @@ describe("post-validation", () => {
 describe("profile writes", () => {
   it("keeps IDs stable and user statuses across two runs", async () => {
     const llm = fakeLlm([output()]);
-    const first = await discoverFields({ sessionId: SESSION_ID, profile: fixture("videographer") }, { llm, reference, tools: [] });
-    expect(first.strategy).toBe("single");
+    const first = await discoverFields({ sessionId: SESSION_ID, profile: fixture("videographer") }, { llm, reference });
+    expect(first.call.costUsd).toBeGreaterThanOrEqual(0);
     expect(first.fields.map((f) => f.id)).toEqual(["F1"]);
     expect(first.fields[0]!.status).toBe("candidate");
     expect(first.fields[0]!.extra[REF_KEY]).toBe("ag-nonprofits");
@@ -293,7 +324,6 @@ describe("profile writes", () => {
       {
         llm: fakeLlm([output({ fit: "Updated: C2 and C1.", name: "Regen ag nonprofits (renamed)" })]),
         reference,
-        tools: [],
       },
     );
     expect(second.profile.fields).toHaveLength(1);
@@ -307,12 +337,12 @@ describe("profile writes", () => {
     // A round trip through the serializer keeps the ref link.
     const reparsed = parseProfile(serializeProfile(second.profile)).profile;
     expect(reparsed.fields[0]!.extra[REF_KEY]).toBe("ag-nonprofits");
-    expect(applyDiscovery(reparsed, validateOutput(output(), reparsed).fields).fields[0]!.id).toBe("F1");
+    expect(applyDiscovery(reparsed, validateOutput(output(), reparsed, ALLOWED).fields).fields[0]!.id).toBe("F1");
   });
 
   it("writes the exploration-first keys and replaces them on the next run", () => {
     const profile = fixture("videographer");
-    const first = applyDiscovery(profile, validateOutput(output(), profile).fields);
+    const first = applyDiscovery(profile, validateOutput(output(), profile, ALLOWED).fields);
     const f1 = first.fields[0]!;
     expect(f1.sector).toBe("Regenerative agriculture");
     expect(f1.fitLevel).toBe("strong");
@@ -329,7 +359,7 @@ describe("profile writes", () => {
       accepted,
       validateOutput(
         output({ fitLevel: "some", chips: ["editing"], ask: { question: "", key: "", placeholder: "" }, evidence: [] }),
-        accepted,
+        accepted, ALLOWED,
       ).fields,
     );
     const f2 = second.fields[0]!;
@@ -350,7 +380,7 @@ describe("profile writes", () => {
           { ...output().fields[0]!, ref: null, name: "Brand new field", fit: "C3 shows it." },
         ],
       },
-      profile,
+      profile, ALLOWED,
     );
     const applied = applyDiscovery(profile, v.fields);
     expect(applied.fields.map((f) => f.id)).toEqual(["F1", "F2"]);
@@ -368,7 +398,7 @@ describe("profile writes", () => {
           { ...base, ref: "ag-nonprofits-2" },
         ],
       },
-      profile,
+      profile, ALLOWED,
     );
     expect(v.fields).toHaveLength(1);
     expect(v.dropped.fieldsSurplus).toBe(1);
@@ -389,7 +419,7 @@ describe("profile writes", () => {
       {
         fields: [{ ...base, ref: "  ag-nonprofits  ", roles: [{ ...cited, ref: "  role-a  " }] }],
       },
-      profile,
+      profile, ALLOWED,
     );
     expect(v.fields[0]!.ref).toBe("ag-nonprofits");
     expect(v.fields[0]!.roles[0]!.ref).toBe("role-a");
@@ -407,7 +437,7 @@ describe("profile writes", () => {
 
   it("refuses a profile without active cards", async () => {
     await expect(
-      discoverFields({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]), reference, tools: [] }),
+      discoverFields({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]), reference }),
     ).rejects.toBeInstanceOf(DiscoverInputError);
   });
 });

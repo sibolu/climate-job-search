@@ -3,13 +3,13 @@
  * acceptance check, and the Gate 1 script to run on a real profile.
  *
  * It reads a `profile.md`, runs `discoverFields` (one live `discover` call
- * through `src/lib/llm.ts` with web search, or two if the API refuses
- * structured output alongside server tools), prints the updated `profile.md`
- * to stdout, a usage/cost line and each field's exploration-first card
- * (sector, fit level, summary, chips, evidence lines, ask) to stderr, and
- * exits non-zero if any field or role written this run lacks a card citation
- * or a source, or any field lacks a fit level, a sector, an evidence line per
- * cited card, or an ask (technical-plan.md D39).
+ * through `src/lib/llm.ts`, no web tools — technical-plan.md D44), prints the
+ * updated `profile.md` to stdout, a usage/cost line and each field's
+ * exploration-first card (sector, fit level, summary, chips, evidence lines,
+ * ask, sources) to stderr, and exits non-zero if any field or role written
+ * this run lacks a card citation or cites a URL the catalogue does not list,
+ * or any field lacks a fit level, a sector, an evidence line per cited card,
+ * or an ask (technical-plan.md D39).
  *
  *   pnpm try:discover src/lib/__fixtures__/discover/videographer.md
  *   pnpm try:discover profile.md out/profile.md
@@ -23,7 +23,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
 import { DiscoverInputError, discoverFields, droppedSummary } from "../src/lib/discover";
-import { citedActiveCardIds } from "../src/lib/discover";
+import { catalogueSourceUrls, citedActiveCardIds } from "../src/lib/discover";
+import { listFields, listRoles } from "../src/lib/reference";
 import { parseProfile, serializeProfile } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
 
@@ -66,14 +67,11 @@ async function main(): Promise<void> {
     process.stderr.write(`wrote ${output}\n`);
   }
 
-  const cost = result.calls.reduce((s, c) => s + c.costUsd, 0);
-  const tok = result.calls.map(
-    (c) =>
-      `in ${String(c.usage.input)} (cache r${String(c.usage.cacheRead)}/w${String(c.usage.cacheWrite)}) out ${String(c.usage.output)}`,
-  );
+  const c = result.call;
+  const tok = `in ${String(c.usage.input)} (cache r${String(c.usage.cacheRead)}/w${String(c.usage.cacheWrite)}) out ${String(c.usage.output)}`;
   process.stderr.write(
-    `${result.strategy} | ${String(result.fields.length)} fields, ${String(result.roles.length)} roles | ` +
-      `${droppedSummary(result.dropped)} | ${tok.join(" + ")} tok | $${cost.toFixed(4)} | ` +
+    `${String(result.fields.length)} fields, ${String(result.roles.length)} roles | ` +
+      `${droppedSummary(result.dropped)} | ${tok} tok | $${c.costUsd.toFixed(4)} | ` +
       `${String(Math.round((Date.now() - started) / 100) / 10)}s\n`,
   );
   for (const f of result.fields) {
@@ -86,16 +84,19 @@ async function main(): Promise<void> {
         ...f.evidence.map((e) => `  evidence ${e.cardId}: ${e.why}`),
         `  ask: ${f.ask === undefined ? "?" : `${f.ask.question} [${f.ask.key}; e.g. ${f.ask.placeholder}]`}`,
         `  roles: ${roles.join("; ") || "?"}`,
+        `  sources: ${f.sources.join(" ") || "(none: named from the model's knowledge)"}`,
       ].join("\n") + "\n",
     );
   }
 
   // The acceptance rule, checked here so the exit code carries it.
+  const [catFields, catRoles] = await Promise.all([listFields(), listRoles()]);
+  const catalogue = catalogueSourceUrls(catFields, catRoles);
   const problems: string[] = [];
   if (result.fields.length < 4) problems.push(`expected >=4 fields, got ${String(result.fields.length)}`);
   for (const f of result.fields) {
     if (citedActiveCardIds(f.fit, result.profile).length === 0) problems.push(`${f.id} cites no card`);
-    if (f.sources.length === 0) problems.push(`${f.id} has no source`);
+    for (const u of f.sources) if (!catalogue.has(u)) problems.push(`${f.id} cites a non-catalogue URL`);
     if (!result.roles.some((r) => r.fieldId === f.id)) problems.push(`${f.id} has no role`);
     if (f.fitLevel === undefined) problems.push(`${f.id} has no fit level`);
     if (f.sector.trim() === "") problems.push(`${f.id} has no sector`);
@@ -109,11 +110,11 @@ async function main(): Promise<void> {
   }
   for (const r of result.roles) {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
-    if (r.sources.length === 0) problems.push(`${r.id} has no source`);
+    for (const u of r.sources) if (!catalogue.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
   }
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
   process.stderr.write(
-    "PASS: every field has a fit level, sector, an evidence line per cited card and an ask; every field and role cites a card and has a source\n",
+    "PASS: every field has a fit level, sector, an evidence line per cited card and an ask; every field and role cites a card and only catalogue URLs\n",
   );
 }
 

@@ -13,6 +13,9 @@ import {
   LlmTruncatedError,
   MAX_DURATION_SECONDS,
   MAX_RETRIES,
+  CALL_TIMEOUT_MS,
+  LlmCancelledError,
+  LlmTimeoutError,
   MODEL,
   REQUEST_TIMEOUT_MS,
   USAGE_ROW_KEYS,
@@ -40,6 +43,8 @@ interface FakeTurn {
   category?: string;
   /** Reject the request with this error instead of answering. */
   error?: Error;
+  /** Never finish: stream `message_start`, then wait until the signal aborts. */
+  hang?: boolean;
 }
 
 function fakeMessage(turn: FakeTurn): Anthropic.Message {
@@ -74,11 +79,19 @@ function chunks(text: string): string[] {
   return text.split(/(?= )/);
 }
 
-function fakeStream(turn: FakeTurn, onDelta?: () => void): LlmStream {
+function fakeStream(turn: FakeTurn, signal: AbortSignal, onDelta?: () => void): LlmStream {
   const message = fakeMessage(turn);
   return {
     async *[Symbol.asyncIterator](): AsyncIterator<Anthropic.MessageStreamEvent> {
       if (turn.error !== undefined) throw turn.error;
+      if (turn.hang === true) {
+        yield { type: "message_start", message } as Anthropic.MessageStreamEvent;
+        await new Promise<void>((_, reject) => {
+          const fail = () => reject(Object.assign(new Error("Request was aborted."), { name: "APIUserAbortError" }));
+          if (signal.aborted) fail();
+          signal.addEventListener("abort", fail, { once: true });
+        });
+      }
       if (turn.text !== undefined) {
         for (const chunk of chunks(turn.text)) {
           onDelta?.();
@@ -117,11 +130,7 @@ function fakeClient(turns: FakeTurn[]): Fake {
     params,
     deltasProduced: () => produced,
     client: {
-      stream: (p) => fakeStream(next(p), () => (produced += 1)),
-      create: (p) => {
-        const turn = next(p);
-        return turn.error === undefined ? Promise.resolve(fakeMessage(turn)) : Promise.reject(turn.error);
-      },
+      stream: (p, { signal }) => fakeStream(next(p), signal, () => (produced += 1)),
     },
   };
 }
@@ -214,7 +223,7 @@ describe("effort", () => {
     expect(Object.keys(EFFORT_BY_STEP).sort()).toEqual([...StepNameSchema.options].sort());
     expect(EFFORT_BY_STEP.elicit).toBe("medium");
     expect(EFFORT_BY_STEP.cards).toBe("medium");
-    expect(EFFORT_BY_STEP.discover).toBe("high");
+    expect(EFFORT_BY_STEP.discover).toBe("medium");
   });
 });
 
@@ -222,20 +231,22 @@ describe("timeouts", () => {
   it("keeps every attempt of one logical call inside the Vercel maxDuration", () => {
     // The SDK retries a timed-out attempt, so the worst case is attempts × timeout.
     expect((MAX_RETRIES + 1) * REQUEST_TIMEOUT_MS).toBeLessThan(MAX_DURATION_SECONDS * 1000);
-    // Discovery turns with web search legitimately run 1–3 minutes (technical-plan.md §4).
-    expect(REQUEST_TIMEOUT_MS).toBeGreaterThanOrEqual(3 * 60 * 1000);
+    // The per-call deadline is three minutes (technical-plan.md D45).
+    expect(CALL_TIMEOUT_MS).toBe(3 * 60 * 1000);
+    expect(REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(CALL_TIMEOUT_MS);
+    expect(CALL_TIMEOUT_MS).toBeLessThan(MAX_DURATION_SECONDS * 1000);
   });
 });
 
 describe("cost", () => {
   it("prices a known usage object", () => {
-    // 1M in + 1M out + 1M cache read + 1M cache write = 5 + 25 + 0.5 + 6.25
+    // 1M in + 1M out + 1M cache read + 1M cache write = 4 + 20 + 0.2 + 5
     expect(
       costUsd({ input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 }),
-    ).toBeCloseTo(36.75, 6);
+    ).toBeCloseTo(29.2, 6);
     // A realistic chat turn: 3k in, 700 out, 12k cache read.
     expect(costUsd({ input: 3_000, output: 700, cacheRead: 12_000, cacheWrite: 0 })).toBeCloseTo(
-      0.038500,
+      0.028400,
       6,
     );
     expect(costUsd({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(0);
@@ -567,7 +578,7 @@ describe("structured", () => {
     expect(sink.rows).toHaveLength(1);
     expect(sink.rows[0]?.step).toBe("discover");
     expect(Object.keys(sink.rows[0] ?? {})).toEqual([...USAGE_ROW_KEYS]);
-    expect(params[0]?.output_config?.effort).toBe("high");
+    expect(params[0]?.output_config?.effort).toBe("medium");
     expect(params[0]?.output_config?.format?.type).toBe("json_schema");
     expect(params[0]?.output_config?.format?.schema).toMatchObject({ type: "object" });
   });
@@ -642,15 +653,17 @@ describe("structured", () => {
     const { client } = fakeClient([{ stopReason: "end_turn", text: "ignored" }]);
     // Hand-build a two-block message: prose first, then the JSON answer.
     const twoBlocks: LlmClient = {
-      stream: client.stream,
-      create: async (p) => {
-        const message = await client.create(p);
+      stream: (p, options) => {
+        const inner = client.stream(p, options);
         return {
-          ...message,
-          content: [
-            { type: "text", text: "Let me search.", citations: null },
-            { type: "text", text: JSON.stringify({ greeting: "hi" }), citations: null },
-          ],
+          [Symbol.asyncIterator]: () => inner[Symbol.asyncIterator](),
+          finalMessage: async () => ({
+            ...(await inner.finalMessage()),
+            content: [
+              { type: "text", text: "Let me search.", citations: null },
+              { type: "text", text: JSON.stringify({ greeting: "hi" }), citations: null },
+            ],
+          }),
         };
       },
     };
@@ -688,5 +701,47 @@ describe("structured", () => {
     expect(sink.rows).toHaveLength(1);
     expect(sink.rows[0]?.input_tokens).toBe(10);
     expect(sink.rows[0]?.output_tokens).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deadline and cancellation (technical-plan.md D45)
+// ---------------------------------------------------------------------------
+
+describe("deadline and cancellation", () => {
+  const schema = z.object({ greeting: z.string() });
+
+  it("stops a call that runs past the deadline and logs the input it was billed", async () => {
+    const { client } = fakeClient([{ stopReason: "end_turn", hang: true, usage: { input_tokens: 700 } }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0, callTimeoutMs: 20 });
+    const error = await llm.structured({ ...REQUEST, schema }).then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(LlmTimeoutError);
+    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows[0]?.input_tokens).toBe(700);
+  });
+
+  it("stops a call when the caller's signal aborts", async () => {
+    const { client } = fakeClient([{ stopReason: "end_turn", hang: true, usage: { input_tokens: 5 } }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+    const controller = new AbortController();
+    const call = llm.streamText({ ...REQUEST, signal: controller.signal });
+    setTimeout(() => controller.abort(), 5);
+    await expect(call.final).rejects.toBeInstanceOf(LlmCancelledError);
+    expect(sink.rows).toHaveLength(1);
+  });
+
+  it("never starts a call whose signal already fired, and writes no row", async () => {
+    const { client, params } = fakeClient([{ stopReason: "end_turn", text: "{}" }]);
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, now: () => 0 });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(llm.structured({ ...REQUEST, schema, signal: controller.signal })).rejects.toBeInstanceOf(
+      LlmCancelledError,
+    );
+    expect(params).toHaveLength(0);
+    expect(sink.rows).toHaveLength(0);
   });
 });

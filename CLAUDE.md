@@ -62,7 +62,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or a skill |
-| `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data + web search → ranked fields and roles; non-zero if any lacks a card citation or a source |
+| `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data, no web (D44) → ranked fields and roles; non-zero if any lacks a card citation or cites a URL the catalogue does not list |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
 | `pnpm try:queries <profile.md> <fieldId> [out.md]` | Stage 2b.3 live: three queries for one field from its selected roles (one per board), then revise from a scripted "bad fit" feedback |
 
@@ -186,16 +186,27 @@ const { text, usage, costUsd } = await final;   // settles once the call ends, w
 const { value } = await llm().structured({ step: "cards", sessionId, system, messages, schema });
 ```
 
-- **`createLlm({ client, usageSink, now })`** is the injectable form used by
+- **`createLlm({ client, usageSink, now, callTimeoutMs })`** is the injectable form used by
   tests; `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
-- **Model and thinking**: `claude-opus-5` with adaptive thinking on every call
-  (docs/technical-plan.md D2). `budget_tokens` is rejected by this model; depth is
-  `output_config.effort`.
-- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md §1): chat-like steps `cards`
-  and `elicit` are `medium`; `discover`, `explore`, `queries` and `revise` are
+- **Model and thinking**: `claude-opus-5-5` with adaptive thinking on every call
+  (docs/technical-plan.md D2, D44). `budget_tokens` and disabled thinking are
+  rejected by this model; depth is `output_config.effort`, which must be set
+  explicitly (Opus 5.5 defaults to `medium`).
+- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44): `cards`,
+  `elicit` and `discover` are `medium`; `explore`, `queries` and `revise` are
   `high`. Change the table, not the call sites.
-- **Structured outputs** use `client.messages.create()` with
+- **Every call streams** (`client.messages.stream()` + `finalMessage()`), both
+  shapes, with a 32K output cap. **One deadline bounds a logical call**:
+  `CALL_TIMEOUT_MS` (3 min, every retry and continuation included) aborts it
+  with `LlmTimeoutError`. A request's `signal` aborts it with
+  `LlmCancelledError`; `runTurn` wraps every step's `Llm` with `withSignal`,
+  and the turn route fires it when the browser disconnects. An aborted call
+  still writes its usage row with the input it was billed (docs/technical-plan.md D45).
+- **Discovery has no web tools** (docs/technical-plan.md D44). Its sources are
+  restricted to URLs the reference catalogue lists; a field named from the
+  model's own knowledge is kept with no sources.
+- **Structured outputs** send
   `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
   the rest of the app uses (docs/technical-plan.md D12). The wrapper records usage and
   checks the stop reason first, then parses the final text block with the

@@ -90,8 +90,13 @@ browser run of the whole loop, `/code-review`, and `/security-review`
 because the turn input shape changes.
 
 All six steps landed 2026-09-20; the loop ran live through the try scripts
-(about $0.90, see docs/technical-plan.md §6). **Gate 2b is open:** the
-user's browser run, then `/code-review` and `/security-review` in a fresh
+(about $0.90, see docs/technical-plan.md §6). The user's first browser run
+of the gate found discovery never finishing (one non-streamed call hitting
+the 300s request timeout). Fixed 2026-09-24, committed 2026-11-15: Opus 5.5
+at `medium`, discovery without web tools (D44, 226s → 65s, $0.69 → $0.20),
+and every call streamed with a 3-minute deadline and cancelled on browser
+disconnect (D45). **Gate 2b is open:** the user's browser run again on the
+fixed discovery, then `/code-review` and `/security-review` in a fresh
 session.
 
 Not in 2b, by decision: a composer (D42), explore and example posts (D39),

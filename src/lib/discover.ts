@@ -1,18 +1,18 @@
 /**
- * Phase 1.4 — discover: profile cards + reference catalogue + web search →
- * ranked climate fields and roles for this person.
+ * Phase 1.4 — discover: profile cards + reference catalogue + the model's own
+ * knowledge → ranked climate fields and roles for this person.
  *
- * One structured `discover` call with server web tools does the work: the
- * byte-stable {@link DISCOVER_SYSTEM_PROMPT} carries the policy, and the user
- * message carries everything per-call (active cards, stated preferences, the
- * compact reference catalogue, and any fields already in the profile). If the
- * API refuses to combine structured output with server tools, the module
- * falls back to a two-call design (research with `streamText` + web tools,
- * then shape with `structured`) — both calls stay in this module.
+ * One structured `discover` call with no tools does the work (technical-plan.md
+ * D44): the byte-stable {@link DISCOVER_SYSTEM_PROMPT} carries the policy, and
+ * the user message carries everything per-call (active cards, stated
+ * preferences, the compact reference catalogue, and any fields already in the
+ * profile). There is no web search: a field outside the catalogue comes from
+ * what the model knows, and carries no sources.
  *
  * Post-validation is strict and counted, never silent: a field whose fit does
- * not cite an active card, or a role whose `why` does not, or either without a
- * non-blocked source URL, is dropped and reported in `dropped`. Profile writes
+ * not cite an active card, or a role whose `why` does not, is dropped and
+ * reported in `dropped`. A source URL survives only if the catalogue lists
+ * it, so a URL the model recalls from memory is never shown. Profile writes
  * go through `upsertField` / `upsertRole`; a re-run matches an existing field
  * by the reference id stored in `extra.Ref` (or its name) and updates it in
  * place, never renumbering and never downgrading a user-set status back to
@@ -21,7 +21,7 @@
 
 import { z } from "zod";
 
-import type { CallMetrics, Llm, LlmTool } from "./llm";
+import type { CallMetrics, Llm } from "./llm";
 import {
   type Ask,
   AskSchema,
@@ -153,7 +153,7 @@ Rules that decide whether your answer is usable:
 
 1. Be specific to THIS person. Every field's "fit" and every role's "why" must name the card IDs (C1, C2, ...) it draws on and say what in that card transfers. Never recommend a field that any climate-curious person would get; if you cannot tie a field to a concrete card, leave it out. Generic lists ("climate needs everyone", "software", "engineering", "sustainability") are worthless. A videographer should get fields where video and story work is a real, hired function (communications teams at developers and nonprofits, documentary and impact media, brand content), not "renewable energy" in general.
 
-2. Ground and cite. Prefer catalogue fields: set "ref" to the catalogue id when you use one (and "ref" to the catalogue role id for a catalogue role). When this person's cards point somewhere the catalogue does not cover, use web search to find a real field and set "ref" to null. Every field needs 2-5 source URLs and every role at least 1: employer career or about pages, industry associations, program pages, published job descriptions, or reputable explainers. Sources must be real URLs you saw in the catalogue or in search results — never invent one. Never cite linkedin.com, indeed.com or climatebase.org; they are blocked.
+2. Ground in the catalogue, then in what you know. Prefer catalogue fields: set "ref" to the catalogue id when you use one (and "ref" to the catalogue role id for a catalogue role). When this person's cards point somewhere the catalogue does not cover, name a real field or role you know well and set "ref" to null. You have no web access. "sources" may hold only URLs listed in the catalogue, copied exactly; never write a URL from memory, however sure you are, because any other URL is removed. A field or role outside the catalogue gets an empty "sources" list.
 
 3. Label the move honestly. "sector" = the same function they do today, moved into a climate employer. "adjacent" = a related function that reuses most of their skills but changes the job. "retraining" = needs new credentials or a substantially new skill set. Rank sector and adjacent moves above retraining unless the person's preferences say they want to retrain.
 
@@ -161,17 +161,11 @@ Rules that decide whether your answer is usable:
 
 5. Respect preferences. Location, work mode, seniority, retraining appetite and climate interests are constraints when stated. Do not use excluded cards; they are not shown to you.
 
-6. Roles: give 2-4 per field with a concrete title, 1-4 real example companies or organisation types, a "why" that cites cards, and sources. Do not repeat the same role across fields.
+6. Roles: give 2-4 per field with a concrete title, 1-4 real example companies or organisation types, a "why" that cites cards, and the catalogue's sources when it is a catalogue role. Do not repeat the same role across fields.
 
 7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means employers hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
 
-Use web search sparingly (a few targeted searches) to confirm employers, find sources for fields outside the catalogue, and check that the roles you name are real. Then answer with the JSON only.`;
-
-export const DISCOVER_RESEARCH_SYSTEM_PROMPT = `You research where one career switcher's existing work fits in climate. You get their experience cards, their preferences, and a small reference catalogue of climate fields and roles. Use web search to confirm which fields hire for the functions in their cards, which employers do that hiring, and to find source URLs (employer career or about pages, associations, program pages, published job descriptions). Never search or cite linkedin.com, indeed.com or climatebase.org. Write concise research notes: candidate fields (catalogue id or "new"), why they fit which card IDs, the move type (sector, adjacent, retraining), open questions, example roles and employers, and the exact source URLs you saw. Notes only — no JSON.`;
-
-export const DISCOVER_SHAPE_SYSTEM_PROMPT = `${DISCOVER_SYSTEM_PROMPT}
-
-You have no web tools in this call. Research notes from an earlier call are included in the message; use only the source URLs they contain or the catalogue lists.`;
+Answer with the JSON only.`;
 
 function truncate(text: string, chars: number): string {
   const t = text.replace(/\s+/g, " ").trim();
@@ -291,17 +285,14 @@ export function buildDiscoverMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Post-validation: nothing uncited, unsourced or blocked gets through
+// Post-validation: nothing uncited, and no source the catalogue does not list
 // ---------------------------------------------------------------------------
 
 export interface DroppedCounts {
   /** Fields dropped for citing no active card. */
   fieldsUncited: number;
-  /** Fields dropped for having no usable (non-blocked, well-formed) source. */
-  fieldsUnsourced: number;
   rolesUncited: number;
-  rolesUnsourced: number;
-  /** Individual source URLs removed because their host is blocked or malformed. */
+  /** Source URLs removed: not listed in the catalogue, blocked, or malformed. */
   sourcesRemoved: number;
   /** Fields beyond {@link MAX_FIELDS} or duplicating an earlier field. */
   fieldsSurplus: number;
@@ -314,14 +305,20 @@ export interface DroppedCounts {
 function zeroDropped(): DroppedCounts {
   return {
     fieldsUncited: 0,
-    fieldsUnsourced: 0,
     rolesUncited: 0,
-    rolesUnsourced: 0,
     sourcesRemoved: 0,
     fieldsSurplus: 0,
     evidenceDropped: 0,
     asksDropped: 0,
   };
+}
+
+/** Every source URL the catalogue lists — the only URLs discovery may cite (technical-plan.md D44). */
+export function catalogueSourceUrls(
+  fields: readonly CatalogueField[],
+  roles: readonly CatalogueRole[],
+): Set<string> {
+  return new Set([...fields, ...roles].flatMap((item) => (item.sources ?? []).map((u) => u.trim())));
 }
 
 /** Keeps well-formed, non-blocked URLs; dedups; caps at `limit`. */
@@ -337,6 +334,16 @@ export function cleanSources(sources: readonly string[], limit = MAX_SOURCES): {
     if (!kept.includes(s)) kept.push(s);
   }
   return { kept: kept.slice(0, limit), removed: removed + Math.max(0, kept.length - limit) };
+}
+
+/** {@link cleanSources}, after removing (and counting) every URL the catalogue does not list. */
+export function cleanCatalogueSources(
+  sources: readonly string[],
+  allowed: ReadonlySet<string>,
+): { kept: string[]; removed: number } {
+  const listed = sources.filter((s) => allowed.has(s.trim()));
+  const clean = cleanSources(listed);
+  return { kept: clean.kept, removed: sources.length - listed.length + clean.removed };
 }
 
 /** Card IDs cited in `text` that are active in the profile. */
@@ -442,8 +449,16 @@ function identityKeys(ref: string | null | undefined, name: string): string[] {
   return keys;
 }
 
-/** Drops (and counts) anything uncited, unsourced or blocked; caps sizes. */
-export function validateOutput(output: DiscoverOutput, profile: Profile): ValidatedOutput {
+/**
+ * Drops (and counts) anything uncited; strips (and counts) every source the
+ * catalogue does not list; caps sizes. A field or role left with no source is
+ * kept — it is one the model named from its own knowledge.
+ */
+export function validateOutput(
+  output: DiscoverOutput,
+  profile: Profile,
+  allowedSources: ReadonlySet<string>,
+): ValidatedOutput {
   const dropped = zeroDropped();
   const fields: ValidatedField[] = [];
   const seen = new Set<string>();
@@ -458,12 +473,8 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
       dropped.fieldsUncited += 1;
       continue;
     }
-    const { kept, removed } = cleanSources(draft.sources);
+    const { kept, removed } = cleanCatalogueSources(draft.sources, allowedSources);
     dropped.sourcesRemoved += removed;
-    if (kept.length === 0) {
-      dropped.fieldsUnsourced += 1;
-      continue;
-    }
     const roles: ValidatedRole[] = [];
     const seenRoles = new Set<string>();
     for (const r of draft.roles) {
@@ -474,12 +485,8 @@ export function validateOutput(output: DiscoverOutput, profile: Profile): Valida
         dropped.rolesUncited += 1;
         continue;
       }
-      const rs = cleanSources(r.sources);
+      const rs = cleanCatalogueSources(r.sources, allowedSources);
       dropped.sourcesRemoved += rs.removed;
-      if (rs.kept.length === 0) {
-        dropped.rolesUnsourced += 1;
-        continue;
-      }
       for (const k of rKeys) seenRoles.add(k);
       roles.push({
         ref: trimmedRef(r.ref),
@@ -634,30 +641,15 @@ export interface DiscoverRequest {
 export interface DiscoverOptions {
   llm?: Llm;
   reference?: ReferenceReader;
-  /** Web tools from `webTools()`; pass `[]` to run without search (tests). */
-  tools?: readonly LlmTool[];
-  /** "single" tries structured + tools in one call and falls back on a 400. */
-  strategy?: "single" | "two-call";
 }
 
 export interface DiscoverResult extends ApplyResult {
   dropped: DroppedCounts;
-  /** Per-call metrics, one entry per model call made (1 or 2). */
-  calls: CallMetrics[];
-  strategy: "single" | "two-call";
+  /** Metrics of the one model call. */
+  call: CallMetrics;
 }
 
-/** An API 400 means the request shape was refused (e.g. tools + format). */
-function isBadRequest(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "status" in error && error.status === 400;
-}
-
-async function loadTools(): Promise<readonly LlmTool[]> {
-  const { webTools } = await import("./llm");
-  return webTools({ searchMaxUses: 8, fetchMaxUses: 4 });
-}
-
-/** Cards + catalogue + web → ranked fields and roles written into the profile. */
+/** Cards + catalogue → ranked fields and roles written into the profile. No web tools (D44). */
 export async function discoverFields(
   { sessionId, profile }: DiscoverRequest,
   options: DiscoverOptions = {},
@@ -667,68 +659,31 @@ export async function discoverFields(
   }
   const llmClient = options.llm ?? (await import("./llm")).llm();
   const reference = options.reference ?? (await defaultReference());
-  const tools = options.tools ?? (await loadTools());
   const [catFields, catRoles] = await Promise.all([reference.listFields(), reference.listRoles()]);
-  const message = buildDiscoverMessage(profile, catFields, catRoles);
-  const calls: CallMetrics[] = [];
-  const metricsOf = ({ usage, costUsd, durationMs, continuations, stopReason }: CallMetrics) => ({
-    usage,
-    costUsd,
-    durationMs,
-    continuations,
-    stopReason,
+  const result = await llmClient.structured({
+    step: "discover",
+    sessionId,
+    system: DISCOVER_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: buildDiscoverMessage(profile, catFields, catRoles) }],
+    schema: DiscoverOutputSchema,
   });
+  const { usage, costUsd, durationMs, continuations, stopReason } = result;
 
-  let strategy = options.strategy ?? "single";
-  let value: DiscoverOutput | undefined;
-  if (strategy === "single") {
-    try {
-      const result = await llmClient.structured({
-        step: "discover",
-        sessionId,
-        system: DISCOVER_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: message }],
-        schema: DiscoverOutputSchema,
-        ...(tools.length === 0 ? {} : { tools }),
-      });
-      calls.push(metricsOf(result));
-      value = result.value;
-    } catch (error: unknown) {
-      if (tools.length === 0 || !isBadRequest(error)) throw error;
-      strategy = "two-call";
-    }
-  }
-  if (value === undefined) {
-    const research = await llmClient.streamText({
-      step: "discover",
-      sessionId,
-      system: DISCOVER_RESEARCH_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: message }],
-      ...(tools.length === 0 ? {} : { tools }),
-    }).final;
-    calls.push(metricsOf(research));
-    const shaped = await llmClient.structured({
-      step: "discover",
-      sessionId,
-      system: DISCOVER_SHAPE_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `${message}\n\n# Research notes\n\n${research.text}` }],
-      schema: DiscoverOutputSchema,
-    });
-    calls.push(metricsOf(shaped));
-    value = shaped.value;
-  }
-
-  const validated = validateOutput(value, profile);
+  const validated = validateOutput(result.value, profile, catalogueSourceUrls(catFields, catRoles));
   const applied = applyDiscovery(profile, validated.fields);
-  return { ...applied, dropped: validated.dropped, calls, strategy };
+  return {
+    ...applied,
+    dropped: validated.dropped,
+    call: { usage, costUsd, durationMs, continuations, stopReason },
+  };
 }
 
 /** One line for logs and the CLI: counts only, never content. */
 export function droppedSummary(d: DroppedCounts): string {
-  const total = d.fieldsUncited + d.fieldsUnsourced + d.rolesUncited + d.rolesUnsourced + d.fieldsSurplus;
+  const total = d.fieldsUncited + d.rolesUncited + d.fieldsSurplus;
   return (
-    `${String(total)} dropped (fields: ${String(d.fieldsUncited)} uncited, ${String(d.fieldsUnsourced)} unsourced, ` +
-    `${String(d.fieldsSurplus)} surplus; roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesUnsourced)} unsourced; ` +
-    `${String(d.sourcesRemoved)} source URLs removed; ${String(d.evidenceDropped)} evidence lines, ${String(d.asksDropped)} asks dropped)`
+    `${String(total)} dropped (fields: ${String(d.fieldsUncited)} uncited, ${String(d.fieldsSurplus)} surplus; ` +
+    `roles: ${String(d.rolesUncited)} uncited; ${String(d.sourcesRemoved)} source URLs removed as not in the catalogue; ` +
+    `${String(d.evidenceDropped)} evidence lines, ${String(d.asksDropped)} asks dropped)`
   );
 }

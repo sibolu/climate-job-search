@@ -12,7 +12,7 @@
  *              the first elicitation question.
  * - `elicit`   one answer (a pill click needs no model call) → the next
  *              question, or the done summary with a "go" pill.
- * - `discover` ranked fields and roles from cards + reference data + web.
+ * - `discover` ranked fields and roles from cards + reference data (no web; D44).
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
  *              with no field id is answered with a list of fields to pick;
  * - `queries`  three searches (one per board) for the one field named by a
@@ -21,7 +21,8 @@
  *              explanation.
  *
  * Every model call happens inside the step modules, which all go through
- * `llm.ts`. Errors are mapped to user-facing sentences by {@link turnErrorMessage},
+ * `llm.ts`, and every one carries the turn's abort signal, so a browser that
+ * goes away stops the call in flight (technical-plan.md D45). Errors are mapped to user-facing sentences by {@link turnErrorMessage},
  * which never includes model text or the request.
  */
 
@@ -38,7 +39,7 @@ import {
   pillsFor,
 } from "./elicit";
 import { exploreField } from "./explore";
-import type { Llm } from "./llm";
+import type { Llm, StructuredRequest, StreamTextRequest } from "./llm";
 import { activeCards, type Field, type MoveType, parseProfile, type Profile, serializeProfile } from "./profile";
 import { generateQueries, type GenerateQueriesResult, reviseQueries, type ReviseQueriesResult } from "./queries";
 import type { AnswerPill, TurnRequest, TurnResponse } from "./session";
@@ -148,7 +149,7 @@ export function discoverMessage(result: DiscoverResult): string {
   const { profile, fields, dropped } = result;
   if (fields.length === 0) {
     return [
-      "I could not find climate fields I can back up with sources for these cards.",
+      "I could not find climate fields I can tie to these cards.",
       "Add a card or two with more detail about what you actually did, or tell me a climate area you care about, and I will try again.",
     ].join("\n\n");
   }
@@ -157,11 +158,10 @@ export function discoverMessage(result: DiscoverResult): string {
     `Here ${n === 1 ? "is" : "are"} ${String(n)} climate field${n === 1 ? "" : "s"} where your experience could land, ranked.`,
     ...fields.map((f) => fieldBlock(profile, f)),
   ];
-  const left =
-    dropped.fieldsUncited + dropped.fieldsUnsourced + dropped.rolesUncited + dropped.rolesUnsourced + dropped.fieldsSurplus;
+  const left = dropped.fieldsUncited + dropped.rolesUncited + dropped.fieldsSurplus;
   if (left > 0) {
     parts.push(
-      `I left out ${String(left)} suggestion${left === 1 ? "" : "s"} that had no source or did not connect to your experience cards.`,
+      `I left out ${String(left)} suggestion${left === 1 ? "" : "s"} that did not connect to your experience cards.`,
     );
   }
   parts.push(
@@ -231,12 +231,26 @@ function messageContent(request: TurnRequest): string {
 // The dispatcher
 // ---------------------------------------------------------------------------
 
+/**
+ * The same `Llm` with `signal` on every request, so each step module's calls
+ * stop when the turn is abandoned without the modules knowing about it.
+ */
+export function withSignal(llm: Llm, signal: AbortSignal | undefined): Llm {
+  if (signal === undefined) return llm;
+  return {
+    streamText: (request: StreamTextRequest) => llm.streamText({ ...request, signal }),
+    structured: (request) => llm.structured({ ...request, signal } as StructuredRequest<typeof request.schema>),
+  };
+}
+
 export async function runTurn(
   request: TurnRequest,
   deps?: TurnDeps,
   onProgress: Progress = () => undefined,
+  signal?: AbortSignal,
 ): Promise<TurnResponse> {
-  const d = deps ?? (await defaultDeps());
+  const base = deps ?? (await defaultDeps());
+  const d: TurnDeps = { ...base, llm: () => withSignal(base.llm(), signal) };
   const { sessionId } = request;
   const { profile, warnings } = parseProfile(request.profileMd);
   const note = warningsNote(warnings);
@@ -282,8 +296,8 @@ export async function runTurn(
 
     case "discover": {
       messageContent(request);
-      onProgress("Matching your experience against climate fields and checking sources — this can take a few minutes…");
-      const result = await d.discoverFields({ sessionId, profile });
+      onProgress("Matching your experience against climate fields — this can take a minute or two…");
+      const result = await d.discoverFields({ sessionId, profile }, { llm: d.llm() });
       return respond(result.profile, [discoverMessage(result), ...note], explorePills(result.profile));
     }
 
@@ -300,7 +314,7 @@ export async function runTurn(
         return respond(profile, [ask, ...note], profile.fields.length === 0 ? [GO_PILL] : pills);
       }
       onProgress(`Looking into ${field.name}: titles, employers, example posts…`);
-      const result = await d.exploreField({ sessionId, profile, fieldId: field.id });
+      const result = await d.exploreField({ sessionId, profile, fieldId: field.id }, { llm: d.llm() });
       const pills = explorePills(result.profile).filter((p) => p.value !== exploreChatText(field));
       return respond(result.profile, [result.message, ...note], pills);
     }
@@ -312,7 +326,7 @@ export async function runTurn(
       const { fieldId } = request.input;
       const field = profile.fields.find((f) => f.id === fieldId);
       onProgress(`Writing searches for ${field?.name ?? fieldId}…`);
-      const result = await d.generateQueries({ sessionId, profile, fieldId });
+      const result = await d.generateQueries({ sessionId, profile, fieldId }, { llm: d.llm() });
       return respond(result.profile, [queriesMessage(result, fieldId), ...note]);
     }
 
@@ -321,7 +335,7 @@ export async function runTurn(
         throw new TurnInputError("The revise step needs \"Tried it\" feedback on a query.");
       }
       onProgress("Revising your queries from that feedback…");
-      const result = await d.reviseQueries({ sessionId, profile, feedback: request.input.feedback });
+      const result = await d.reviseQueries({ sessionId, profile, feedback: request.input.feedback }, { llm: d.llm() });
       return respond(result.profile, [reviseMessage(result), ...note]);
     }
   }
@@ -351,6 +365,10 @@ export function turnErrorMessage(error: unknown): string {
       return "The model declined to work on that. Try rephrasing, or remove anything that is not about your work.";
     case "LlmTruncatedError":
       return "The answer was cut off before it finished. Try again.";
+    case "LlmTimeoutError":
+      return "That took more than three minutes, so I stopped it. Try again; if it keeps happening, exclude a highlight or two.";
+    case "LlmCancelledError":
+      return "That request was stopped before it finished. Try again.";
     case "LlmPauseLimitError":
       return "That search ran too long. Try again; it usually completes on a second attempt.";
     case "LlmOutputError":

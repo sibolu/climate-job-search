@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { CallMetrics } from "./llm";
+import type { CallMetrics, Llm } from "./llm";
 import { emptyProfile, parseProfile, type Profile, serializeProfile, upsertCard, upsertField, upsertQuery } from "./profile";
 import type { TurnRequest } from "./session";
 import {
@@ -14,6 +14,7 @@ import {
   queriesMessage,
   reviseMessage,
   runTurn,
+  withSignal,
   type TurnDeps,
   TurnInputError,
   turnErrorMessage,
@@ -89,9 +90,8 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         profile: next,
         fields: [next.fields.find((f) => f.id === "F9")!],
         roles: [],
-        dropped: { fieldsUncited: 1, fieldsUnsourced: 0, rolesUncited: 0, rolesUnsourced: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 },
-        calls: [METRICS],
-        strategy: "single",
+        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 },
+        call: METRICS,
       });
     },
     exploreField: ({ profile, fieldId }) => {
@@ -234,9 +234,45 @@ describe("pure helpers", () => {
   });
 
   it("messages render without throwing on empty results", () => {
-    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, fieldsUnsourced: 0, rolesUncited: 0, rolesUnsourced: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 }, calls: [], strategy: "single" })).toContain("could not find");
+    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 }, call: METRICS })).toContain("could not find");
     expect(queriesMessage({ profile: emptyProfile(), added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS }, "F1")).toContain("could not write");
     expect(reviseMessage({ profile: emptyProfile(), explanation: "Nothing.", retired: [], added: [], narrowed: [], fieldChanges: [], dropped: {} as never, metrics: METRICS })).toContain("No queries changed");
+  });
+});
+
+describe("withSignal", () => {
+  it("puts the turn's abort signal on every model request", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const base = {
+      streamText: (r: { signal?: AbortSignal }) => {
+        seen.push(r.signal);
+        return {} as never;
+      },
+      structured: (r: { signal?: AbortSignal }) => {
+        seen.push(r.signal);
+        return Promise.resolve({} as never);
+      },
+    } as unknown as Llm;
+    const signal = new AbortController().signal;
+    const wrapped = withSignal(base, signal);
+    wrapped.streamText({} as never);
+    await wrapped.structured({} as never);
+    expect(seen).toEqual([signal, signal]);
+    expect(withSignal(base, undefined)).toBe(base);
+  });
+
+  it("hands the signal-carrying llm to the step modules", async () => {
+    let received: unknown;
+    const deps = fakeDeps({
+      discoverFields: (_req, options) => {
+        received = options?.llm;
+        return Promise.reject(new Error("stop here"));
+      },
+    });
+    const signal = new AbortController().signal;
+    await runTurn(request("discover", cardsOnly(), "go"), deps, undefined, signal).catch(() => undefined);
+    // The fake deps' llm is `{}`; only the signal wrapper has methods.
+    expect(typeof (received as Llm).structured).toBe("function");
   });
 });
 
@@ -249,9 +285,10 @@ describe("turnErrorMessage", () => {
   });
 
   it("never leaks model or SDK text", () => {
-    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "ReferenceReadError", "QueriesOutputError", "SomethingElse"]) {
+    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "LlmTimeoutError", "LlmCancelledError", "ReferenceReadError", "QueriesOutputError", "SomethingElse"]) {
       expect(turnErrorMessage(named(name))).not.toContain("SECRET");
     }
+    expect(turnErrorMessage(named("LlmTimeoutError"))).toContain("three minutes");
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 429 }))).toContain("busy");
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 503 }))).toContain("problem");
     expect(turnErrorMessage("nope")).toContain("Something went wrong");

@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D43, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D45, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -34,8 +34,8 @@ Defaults; a decision in §5 overrides a row here.
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
 | Hosting | Vercel for app and route handlers. Supabase Postgres for the reference collection only | Existing subscriptions |
 | Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
-| LLM | Anthropic TS SDK, `claude-opus-5`, adaptive thinking, streaming route handlers (`maxDuration` 800s) | Skill default; effort per call (chat `medium`, discovery `high`) |
-| Grounding | Supabase reference collection first, then server-side `web_search_20260209` and `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Sources without scraping; hard constraint enforced in code |
+| LLM | Anthropic TS SDK, `claude-opus-5-5`, adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat and discovery `medium`, queries `high`). See D44, D45 |
+| Grounding | Supabase reference collection, then the model's own knowledge. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Baseline before a larger roles-and-occupations catalogue; hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages + query feedback, in `localStorage`. Sent to the route handler on every turn. Export, import, and "start over" buttons | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
 | Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Per-session spend cap and evidence for a later Sonnet 5 decision. See D4 |
@@ -99,7 +99,7 @@ src/
     reference.ts    # typed reads from the Supabase reference tables (0.4)
     cards.ts        # pasted text → experience cards (1.1)
     elicit.ts       # preference elicitation policy and answer pills (1.2)
-    discover.ts     # fields/roles discovery (1.4)
+    discover.ts     # fields/roles discovery, no web tools (1.4; D44)
     explore.ts      # field drill-down, example posts, LinkedIn guidance (2.2)
     queries.ts      # query generation and revision from feedback (2.3)
     boards.ts       # client-safe board labels, alert steps, query extra keys (2.4; D32)
@@ -121,7 +121,7 @@ data/                  # climate_fields.yaml, example_roles.yaml, example_job_po
 scripts/
   seed.ts              # data/*.yaml → Supabase (mirror; service role)
   try-cards.ts         # stage 1.1 live check
-  try-discover.ts      # stage 1.4 live check (web search)
+  try-discover.ts      # stage 1.4 live check (catalogue-only sources)
   try-explore.ts       # stage 2.2 live check (blocked-host assertion)
   try-queries.ts       # stage 2b.3 live check (three per-field queries + scripted revise)
   check-rls.ts         # asserts the RLS shape against a live stack
@@ -136,10 +136,12 @@ evals/                 # synthetic profiles, structural checks, feedback-loop ev
 
 ## 4. Risks specific to this project
 
-- **Grounding quality is the hypothesis under test.** Web search returns
-  plenty of low-quality career content. Step 1.4's check counts citations,
-  not their quality; the LLM judge in 3.1 is where quality gets measured.
-  Do not skip 3.1.
+- **Grounding quality is the hypothesis under test.** Discovery now runs on
+  the reference collection and the model's own knowledge (D44), so a field
+  outside the collection has no source at all. Step 1.4's check counts
+  citations, not their quality; the LLM judge in 3.1 is where quality gets
+  measured, and it is what decides whether a larger catalogue or bounded
+  search comes back. Do not skip 3.1.
 - **Terms-of-use compliance is code, not policy.** `blocked_domains` in
   `llm.ts` is the enforcement point; 2.2's acceptance check asserts on the
   usage log. Any new fetch path must go through `llm.ts`.
@@ -152,9 +154,10 @@ evals/                 # synthetic profiles, structural checks, feedback-loop ev
   turn. Keep the profile as the compressed memory: after each discovery or
   revision turn the assistant updates profile.md and the UI trims chat
   history to the last N turns.
-- **Vercel function duration.** Discovery and exploration calls with web
-  search can run 1–3 minutes. Route handlers stream and set `maxDuration`
-  to 800s. If a step still times out, split it into search then synthesize.
+- **Vercel function duration.** Discovery runs about 1–2 minutes without
+  web tools. Every model call has a 3-minute deadline (D45), route handlers
+  stream and set `maxDuration` to 800s, and a turn makes at most a few
+  sequential calls.
 - **Builder is a data scientist, app is TypeScript.** Prompts live as plain
   template strings in `src/lib/*.ts`, one per module, so editing a prompt
   never requires touching React.
@@ -169,7 +172,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    collection and anonymous usage rows. Python-on-Vercel rejected (weak
    streaming, cold starts).
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
-   Sonnet 5 for chat turns after Phase 3 using `llm_usage`.
+   Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
+   `claude-opus-5-5`: D44.)
 3. All user state lives in the browser (`localStorage`) and is resent each
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
@@ -350,7 +354,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     `REQUEST_TIMEOUT_MS = 300_000` and `MAX_RETRIES = 1`, and `llm.test.ts`
     asserts `(MAX_RETRIES + 1) × REQUEST_TIMEOUT_MS < MAX_DURATION_SECONDS ×
     1000`, so a stalled attempt plus its retry cannot outlive the Vercel
-    function and lose the usage row for tokens already billed.
+    function and lose the usage row for tokens already billed. (Now bounded
+    by a per-call deadline: D45.)
 28. **Worker model and worker budget are set by measurement, not by taste
     (2026-09-12).** The Gate 0 session and the Phase 1 session shared one
     five-hour limit window; Phase 1 ran out with steps 1.3 and 1.4 unfinished.
@@ -390,6 +395,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     that cite no active card or carry no non-blocked source are dropped and
     counted, never silently kept. Measured cost: ~$0.50 and ~3 minutes per
     profile at `high` effort, roughly half of it the cached catalogue block.
+    (Web tools, the two-call fallback and the "no source → dropped" rule are
+    retired by D44.)
 
     **An identity key is one thing.** Whatever key an apply-back path dedupes
     on must be the key it matches existing rows on, or two drafts survive
@@ -465,7 +472,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     client disconnect now stops the turn at the next step boundary — the
     route's progress callback throws once the stream is cancelled — but a
     model call already in flight still completes, which is `llm.ts`'s
-    deliberate choice so the usage row stays exact.
+    deliberate choice so the usage row stays exact. (Reversed by D45: the
+    call in flight is now aborted.)
 
 36. **Location and work mode are board filters, not elicitation questions.**
     `ELICIT_ORDER` is now `climateInterests`, `seniority`,
@@ -577,6 +585,59 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     preferences locally, opens the drawer to show it, and flips the field's
     button to "Noted". No model call; the next discovery or revision reads
     it. The handoff's "it sharpens the ranking" is not promised in copy.
+
+44. **Opus 5.5 at `medium`, and discovery recalls rather than searches
+    (2026-09-24).** Discovery took 157–252s on Opus 5 at `high` with up to
+    8 searches and 4 fetches, grew with each field key 2b.2 added, and ran
+    into both a 300s non-streamed request timeout and its 16K output cap. One
+    run per variant on the videographer fixture (§6): Opus 5.5 at `medium`
+    with the same tools took 109s and $0.40; with no web at all, 65s and
+    $0.20, with the same six fields and every fit level kept. So:
+    - `MODEL` is `claude-opus-5-5` (priced $4 / $20 per MTok, cache read
+      $0.20, 5-minute cache write $5). Opus 5.5 rejects disabled thinking
+      and defaults to `medium`, so every call still sets effort explicitly.
+    - `discover` joins `cards` and `elicit` at `medium`. `queries` and
+      `revise` stay `high`: short calls, not re-measured.
+    - **Discovery has no web tools.** The baseline is how well Opus 5.5
+      does from the reference collection plus what it already knows. A
+      larger catalogue of roles and occupations is the planned next source;
+      unbounded web search is unlikely to return. The two-call fallback
+      (which existed only because server tools and structured output might
+      not combine) and its research prompts are deleted.
+    - **Sources are catalogue URLs only.** With no search, any other URL is
+      one the model remembers, and a remembered URL can be wrong. The
+      validator removes and counts every source the catalogue does not
+      list. A field or role outside the catalogue is kept with no sources —
+      it is named from the model's knowledge — so D30's "no non-blocked
+      source → dropped" rule is retired; the card-citation rule stands.
+    - `explore.ts` keeps its web tools; no UI path reaches it (D39).
+
+    Re-check with the Phase 3 evals (3.1): if recalled fields turn out
+    wrong or generic, the catalogue comes first, then bounded search.
+
+45. **Every model call streams, has a 3-minute deadline, and stops when the
+    browser goes away (2026-09-24).** Supersedes D27's timeout arithmetic and
+    reverses D35's "a call in flight still completes".
+    - `structured()` streams like `streamText()` (`messages.stream()` +
+      `finalMessage()`), so no HTTP timeout sits under a long answer and
+      the SDK can no longer silently restart one at 300s. Both shapes share
+      a 32K output cap.
+    - `CALL_TIMEOUT_MS = 180_000` bounds one logical call — every attempt,
+      retry and `pause_turn` continuation — through one `AbortSignal`;
+      past it the call fails with `LlmTimeoutError` and the user sees a
+      fixed sentence. Measured calls run 15–110s. `REQUEST_TIMEOUT_MS`
+      equals it, and `maxDuration` stays 800s because a turn makes a few
+      sequential calls.
+    - `CallRequest.signal` aborts a call (`LlmCancelledError`). The turn
+      route fires it when the response stream is cancelled or the request's
+      own signal aborts; `runTurn` wraps each step's `Llm` in `withSignal`,
+      so the step modules pass it on without knowing about it. Leaving the
+      page mid-discovery no longer pays for the whole call.
+    - An aborted call still writes its one usage row (D21). The stream's
+      `message_start` gives input and cache tokens, and `message_delta` the
+      running output count; output tokens generated after the last delta
+      are not reported, so an aborted row undercounts output. A call aborted
+      before any response started writes no row.
 
 ---
 
@@ -698,3 +759,20 @@ the local stack, videographer resume plus a `Notes:` block:
 About $0.90 for the loop. Gate 2b itself — the user's browser run,
 `/code-review` and `/security-review` — has not run; it must run in a
 separate session (AGENTS.md).
+
+**Discovery latency (2026-09-24, D44).** The user's browser run of
+discovery never finished: no usage row, no server error. It was one long
+non-streamed call, so it met the 300s request timeout and its silent retry.
+Timed on the videographer fixture, one run per variant (~$1.64 total):
+
+| Variant | Time | Cost | Fields / roles | URLs not from the catalogue |
+|---|---|---|---|---|
+| Opus 5, `high`, 8 searches + 4 fetches (before) | 226s | $0.69 | 6 / 17 | 14 |
+| Opus 5.5, `medium`, same tools | 109s | $0.40 | 6 / 13 | 13 |
+| Opus 5.5, `medium`, 3 searches, no fetch | 97s | $0.36 | 6 / 14 | 0 |
+| Opus 5.5, `medium`, no web (shipped) | 65s | $0.20 | 6 / 13 | 1 (recalled) |
+
+None dropped a field and every field kept its fit level. Web fetch was never
+used. One run each, so the numbers are rough; earlier Opus 5 `high` runs
+ranged from 157s to 252s.
+
