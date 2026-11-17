@@ -75,6 +75,39 @@ covered by the evals in `evals/` (Phase 3), not by unit tests. Test files are
 `src/**/*.test.ts`; `vitest.config.ts` excludes `.next/` so build output is
 never collected.
 
+## Looking at the UI (Playwright MCP)
+
+Agents can see the running app through the Playwright MCP server in a
+throwaway browser. **Use it only when the user explicitly asks** (AGENTS.md,
+"Context and turn budget"). Each contributor registers it once, local scope
+(private, not committed). Run it from the repo root so `$PWD` expands to
+the repo:
+
+```bash
+claude mcp add playwright --scope local -- \
+  npx -y @playwright/mcp@latest --isolated --headless \
+  --allowed-origins "http://localhost:3000" \
+  --output-dir "$PWD/.playwright-mcp"
+```
+
+- `--isolated` is required: the profile lives in memory and is discarded,
+  so no cookies or sign-ins persist. Without it the profile is saved under
+  `~/Library/Caches/ms-playwright/`. Never drive the user's own Chrome
+  (Claude in Chrome) for this app.
+- `--allowed-origins` keeps the browser on the dev server. Playwright says it
+  is not a security boundary; the isolation comes from `--isolated`.
+- `--output-dir` keeps every artifact (screenshots, snapshots, console logs)
+  in `.playwright-mcp/` in the repo, which is gitignored: local only, never
+  scattered outside the repo. Pass screenshot `filename`s as bare names so
+  they land there too; delete the folder whenever you like.
+- Set a local-only `APP_PASSCODE` in `.env.local`: the agent types it into
+  the gate and it lands in the transcript.
+- Flow: `pnpm dev` → `/enter` → passcode → screen. Prefer
+  `browser_snapshot` (text) for structure and repeated labels;
+  take a screenshot only to judge layout. Close the browser and stop
+  `pnpm dev` afterwards. Any turn the browser triggers is a live, billed
+  Claude call.
+
 ## Environment variables
 
 Copy `.env.example` to `.env.local`. `.env*` is gitignored except

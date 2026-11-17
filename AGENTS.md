@@ -116,6 +116,10 @@ turn, and a worker's cost grows with the square of how long it runs.
   `pnpm test && pnpm lint && pnpm typecheck 2>&1 | tail -30`, then
   `pnpm build` once before the commit. Not after every edit.
 - Web-search volume is not the problem and is not capped.
+- **No browser runs unless the user asks.** Playwright MCP (setup in
+  CLAUDE.md, "Looking at the UI") is never used for routine verification:
+  every snapshot and screenshot is re-billed on each later turn. Only run it
+  when the user explicitly asks, in that session or in the kickoff prompt.
 
 ## Reporting
 

@@ -43,3 +43,6 @@ next-env.d.ts
 
 # Agent worktrees created by Claude Code's isolation: worktree mode
 .claude/worktrees/
+
+# Playwright MCP output (screenshots, snapshots, console logs): local only
+/.playwright-mcp/
