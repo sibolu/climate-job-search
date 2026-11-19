@@ -20,7 +20,8 @@ old PLAN.md backlog.
   only way back is "Start over" (2b.11). Wanted: change an answer, a card,
   a skill or a ticked role from anywhere, and show a before/after of the
   profile entries that changed. Builds on the readable profile summary
-  (2b.11) and the pre-turn snapshot in `screens.ts`. *(2026-11-17 run)*
+  (2b.11); the pre-turn snapshot `screens.ts` kept for accept-or-keep was
+  deleted with the feedback screen in 2b.12 (D51). *(2026-11-17 run)*
 - **Seniority as a choice.** The seniority question and seniority in role
   titles are out (2b.9). Bring seniority back as an explicit option on the
   Roles screen: titles on par with the resume, one level below, or any.
@@ -56,7 +57,7 @@ old PLAN.md backlog.
   the user's own field that have serious mitigation commitments, so a
   "stay in your function, change employer" path is visible. Would be a new
   reference table (seeded from the dataset, licence to check) and a new
-  source of ground truth in `docs/data-flow.md`. *(2026-11-17 run)*
+  source of ground truth in `docs/data-flow.html`. *(2026-11-17 run)*
 - **Example companies as links.** Turn the "Example companies" list into
   the top employers for the role, each clickable to its corporate careers
   page. Needs a vetted URL per company (reference data or a bounded
@@ -66,6 +67,11 @@ old PLAN.md backlog.
   BLS employment-by-region evidence shows the number of jobs for some
   roles or industries varies enough to change which fields are suggested,
   not just filter them. *(pre-2b; 2026-11-17 run)*
+- **Re-rank on a per-field answer.** Answering a field's question saves a
+  preference and changes nothing on screen (D43, D50). Wanted: the answer
+  re-orders that field's roles, or the fields, without a full discovery
+  re-run. Needs a cheap call or a rule, and copy that says what changed.
+  *(pre-2b)*
 - **"Dig deeper" on a role group.** Re-attach `explore.ts` as an optional
   block: day-to-day, titles, example posts, keywords (D39). *(pre-2b)*
 

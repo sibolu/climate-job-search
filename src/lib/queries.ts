@@ -38,7 +38,7 @@
  * - No seniority words and no location or work-mode wording in a query: the
  *   prompt forbids both, and neither preference is rendered into the
  *   generation message (LinkedIn filters on them itself, technical-plan.md
- *   D36). {@link levelWordsIn} reports level words for the CLI check.
+ *   D36). {@link levelPhrasesIn} reports level words for the CLI check.
  * - Revision: a `narrow` rewrites an untried, unretired query in place; a
  *   narrow aimed at a judged query becomes an added LinkedIn query under a
  *   new id that keeps the judged query's fields and `Role`. An added query
@@ -53,6 +53,7 @@
 
 import { z } from "zod";
 
+import { LEADING_LEVEL_MODIFIERS, LEVEL_HEADS, LEVEL_MODIFIERS, hasLevelWord } from "./discover";
 import type { CallMetrics, Llm } from "./llm";
 import {
   type Board,
@@ -98,40 +99,25 @@ export const WHY_KEY = "Rationale";
 export const STATUS_NOTE_KEY = "Status note";
 
 /**
- * Words that say how senior a job is rather than what the job is. The prompts
- * forbid them in every query; {@link levelWordsIn} finds them afterwards.
+ * The phrases of a query that carry a level word, lowercased and
+ * deduplicated: each quoted phrase and each run of bare words between
+ * operators and brackets is checked as a title would be. What counts as a
+ * level word is defined once, in `discover.ts` (technical-plan.md D48), and
+ * the prompts below list the same words. A check for the CLI and tests, never
+ * a reason to fail a turn.
  */
-export const LEVEL_WORDS = [
-  "senior",
-  "sr",
-  "junior",
-  "jr",
-  "lead",
-  "principal",
-  "staff",
-  "entry-level",
-  "mid-level",
-  "head",
-  "director",
-  "VP",
-  "vice president",
-  "chief",
-  "intern",
-] as const;
-
-const LEVEL_WORD_PATTERN = new RegExp(
-  `\\b(${LEVEL_WORDS.map((w) => w.replace(/[- ]/g, "[- ]")).join("|")})\\b`,
-  "gi",
-);
-
-/**
- * The level words a query text contains, lowercased and deduplicated. A
- * check for the CLI and tests, never a reason to fail a turn: "lead" and
- * "staff" also occur in honest domain terms ("lead generation").
- */
-export function levelWordsIn(text: string): string[] {
-  const found = text.match(LEVEL_WORD_PATTERN) ?? [];
-  return [...new Set(found.map((w) => w.toLowerCase()))];
+export function levelPhrasesIn(query: string): string[] {
+  const phrases: string[] = [];
+  const bare = query.replace(/"([^"]*)"/g, (_match, phrase: string) => {
+    phrases.push(phrase);
+    return " ( ";
+  });
+  phrases.push(...bare.split(/[()]|\b(?:AND|OR|NOT)\b/));
+  const found = phrases
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter((p) => p !== "" && hasLevelWord(p))
+    .map((p) => p.toLowerCase());
+  return [...new Set(found)];
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +175,7 @@ const LINKEDIN_SYNTAX = `LinkedIn syntax. Every query must paste straight into t
 - LinkedIn's job search supports nothing else. No wildcards (*), no + or - prefixes, no brackets or braces, no field operators such as title: or company:, no site:.
 - Stay under about 200 characters. Every extra AND group removes real jobs from the results, so a short query that finds twenty relevant postings beats a precise one that finds none.`;
 
-const NO_LEVEL_WORDS = `No seniority or level words anywhere in a query. A level word says how senior the job is, not what the job is: ${LEVEL_WORDS.join(", ")}, and grade numerals such as II or III. When a role title carries one, drop it and keep the function: "Senior Mechanical Engineer" becomes "mechanical engineer". If dropping it leaves no job title ("Head of Partnerships"), use the titles employers post for that work ("partnerships manager" OR "business development manager"). Words that name the job itself stay: "project manager", "program manager", "account executive". LinkedIn has its own experience-level filter, and a level word in the keyword box hides every posting that words the level differently.`;
+const NO_LEVEL_WORDS = `No seniority or level words anywhere in a query. A level word says how senior the job is, not what the job is. That covers a level modifier wherever it appears (${LEVEL_MODIFIERS.join(", ")}), one of these in front of a job title (${LEADING_LEVEL_MODIFIERS.join(", ")}), a rank (${LEVEL_HEADS.join(", ")}), and grade numerals such as II or III. When a role title carries one, drop it and keep the function: "Senior Mechanical Engineer" becomes "mechanical engineer". If dropping it leaves no job title ("Head of Partnerships"), use the titles employers post for that work ("partnerships manager" OR "business development manager"). Words that name the job itself stay: "project manager", "program manager", "account executive", and a word from the second list when it closes the title as the job's own noun ("research associate", "maintenance lead"). LinkedIn has its own experience-level filter, and a level word in the keyword box hides every posting that words the level differently.`;
 
 const NO_LOCATION = `No location or work-mode wording in a query: no city, state, region or country, and no "remote", "hybrid" or "on-site". The person sets those with LinkedIn's own filters beside the search box.`;
 
@@ -199,7 +185,7 @@ ${LINKEDIN_SYNTAX}
 
 Build each query in this order:
 1. Title group. Start from the role's title as employers post it: keep the job function and drop anything after a comma or in brackets, which describes the focus and belongs in step 2 if anywhere. Add one or two alternate titles that employers use for the same job, joined with OR. Do not add titles for different jobs.
-2. Field group. AND the title group with two to four terms that postings in the role's field actually contain: the technology, product, sector or programme names found in the field's name, summary and fit, and in the role's focus. Join them with OR. Never use a generic word such as climate, sustainability, green or "clean energy" as a field term on its own; those words sit in every employer's boilerplate and narrow nothing.
+2. Field group. AND the title group with two to four terms that postings in the role's field actually contain: the technology, product, sector or programme names found in the field's name, summary and fit, and in the role's focus. Join them with OR. Every field term names what the employer works on, so that the group on its own would pick out employers in this field. A term that only describes the job's craft, medium or setting (for a video role: documentary, newsroom, broadcast) repeats the title group and returns the same job at any employer. Never use a generic word such as climate, sustainability, green or "clean energy" as a field term on its own; those words sit in every employer's boilerplate and narrow nothing. When the field's subject is climate or the environment itself, as in climate journalism or climate policy, do not leave the subject out: use the specific phrases such postings carry, such as "climate change", "climate policy", "environmental justice" or "energy transition".
 3. Expertise group, optional. Add a third AND group drawn from the person's areas of expertise only when the first two groups would still return mostly jobs outside what they do, and only with terms a posting for this role would plausibly contain. When in doubt, leave it out.
 4. NOT, rarely. Use NOT only to remove one specific wrong kind of result that the person named when judging an earlier search.
 The shape, shown with made-up vocabulary: ("video producer" OR videographer OR "multimedia producer") AND (solar OR "community solar" OR "energy storage"). Take the shape from this, never the words.

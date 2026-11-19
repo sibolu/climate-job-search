@@ -210,7 +210,8 @@ describe("policy tables", () => {
     // The screen has pills and no text box, so a question may not invite typing.
     for (const key of ELICIT_ORDER) {
       expect(QUESTIONS[key]).not.toMatch(/\btyp(?:e|ing)\b|tell me|describe|your own|\bwrite\b/i);
-      expect(QUESTIONS[key]).toMatch(/\btap\b/i);
+      // They sit inline on a form: no assistant voice, no instruction to tap (technical-plan.md D49).
+      expect(QUESTIONS[key]).not.toMatch(/\b(?:I|I'll|I'd|me|let's)\b|\btap\b|\bbelow\b/i);
       // Someone who cannot choose still has a pill to tap.
       expect(pillsFor(key, CTX).some((pill) => /not sure/i.test(pill.label))).toBe(true);
     }

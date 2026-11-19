@@ -12,8 +12,8 @@ environment, the hard constraints, and the rules each module enforces.
   comments cite them as `technical-plan.md D31`. Append a new decision there
   in the same commit as the change; never renumber. Do not rely on Claude's
   private memory for anything another contributor would need.
-- **Keep `docs/data-flow.html` current.** Two flows (paste → fields,
-  field board → queries): one box per Anthropic API call with links to its
+- **Keep `docs/data-flow.html` current.** Two flows (paste → fields and
+  roles, ticked roles → LinkedIn searches): one box per Anthropic API call with links to its
   prompt, and which `profile.md` sections each call or click reads and
   writes. Update it when an API call, a profile-writing click, a data store
   or a source of ground truth is added or removed, or a prompt moves.
@@ -63,10 +63,10 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm seed` | `data/*.yaml` → Supabase reference tables (mirror, service role) |
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
-| `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or a skill |
-| `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data, no web (D44) → ranked fields and roles; non-zero if any lacks a card citation or cites a URL the catalogue does not list |
+| `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or an area of expertise, or any expertise phrase runs over six words (D48) |
+| `pnpm try:discover <profile.md> [out.md] [--interest=<pill value>] [--retraining=<pill value>]` | Stage 1.4 live: profile + reference data, no web (D44) → ranked fields and roles; non-zero if any lacks a card citation or cites a URL the catalogue does not list, or a role title carries a level word (D48); a cited card with no evidence line is a warning. The two flags set the preference answers the way the pills do |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
-| `pnpm try:queries <profile.md> [out.md] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--revise` then revises from a scripted "bad fit" feedback |
+| `pnpm try:queries <profile.md> [out.md] [--tick R1,R4] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--tick` ticks those roles first, as the Roles screen would; `--revise` then revises from a scripted "bad fit" feedback |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -298,7 +298,8 @@ canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
   technical-plan.md D47) and `feedback` (revise; still dispatched, but
   nothing in the browser sends it). The one remaining text convention, `exploreChatText`
   in `workspace.ts`, serves the `explore` step that only scripts reach (D39);
-  `GO_PILL` lives in `turn.ts`. Change text there, never inline.
+  the "Find climate roles" pill is `FIND_ROLES_PILL` in `screens.ts`, which
+  `turn.ts` re-exports as `GO_PILL`. Change text there, never inline.
 - User-facing error text comes only from `turnErrorMessage`; the route logs
   the error class and step, never the message or the body.
 - `maxDuration` in a route file must be a numeric literal and the file may
@@ -306,11 +307,15 @@ canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
   `route.test.ts` pins the literal to `MAX_DURATION_SECONDS`.
 - Client components import only browser-safe modules: `profile.ts`,
   `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`, `elicit.ts`
-  (its `llm` import is type-only) and `screens.ts`. `cards.ts` is server-only.
-- The UI is `src/components/shell/` (technical-plan.md §2, D37–D43): one
-  shell, no tabs, no composer. Pure screen logic (which screen, question
-  order, log lines, the pre-turn snapshot for accept-or-keep) is in
-  `src/lib/screens.ts` with unit tests; components hold no policy.
+  (its `llm` import is type-only), `screens.ts` and `profile-summary.ts`.
+  `cards.ts` is server-only.
+- The UI is `src/components/shell/` (technical-plan.md §2, D37, D42, D43,
+  D47–D51): one centred column, no rail, no tabs, no composer, and no
+  feedback screen. Pure screen logic (which screen, nav gating, question
+  order, the "Find climate roles" gate, log lines, role groups, card ids
+  rendered as titles, search cards) is in `src/lib/screens.ts`, and the
+  drawer's readable summary in `src/lib/profile-summary.ts`, both with unit
+  tests; components hold no policy.
 
 ## Passcode gate
 

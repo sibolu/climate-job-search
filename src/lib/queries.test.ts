@@ -15,11 +15,11 @@ import {
   setRoleSelected,
   upsertQuery,
 } from "./profile";
+import { LEADING_LEVEL_MODIFIERS, LEVEL_HEADS, LEVEL_MODIFIERS } from "./discover";
 import {
   ALERT_STEPS,
   BOARDS,
   type GenerateOutput,
-  LEVEL_WORDS,
   QUERIES_SYSTEM_PROMPT,
   QUERY_BOARDS,
   QueriesInputError,
@@ -36,7 +36,7 @@ import {
   buildReviseMessage,
   generateOutputSchema,
   generateQueries,
-  levelWordsIn,
+  levelPhrasesIn,
   queryKey,
   reviseQueries,
   validateRoleDrafts,
@@ -117,7 +117,8 @@ describe("generation prompt", () => {
     expect([...QUERY_BOARDS]).toEqual(["linkedin"]);
     for (const prompt of [QUERIES_SYSTEM_PROMPT, REVISE_SYSTEM_PROMPT]) {
       expect(prompt).toContain("No seniority or level words anywhere in a query");
-      for (const word of LEVEL_WORDS) expect(prompt).toContain(word);
+      // The words come from discover.ts, the one owner of what a level word is (technical-plan.md D48).
+      for (const word of [...LEVEL_MODIFIERS, ...LEADING_LEVEL_MODIFIERS, ...LEVEL_HEADS]) expect(prompt).toContain(word);
       expect(prompt).toContain("No location or work-mode wording in a query");
       expect(prompt).not.toMatch(/indeed|climatebase/i);
     }
@@ -167,16 +168,20 @@ describe("generation prompt", () => {
     expect(schema.safeParse({ R3: one, R5: { query: "q" } }).success).toBe(false);
   });
 
-  it("levelWordsIn finds seniority words whole-word and case-insensitively", () => {
-    expect(levelWordsIn('("Senior Mechanical Engineer" OR "lead engineer") AND "Vice President"')).toEqual([
-      "senior",
-      "lead",
+  it("levelPhrasesIn reports each query phrase that carries a level word, by discover.ts's rules", () => {
+    expect(levelPhrasesIn('("Senior Mechanical Engineer" OR "lead engineer") AND "Vice President"')).toEqual([
+      "senior mechanical engineer",
+      "lead engineer",
       "vice president",
     ]);
-    expect(levelWordsIn('("mechanical engineer" OR "project manager") AND (leadership OR internal OR "entry level")')).toEqual([
+    expect(levelPhrasesIn('("mechanical engineer" OR "project manager") AND (leadership OR internal OR "entry level")')).toEqual([
       "entry level",
     ]);
-    expect(levelWordsIn(TEXT.R1 ?? "")).toEqual([]);
+    // Bare words between operators are one phrase; a level word that is the job's own noun is not a level.
+    expect(levelPhrasesIn('(senior analyst OR "research associate" OR "maintenance lead") AND ("lead generation" OR solar)')).toEqual([
+      "senior analyst",
+    ]);
+    expect(levelPhrasesIn(TEXT.R1 ?? "")).toEqual([]);
   });
 });
 

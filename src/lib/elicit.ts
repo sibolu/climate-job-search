@@ -86,7 +86,7 @@ import type { AnswerPill } from "./session";
  * person to the board's own location and remote/hybrid filter
  * (`ALERT_STEPS` in `boards.ts`) rather than spending a conversational turn
  * on them. Both remain {@link PreferenceKey}s: still inferred from the cards
- * by {@link inferPreferences}, still editable in the Profile tab, still
+ * by {@link inferPreferences}, still shown in the profile drawer, still
  * settable from query feedback — only the asking stops.
  */
 export const ELICIT_ORDER: readonly PreferenceKey[] = ["climateInterests", "retrainingAppetite"];
@@ -152,21 +152,19 @@ export function nextMissingPreference(p: Profile): PreferenceKey | undefined {
 
 /**
  * One question per key. Each is exactly one question sentence — the
- * acceptance test counts question marks — framed by a sentence on why it
- * matters, the way a career coach would ask rather than a form.
+ * acceptance test counts question marks.
  *
- * The two asked keys ({@link ELICIT_ORDER}) must be answerable by a tap: the
- * screen shows pills and no text box (technical-plan.md D48), so neither may
- * invite typing, and each has a pill for someone who cannot choose. The other
- * three are never asked; their wording stays for {@link interpretAnswer},
- * which quotes the question a reply was given to.
+ * The two asked keys ({@link ELICIT_ORDER}) sit inline on a form above their
+ * pills, with no chat and no assistant voice (technical-plan.md D48, D49): a
+ * plain question, then one short sentence on what the answer changes. No
+ * "I", no instruction to tap or type, and each has a pill for someone who
+ * cannot choose. The other three are never asked; their wording stays for
+ * {@link interpretAnswer}, which quotes the question a reply was given to.
  */
 export const QUESTIONS: Record<PreferenceKey, string> = {
   climateInterests:
-    "Let's start with what draws you to climate work, since it decides which fields I show you first. " +
-    "Which part of the climate picture do you lean toward? " +
-    "Tap the closest one below. If none stands out yet, \"Not sure yet\" is a perfectly good " +
-    "answer, and I'll show you options across all of them.",
+    "Which area of climate work interests you most? " +
+    "The answer decides which roles are listed first.",
   location:
     "Now, geography, because it changes which employers are even in reach. " +
     "Where do you want to be based? " +
@@ -181,10 +179,8 @@ export const QUESTIONS: Record<PreferenceKey, string> = {
     "Pick the closest level below — I'll use it to aim at roles at the right level, " +
     "not a step down just because the sector is new to you.",
   retrainingAppetite:
-    "Last one: how much retraining are you up for? " +
-    "Some moves reuse what you already do, others need a certificate or a longer course, " +
-    "and I'd rather show you options that match the time you actually want to spend. " +
-    "Tap the closest fit below.",
+    "How much retraining are you open to? " +
+    "The answer sets how far the listed roles can be from the work you do now.",
 };
 
 /**

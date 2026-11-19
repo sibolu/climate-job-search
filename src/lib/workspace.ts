@@ -39,8 +39,9 @@ import { appendMessage } from "./session";
 // ---------------------------------------------------------------------------
 
 /**
- * What triggered the turn: the chat box, the Profile tab's paste box, or one
- * of the buttons on the Fields / Queries tabs.
+ * What triggered the turn: the first-run paste, a pill or button on a
+ * screen, or (scripts only) a typed message, an explore request or query
+ * feedback.
  */
 export type TurnSource = "chat" | "paste" | "explore" | "queries" | "feedback";
 
@@ -101,7 +102,7 @@ export function rejectProfileSkill(state: SessionState, skill: string): SessionS
   return updateProfile(state, (p) => rejectSkill(p, skill));
 }
 
-/** Cards in file order, excluded ones included — the Profile tab lists them all. */
+/** Cards in file order, excluded ones included — Highlights lists them all. */
 export function allCards(profile: Profile): Card[] {
   return profile.cards;
 }
@@ -145,10 +146,10 @@ export function applyTurnResponse(state: SessionState, response: TurnResponse): 
 export const EXPORT_FILENAME = "profile-session.json";
 
 // ---------------------------------------------------------------------------
-// Fields tab
+// Fields and roles
 // ---------------------------------------------------------------------------
 
-/** Sets a field's status from the Fields tab. A local edit — no server call. */
+/** Sets a field's status. A local edit, no server call; no screen calls it while fields are unmarked headings (technical-plan.md D50). */
 export function setProfileFieldStatus(
   state: SessionState,
   fieldId: string,
@@ -177,7 +178,7 @@ export function unassignedRoles(profile: Profile): Role[] {
 }
 
 // ---------------------------------------------------------------------------
-// Queries tab
+// Searches
 // ---------------------------------------------------------------------------
 
 /**

@@ -81,7 +81,7 @@ export const SessionStateSchema = z.object({
 });
 export type SessionState = z.infer<typeof SessionStateSchema>;
 
-/** "Tried it" feedback on one query, from the Queries tab. */
+/** Feedback on one query. Nothing in the browser sends it in the alpha (technical-plan.md D51). */
 export const QueryFeedbackSchema = z.object({
   queryId: z.string().regex(/^Q\d+$/),
   verdict: z.enum(["good", "bad"]),

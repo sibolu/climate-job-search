@@ -217,7 +217,7 @@ describe("acceptance: reload, export round-trip, start over", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Fields and Queries tabs (step 2.4)
+// Fields, roles and searches
 // ---------------------------------------------------------------------------
 
 function query(id: string, overrides: Partial<Query> = {}): Query {

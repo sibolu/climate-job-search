@@ -155,7 +155,7 @@ export function discoverMessage(result: DiscoverResult): string {
   if (fields.length === 0) {
     return [
       "I could not find climate fields I can tie to these cards.",
-      "Add a card or two with more detail about what you actually did, or tell me a climate area you care about, and I will try again.",
+      "More detail on the experience cards about what the work involved gives discovery more to match against.",
     ].join("\n\n");
   }
   const n = fields.length;
@@ -163,15 +163,16 @@ export function discoverMessage(result: DiscoverResult): string {
     `Here ${n === 1 ? "is" : "are"} ${String(n)} climate field${n === 1 ? "" : "s"} where your experience could land, ranked.`,
     ...fields.map((f) => fieldBlock(profile, f)),
   ];
-  const left = dropped.fieldsUncited + dropped.rolesUncited + dropped.fieldsSurplus;
-  if (left > 0) {
-    parts.push(
-      `I left out ${String(left)} suggestion${left === 1 ? "" : "s"} that did not connect to your experience cards.`,
-    );
-  }
-  parts.push(
-    "Open the Fields tab to accept, reject or mark each one unsure, or pick one below to see titles, employers and example posts.",
-  );
+  // Every kind of drop is counted under its own reason (technical-plan.md D48 for titles).
+  const count = (k: number, noun: string) => `${String(k)} ${noun}${k === 1 ? "" : "s"}`;
+  const uncited = dropped.fieldsUncited + dropped.rolesUncited;
+  const leftOut = [
+    uncited > 0 ? `${count(uncited, "suggestion")} that cited none of your experience cards` : "",
+    dropped.rolesLevelTitled > 0 ? `${count(dropped.rolesLevelTitled, "role")} titled by rank rather than occupation` : "",
+    dropped.fieldsSurplus > 0 ? `${count(dropped.fieldsSurplus, "field")} beyond the number shown` : "",
+  ].filter((reason) => reason !== "");
+  if (leftOut.length > 0) parts.push(`Left out: ${leftOut.join("; ")}.`);
+  parts.push("On the Roles screen, tick the roles you want a LinkedIn search for.");
   return parts.join("\n\n");
 }
 
@@ -188,7 +189,7 @@ export function queriesMessage(result: GenerateQueriesResult): string {
   const lines = [
     `${intro}${refreshed}:`,
     ...written.map((q) => `- **${title(q)}** (${q.id}): ${q.query}`),
-    "Open Searches to copy each one into LinkedIn, set an email alert, and say how it went.",
+    "The Searches screen lists each one to copy into LinkedIn, with the steps to set an email alert.",
   ];
   return lines.join("\n");
 }
@@ -317,8 +318,8 @@ export async function runTurn(
         const pills = explorePills(profile);
         const ask =
           profile.fields.length === 0
-            ? "There are no fields on file yet. Say \"go\" and I will look for climate fields that fit your experience."
-            : "Which field should I look into? Pick one below, or use the Fields tab.";
+            ? "There are no fields on the profile yet; discovery has to run first."
+            : "Which field should be explored? Name it by id, such as F1.";
         return respond(profile, [ask, ...note], profile.fields.length === 0 ? [GO_PILL] : pills);
       }
       onProgress(`Looking into ${field.name}: titles, employers, example posts…`);

@@ -1,6 +1,7 @@
 /**
- * `pnpm try:discover <profile.md> [profile.md-out]` — the Phase 1.4
- * acceptance check, and the Gate 1 script to run on a real profile.
+ * `pnpm try:discover <profile.md> [profile.md-out] [--interest=<pill value>]
+ * [--retraining=<pill value>]` — the Phase 1.4 acceptance check, and the
+ * Gate 1 script to run on a real profile.
  *
  * It reads a `profile.md`, runs `discoverFields` (one live `discover` call
  * through `src/lib/llm.ts`, no web tools — technical-plan.md D44), prints the
@@ -8,11 +9,19 @@
  * exploration-first card (sector, fit level, summary, chips, evidence lines,
  * ask, sources) to stderr, and exits non-zero if any field or role written
  * this run lacks a card citation or cites a URL the catalogue does not list,
- * or any field lacks a fit level, a sector, an evidence line per cited card,
- * or an ask (technical-plan.md D39).
+ * any field lacks a fit level, a sector or an ask (technical-plan.md D39), or
+ * a role title carries a level word (D48). A card the fit text cites with no
+ * evidence line of its own is a warning, not a failure: `validateOutput`
+ * keeps such a field and no screen renders evidence lines (D50), so failing
+ * on it would hold the script to a rule the product does not have.
+ *
+ * `--interest` and `--retraining` record the two pill-only answers the app
+ * collects before discovery (D48), the way the app does: the value must be
+ * one of the pills `pillsFor` offers and is written with `applyPillAnswer`.
+ * An unknown value lists the pills and exits before any model call.
  *
  *   pnpm try:discover src/lib/__fixtures__/discover/videographer.md
- *   pnpm try:discover profile.md out/profile.md
+ *   pnpm try:discover profile.md out/profile.md --interest="open to suggestions" --retraining="none, use existing skills"
  *
  * It never echoes the profile except as the output the app would store in
  * the browser. Needs `ANTHROPIC_API_KEY` and the local Supabase stack (the
@@ -24,11 +33,19 @@ import process from "node:process";
 
 import { DiscoverInputError, discoverFields, droppedSummary } from "../src/lib/discover";
 import { catalogueSourceUrls, citedActiveCardIds, hasLevelWord } from "../src/lib/discover";
-import { listFields, listRoles } from "../src/lib/reference";
-import { parseProfile, serializeProfile } from "../src/lib/profile";
+import { applyPillAnswer, pillsFor } from "../src/lib/elicit";
+import { listFields, listRoles, listSectorGroups } from "../src/lib/reference";
+import { type PreferenceKey, parseProfile, serializeProfile } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
 
-const USAGE = "usage: pnpm try:discover <profile.md> [profile.md-out]";
+const USAGE =
+  "usage: pnpm try:discover <profile.md> [profile.md-out] [--interest=<pill value>] [--retraining=<pill value>]";
+
+/** The two questions the app asks before discovery (technical-plan.md D48), by flag. */
+const ANSWER_FLAGS: Readonly<Record<string, PreferenceKey>> = {
+  "--interest": "climateInterests",
+  "--retraining": "retrainingAppetite",
+};
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
@@ -36,8 +53,10 @@ function fail(message: string): never {
 }
 
 async function main(): Promise<void> {
-  const [input, output] = process.argv.slice(2);
-  if (input === undefined || input === "-h" || input === "--help") fail(USAGE);
+  const args = process.argv.slice(2);
+  const flags = args.filter((a) => a.startsWith("-"));
+  const [input, output] = args.filter((a) => !a.startsWith("-"));
+  if (input === undefined || flags.some((f) => ANSWER_FLAGS[f.split("=")[0] ?? ""] === undefined)) fail(USAGE);
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -51,8 +70,22 @@ async function main(): Promise<void> {
   const parsed = parseProfile(md);
   for (const w of parsed.warnings) process.stderr.write(`warning: ${w}\n`);
 
+  let profile = parsed.profile;
+  if (flags.length > 0) {
+    const ctx = { sectorGroups: await listSectorGroups() };
+    for (const flag of flags) {
+      const [name = "", ...rest] = flag.split("=");
+      const key = ANSWER_FLAGS[name];
+      if (key === undefined) fail(USAGE);
+      const pills = pillsFor(key, ctx);
+      const pill = pills.find((p) => p.value === rest.join("="));
+      if (pill === undefined) fail(`${name} takes one of: ${pills.map((p) => `"${p.value}"`).join(", ")}`);
+      profile = applyPillAnswer(profile, key, pill);
+    }
+  }
+
   const started = Date.now();
-  const result = await discoverFields({ sessionId: newSessionId(), profile: parsed.profile }).catch(
+  const result = await discoverFields({ sessionId: newSessionId(), profile }).catch(
     (error: unknown) => {
       if (error instanceof DiscoverInputError) fail(error.message);
       throw error;
@@ -93,6 +126,7 @@ async function main(): Promise<void> {
   const [catFields, catRoles] = await Promise.all([listFields(), listRoles()]);
   const catalogue = catalogueSourceUrls(catFields, catRoles);
   const problems: string[] = [];
+  const unevidenced: string[] = [];
   if (result.fields.length < 4) problems.push(`expected >=4 fields, got ${String(result.fields.length)}`);
   for (const f of result.fields) {
     if (citedActiveCardIds(f.fit, result.profile).length === 0) problems.push(`${f.id} cites no card`);
@@ -104,7 +138,7 @@ async function main(): Promise<void> {
     if (f.chips.length === 0) problems.push(`${f.id} has no chips`);
     const evidenced = new Set(f.evidence.map((e) => e.cardId));
     for (const id of citedActiveCardIds(f.fit, result.profile)) {
-      if (!evidenced.has(id)) problems.push(`${f.id} cites ${id} without an evidence line`);
+      if (!evidenced.has(id)) unevidenced.push(`${f.id} cites ${id} without an evidence line`);
     }
     if (f.ask === undefined) problems.push(`${f.id} has no ask`);
   }
@@ -114,9 +148,10 @@ async function main(): Promise<void> {
     if (hasLevelWord(r.title)) problems.push(`${r.id} has a level word in its title`);
     for (const u of r.sources) if (!catalogue.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
   }
+  for (const w of unevidenced) process.stderr.write(`warning: ${w}\n`);
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
   process.stderr.write(
-    "PASS: every field has a fit level, sector, an evidence line per cited card and an ask; every field and role cites a card and only catalogue URLs; no role title carries a level word\n",
+    "PASS: every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs; no role title carries a level word\n",
   );
 }
 

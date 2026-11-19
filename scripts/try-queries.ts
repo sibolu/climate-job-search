@@ -1,15 +1,17 @@
 /**
- * `pnpm try:queries <profile.md> [profile.md-out] [--revise]` — the 2b.8
- * acceptance check, live (technical-plan.md D47).
+ * `pnpm try:queries <profile.md> [profile.md-out] [--tick R1,R4] [--revise]`
+ * — the 2b.8 acceptance check, live (technical-plan.md D47).
  *
  * It reads a `profile.md` and runs `generateQueries` once (one `queries` call
  * through `src/lib/llm.ts`, no web tools) for every role with
- * `Selected: yes` across all fields. It ticks nothing itself: the fixture has
- * three selected roles in two fields. It prints one line per selected role
- * to stderr with the role id, title, field and LinkedIn query, and exits
- * non-zero unless the number of live LinkedIn queries carrying a `Role`
- * equals the number of selected roles, one per role. A query containing a
- * seniority word is reported as a warning, not a failure.
+ * `Selected: yes` across all fields. The fixture has three selected roles in
+ * two fields; `--tick` ticks more with `setRoleSelected` first, as the Roles
+ * screen does, so discovery output can be fed in without editing it. It
+ * prints one line per selected role to stderr with the role id, title, field
+ * and LinkedIn query, and exits non-zero unless the number of live LinkedIn
+ * queries carrying a `Role` equals the number of selected roles, one per
+ * role. A query phrase carrying a level word is reported as a warning, not a
+ * failure.
  *
  * With `--revise` it then runs `reviseQueries` with the scripted feedback
  * "bad fit: all roles need PE license" on the first query just written for a
@@ -20,6 +22,7 @@
  * The final `profile.md` goes to stdout, or to the out file when given.
  *
  *   pnpm try:queries src/lib/__fixtures__/queries/engineer.md
+ *   pnpm try:queries discovered.md out.md --tick R1,R4,R2
  *
  * It never echoes the profile except as the output the app would store in
  * the browser. Needs `ANTHROPIC_API_KEY`; the usage row insert needs the
@@ -29,21 +32,22 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
-import { type Profile, parseProfile, serializeProfile } from "../src/lib/profile";
+import { type Profile, parseProfile, serializeProfile, setRoleSelected } from "../src/lib/profile";
 import {
   QueriesInputError,
   QueriesOutputError,
   RETIRED_KEY,
   droppedSummary,
   generateQueries,
-  levelWordsIn,
+  levelPhrasesIn,
   reviseQueries,
 } from "../src/lib/queries";
 import { newSessionId } from "../src/lib/session";
 import { liveQueryForRole, selectedRoles } from "../src/lib/workspace";
 
-const USAGE = "usage: pnpm try:queries <profile.md> [profile.md-out] [--revise]";
+const USAGE = "usage: pnpm try:queries <profile.md> [profile.md-out] [--tick R1,R4] [--revise]";
 const REVISE_FLAG = "--revise";
+const TICK_FLAG = "--tick";
 const FEEDBACK_REASON = "bad fit: all roles need PE license";
 
 function fail(message: string): never {
@@ -71,18 +75,30 @@ function reportSelectedRoles(profile: Profile): { selected: number; live: number
     const query = liveQueryForRole(profile, role.id);
     if (query !== undefined) live += 1;
     log(`${role.id} | ${role.title} | ${role.fieldId}: ${field?.name ?? "(no field)"} | ${query?.query ?? "(no query)"}`);
-    const levels = query === undefined ? [] : levelWordsIn(query.query);
-    if (levels.length > 0) log(`warning: ${query?.id ?? ""} for ${role.id} contains a level word: ${levels.join(", ")}`);
+    const levels = query === undefined ? [] : levelPhrasesIn(query.query);
+    if (levels.length > 0) log(`warning: ${query?.id ?? ""} for ${role.id} carries a level word in: ${levels.join(", ")}`);
   }
   return { selected: roles.length, live };
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const flags = args.filter((a) => a.startsWith("-"));
-  const [input, output] = args.filter((a) => !a.startsWith("-"));
-  if (input === undefined || flags.some((f) => f !== REVISE_FLAG)) fail(USAGE);
-  const revise = flags.includes(REVISE_FLAG);
+  const positional: string[] = [];
+  const tick: string[] = [];
+  let revise = false;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    if (arg === REVISE_FLAG) revise = true;
+    else if (arg === TICK_FLAG || arg.startsWith(`${TICK_FLAG}=`)) {
+      // `--tick R1,R4` or `--tick=R1,R4`.
+      const list = arg === TICK_FLAG ? (args[(i += 1)] ?? "") : arg.slice(TICK_FLAG.length + 1);
+      tick.push(...list.split(",").map((id) => id.trim()).filter((id) => id !== ""));
+      if (tick.length === 0) fail(USAGE);
+    } else if (arg.startsWith("-")) fail(USAGE);
+    else positional.push(arg);
+  }
+  const [input, output] = positional;
+  if (input === undefined) fail(USAGE);
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -95,6 +111,11 @@ async function main(): Promise<void> {
   }
   const parsed = parseProfile(md);
   for (const w of parsed.warnings) log(`warning: ${w}`);
+  let start = parsed.profile;
+  for (const id of tick) {
+    if (!start.roles.some((r) => r.id === id)) fail(`${TICK_FLAG} names ${id}, which is not a role in this profile.`);
+    start = setRoleSelected(start, id, true);
+  }
   const sessionId = newSessionId();
   const onInput = (error: unknown): never => {
     if (error instanceof QueriesInputError) fail(error.message);
@@ -102,7 +123,7 @@ async function main(): Promise<void> {
     throw error;
   };
 
-  const generated = await generateQueries({ sessionId, profile: parsed.profile }).catch(onInput);
+  const generated = await generateQueries({ sessionId, profile: start }).catch(onInput);
   log(
     `generate: added ${ids(generated.added)}; updated ${ids(generated.updated)}; superseded ${generated.superseded.join(", ") || "-"}`,
   );

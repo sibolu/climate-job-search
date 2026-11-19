@@ -90,7 +90,7 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         profile: next,
         fields: [next.fields.find((f) => f.id === "F9")!],
         roles: [],
-        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 0 },
+        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 2 },
         call: METRICS,
       });
     },
@@ -172,7 +172,11 @@ describe("runTurn — discover / explore / queries / revise", () => {
     expect(deps.calls).toEqual(["discoverFields"]);
     expect(res.message).toContain("F9: Grid software");
     expect(res.message).toContain("adjacent move");
-    expect(res.message).toContain("left out 1 suggestion ");
+    expect(res.message).toContain(
+      "Left out: 1 suggestion that cited none of your experience cards; 2 roles titled by rank rather than occupation.",
+    );
+    expect(res.message).toContain("On the Roles screen");
+    expect(res.message).not.toMatch(/Fields tab|tell me|unsure/);
     expect(res.pills?.map((p) => p.value)).toEqual(["Explore F9: Grid software"]);
   });
 

@@ -15,19 +15,18 @@ an alpha, being piloted with a small group of fellows.
 ## What it does
 
 1. **Paste your resume or a short bio.** It becomes a handful of editable
-   experience cards: situation, what you did, results, skills shown. You
-   correct anything it got wrong and exclude anything you do not want used.
-2. **Answer a few questions**, one at a time, about your climate interests,
-   seniority, and appetite for retraining. Click an answer or type.
-3. **See climate fields and roles that fit.** Each one says which of your
-   cards support the fit, whether it is a sector move, an adjacent role or a
-   retraining move, what is uncertain, and where the evidence came from.
-4. **Explore a field.** Concrete job titles, employers, example job posts,
-   what the work is day to day, and guidance for browsing LinkedIn yourself.
-5. **Get search queries** for LinkedIn, Indeed and Climatebase, with copy
-   buttons and steps to turn each search into an email alert.
-6. **Report back.** Mark a query as a good or bad fit and say why. The
-   assistant revises the queries, the fields and your profile in response.
+   experience cards (situation, what you did, results) and a short list of
+   your areas of expertise. You correct anything it got wrong and exclude
+   anything you do not want used.
+2. **Answer two questions** about your climate interests and your appetite
+   for retraining, by clicking an answer.
+3. **See climate fields and the roles in them that fit.** Each field says
+   which of your highlights it draws on, whether it is a sector move, an
+   adjacent role or a retraining move, and what is uncertain. Each role
+   says why it fits and names example companies.
+4. **Tick the roles you want** and get one LinkedIn search per role, with
+   an open link, a copy button and steps to turn the search into an email
+   alert. You run the search on LinkedIn yourself.
 
 Everything it knows about you lives in one plain-text profile you can read,
 edit, export and delete.
@@ -38,8 +37,8 @@ evidence comes from.
 
 ## What it will not do
 
-- **Store anything about you on a server.** Your profile, chat and feedback
-  stay in your browser and are sent to the model only for the turn you are
+- **Store anything about you on a server.** Your profile stays in your
+  browser and are sent to the model only for the turn you are
   on. The only server-side record is an anonymous count of tokens and cost.
 - **Scrape LinkedIn, Indeed or Climatebase.** The model's web tools block
   those domains, and the database refuses to store a link to them as a
@@ -52,8 +51,10 @@ evidence comes from.
 
 ## How it works, briefly
 
-Next.js and TypeScript on Vercel. Claude Opus 5 through the Anthropic SDK,
-with web search and fetch for sourcing. Supabase Postgres holds only the
+Next.js and TypeScript on Vercel. Claude through the Anthropic SDK: Opus 5.5
+reads the resume and proposes fields and roles, Sonnet 5.5 writes the
+searches. No step the app reaches searches the web; links come from the
+reference collection. Supabase Postgres holds only the
 reference collection, which is edited as YAML in this repo and mirrored into
 the database, so every row in production is reviewable in a pull request.
 Access is by a shared passcode; there are no accounts.
@@ -79,7 +80,8 @@ full command list, environment variables and repo conventions are in
 
 - [PRD.md](PRD.md): the problem, the hypothesis, hard constraints, how
   success is judged.
-- [PLAN.md](PLAN.md): phases, status, and the backlog.
+- [PLAN.md](PLAN.md): phases and status. The backlog is
+  [docs/backlog.md](docs/backlog.md).
 - [docs/technical-plan.md](docs/technical-plan.md): architecture, the
   numbered design decisions, and what each review gate verified.
 - [docs/data-flow.html](docs/data-flow.html): the data-flow diagrams (one box per API call).
