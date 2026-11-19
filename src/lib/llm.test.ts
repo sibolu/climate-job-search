@@ -15,8 +15,10 @@ import {
   MAX_RETRIES,
   CALL_TIMEOUT_MS,
   LlmCancelledError,
+  LlmConfigError,
   LlmTimeoutError,
-  MODEL,
+  MODEL_BY_STEP,
+  PRICE_PER_MTOK,
   REQUEST_TIMEOUT_MS,
   USAGE_ROW_KEYS,
   assertToolsAllowed,
@@ -52,7 +54,7 @@ function fakeMessage(turn: FakeTurn): Anthropic.Message {
     id: "msg_fake",
     type: "message",
     role: "assistant",
-    model: MODEL,
+    model: MODEL_BY_STEP.elicit,
     content: turn.text === undefined ? [] : [{ type: "text", text: turn.text, citations: null }],
     stop_reason: turn.stopReason,
     stop_sequence: null,
@@ -218,12 +220,55 @@ describe("blocked domains", () => {
 // Config
 // ---------------------------------------------------------------------------
 
-describe("effort", () => {
-  it("covers every StepName", () => {
+describe("model and effort per step (technical-plan.md D44, D46)", () => {
+  const EXPECTED = {
+    cards: { model: "claude-opus-5-5", effort: "medium" },
+    elicit: { model: "claude-opus-5-5", effort: "medium" },
+    discover: { model: "claude-opus-5-5", effort: "medium" },
+    explore: { model: "claude-opus-5-5", effort: "high" },
+    queries: { model: "claude-sonnet-5-5", effort: "medium" },
+    revise: { model: "claude-sonnet-5-5", effort: "medium" },
+  } as const;
+
+  it("covers every StepName, and prices every model it names", () => {
     expect(Object.keys(EFFORT_BY_STEP).sort()).toEqual([...StepNameSchema.options].sort());
-    expect(EFFORT_BY_STEP.elicit).toBe("medium");
-    expect(EFFORT_BY_STEP.cards).toBe("medium");
-    expect(EFFORT_BY_STEP.discover).toBe("medium");
+    expect(Object.keys(MODEL_BY_STEP).sort()).toEqual([...StepNameSchema.options].sort());
+    for (const model of Object.values(MODEL_BY_STEP)) expect(PRICE_PER_MTOK[model]).toBeDefined();
+  });
+
+  it.each(StepNameSchema.options)("%s: sends its model and effort, logs that model", async (step) => {
+    const { client, params } = fakeClient([
+      { text: "{}", stopReason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+    ]);
+    const sink = memoryUsageSink();
+    await createLlm({ client, usageSink: sink }).structured({ ...REQUEST, step, schema: z.object({}) });
+    const sent = params[0] as Anthropic.MessageCreateParamsNonStreaming;
+    expect(sent.model).toBe(EXPECTED[step].model);
+    expect(sent.output_config?.effort).toBe(EXPECTED[step].effort);
+    expect(sent.thinking).toEqual({ type: "adaptive" });
+    expect(sink.rows[0]?.model).toBe(EXPECTED[step].model);
+    expect(sink.rows[0]?.cost_usd).toBe(costUsd(EXPECTED[step].model, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }));
+  });
+
+  it("prices a Sonnet step by Sonnet's rates", async () => {
+    const { client, params } = fakeClient([
+      {
+        text: "{}",
+        stopReason: "end_turn",
+        usage: { input_tokens: 3_000, output_tokens: 700, cache_read_input_tokens: 12_000, cache_creation_input_tokens: 1_000 },
+      },
+    ]);
+    const sink = memoryUsageSink();
+    const result = await createLlm({ client, usageSink: sink }).structured({
+      ...REQUEST,
+      step: "queries",
+      schema: z.object({}),
+    });
+    expect((params[0] as Anthropic.MessageCreateParamsNonStreaming).model).toBe("claude-sonnet-5-5");
+    // Sonnet 5.5: (3000 × 2 + 700 × 10 + 12000 × 0.1 + 1000 × 2.5) / 1M
+    expect(result.costUsd).toBeCloseTo(0.0167, 6);
+    expect(sink.rows[0]?.model).toBe("claude-sonnet-5-5");
+    expect(sink.rows[0]?.cost_usd).toBeCloseTo(0.0167, 6);
   });
 });
 
@@ -239,17 +284,26 @@ describe("timeouts", () => {
 });
 
 describe("cost", () => {
-  it("prices a known usage object", () => {
+  const MILLION = { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 };
+  const TURN = { input: 3_000, output: 700, cacheRead: 12_000, cacheWrite: 0 };
+
+  it("prices Opus 5.5", () => {
     // 1M in + 1M out + 1M cache read + 1M cache write = 4 + 20 + 0.2 + 5
-    expect(
-      costUsd({ input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 }),
-    ).toBeCloseTo(29.2, 6);
+    expect(costUsd("claude-opus-5-5", MILLION)).toBeCloseTo(29.2, 6);
     // A realistic chat turn: 3k in, 700 out, 12k cache read.
-    expect(costUsd({ input: 3_000, output: 700, cacheRead: 12_000, cacheWrite: 0 })).toBeCloseTo(
-      0.028400,
-      6,
-    );
-    expect(costUsd({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(0);
+    expect(costUsd("claude-opus-5-5", TURN)).toBeCloseTo(0.0284, 6);
+    expect(costUsd("claude-opus-5-5", { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(0);
+  });
+
+  it("prices Sonnet 5.5", () => {
+    // 2 + 10 + 0.1 + 2.5
+    expect(costUsd("claude-sonnet-5-5", MILLION)).toBeCloseTo(14.6, 6);
+    expect(costUsd("claude-sonnet-5-5", TURN)).toBeCloseTo(0.0142, 6);
+  });
+
+  it("throws on an unpriced model rather than pricing it at zero", () => {
+    expect(() => costUsd("claude-unknown" as never, TURN)).toThrow(LlmConfigError);
+    expect(() => costUsd("toString" as never, TURN)).toThrow(LlmConfigError);
   });
 });
 
@@ -320,17 +374,18 @@ describe("streamText", () => {
     expect(Object.keys(row)).toEqual([...USAGE_ROW_KEYS]);
     expect(row.session_id).toBe(REQUEST.sessionId);
     expect(row.step).toBe("elicit");
-    expect(row.model).toBe(MODEL);
+    expect(row.model).toBe("claude-opus-5-5");
     expect(row.input_tokens).toBe(100);
     expect(row.output_tokens).toBe(50);
     expect(row.cache_read_input_tokens).toBe(10);
-    expect(row.cost_usd).toBeCloseTo(costUsd({ input: 100, output: 50, cacheRead: 10, cacheWrite: 0 }), 6);
+    // Opus 5.5: (100 × 4 + 50 × 20 + 10 × 0.2) / 1M
+    expect(row.cost_usd).toBeCloseTo(0.001402, 6);
     expect(row.duration_ms).toBe(250);
     // No content ever reaches the row.
     expect(JSON.stringify(row)).not.toContain("two words");
 
     const sent = params[0] as Anthropic.MessageCreateParamsNonStreaming;
-    expect(sent.model).toBe(MODEL);
+    expect(sent.model).toBe("claude-opus-5-5");
     expect(sent.thinking).toEqual({ type: "adaptive" });
     expect(sent.output_config?.effort).toBe("medium");
     expect(sent.system).toEqual([

@@ -224,13 +224,17 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
 - **`createLlm({ client, usageSink, now, callTimeoutMs })`** is the injectable form used by
   tests; `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
-- **Model and thinking**: `claude-opus-5-5` with adaptive thinking on every call
-  (docs/technical-plan.md D2, D44). `budget_tokens` and disabled thinking are
-  rejected by this model; depth is `output_config.effort`, which must be set
-  explicitly (Opus 5.5 defaults to `medium`).
-- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44): `cards`,
-  `elicit` and `discover` are `medium`; `explore`, `queries` and `revise` are
-  `high`. Change the table, not the call sites.
+- **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D46):
+  `queries` and `revise` run on `claude-sonnet-5-5`; `cards`, `elicit`,
+  `discover` and `explore` on `claude-opus-5-5`. Adaptive thinking on every
+  call, both models (`budget_tokens` and disabled thinking are rejected by
+  Opus 5.5). `PRICE_PER_MTOK` is keyed by model id and `costUsd` prices each
+  call by the model that ran; an unpriced id throws `LlmConfigError`. The
+  usage row's `model` column records which model ran.
+- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44, D46):
+  `explore` is `high`; every other step is `medium`. Effort is always sent
+  explicitly: Sonnet 5.5 defaults to `high` and Opus 5.5 to `medium`, so
+  neither default is relied on. Change the tables, not the call sites.
 - **Every call streams** (`client.messages.stream()` + `finalMessage()`), both
   shapes, with a 32K output cap. **One deadline bounds a logical call**:
   `CALL_TIMEOUT_MS` (3 min, every retry and continuation included) aborts it

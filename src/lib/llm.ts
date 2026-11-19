@@ -19,17 +19,23 @@
  *     a `console.warn`.
  *   * **Cost telemetry is comparable.** One row per logical call (a
  *     `pause_turn` continuation is part of the same logical call and its
- *     tokens are summed), priced from {@link PRICE_PER_MTOK}.
+ *     tokens are summed), priced from {@link PRICE_PER_MTOK} for the model
+ *     that ran (technical-plan.md D46).
  *
  * Server-only: {@link createLlm} throws in a browser. The API key is a
  * server-only env var and route handlers are the only callers.
  *
  * SDK notes (checked against the `claude-api` skill on 2026-09-24,
  * `@anthropic-ai/sdk` 0.125.0):
- *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call;
- *     `budget_tokens` and disabled thinking are rejected by `claude-opus-5-5`.
+ *   * The model is chosen per step (see {@link MODEL_BY_STEP},
+ *     technical-plan.md D46): Opus 5.5 or Sonnet 5.5. Everything below holds
+ *     for both.
+ *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, both
+ *     models; `budget_tokens` and disabled thinking are rejected by
+ *     `claude-opus-5-5`.
  *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
- *     Opus 5.5 defaults to `medium`, so every call sets it explicitly.
+ *     Opus 5.5 defaults to `medium` and Sonnet 5.5 to `high`, so every call
+ *     sets it explicitly; neither default is relied on.
  *   * Every call streams (`client.messages.stream()` + `finalMessage()`), so
  *     no HTTP timeout sits under a long answer, and one deadline
  *     ({@link CALL_TIMEOUT_MS}) plus the caller's abort signal bound it
@@ -59,25 +65,41 @@ import { anonClient } from "./supabase";
 // Model, effort and limits
 // ---------------------------------------------------------------------------
 
-/** One model everywhere (technical-plan.md D2, D44). Re-evaluate Sonnet 5 after Phase 3. */
-export const MODEL = "claude-opus-5-5";
+/** The models this app calls. {@link PRICE_PER_MTOK} must price every one. */
+export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5";
+
+/**
+ * Model per call type (technical-plan.md D2, D44, D46). Writing one search
+ * string per role (`queries`, `revise`) is short, constrained work, so it runs
+ * on Sonnet 5.5; every other step stays on Opus 5.5. Change the table, not
+ * the call sites.
+ */
+export const MODEL_BY_STEP: Record<StepName, ModelId> = {
+  cards: "claude-opus-5-5",
+  elicit: "claude-opus-5-5",
+  discover: "claude-opus-5-5",
+  explore: "claude-opus-5-5",
+  queries: "claude-sonnet-5-5",
+  revise: "claude-sonnet-5-5",
+};
 
 /** Effort levels this app uses. The SDK also accepts `xhigh`; we do not. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /**
- * Depth per call type (technical-plan.md §1, D44). Chat-like steps and
+ * Depth per call type (technical-plan.md §1, D44, D46). Chat-like steps and
  * discovery run at `medium`: on Opus 5.5, `medium` discovery took half the
  * time of Opus 5 at `high` with output that looked about as good. The query
- * steps stay `high`; they are short calls and were not re-measured.
+ * steps run on Sonnet 5.5 at `medium` (D46); `explore` (script-only) stays
+ * `high`.
  */
 export const EFFORT_BY_STEP: Record<StepName, Effort> = {
   cards: "medium",
   elicit: "medium",
   discover: "medium",
   explore: "high",
-  queries: "high",
-  revise: "high",
+  queries: "medium",
+  revise: "medium",
 };
 
 /**
@@ -212,18 +234,26 @@ export function assertToolsAllowed(tools: readonly LlmTool[]): void {
 // Pricing
 // ---------------------------------------------------------------------------
 
+/** USD per million tokens for one model. */
+export interface ModelPrice {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
 /**
- * USD per million tokens for `claude-opus-5-5`, from the `claude-api` skill's
- * model table (checked 2026-09-24): input $4, output $20, cache read $0.20,
- * 5-minute cache write 1.25× input. Update both this table and the date when
- * the skill's numbers change.
+ * USD per million tokens, keyed by the model that ran (technical-plan.md D46).
+ * Cache write is the 5-minute rate, 1.25× input.
+ *   * `claude-opus-5-5`, from the `claude-api` skill's model table (checked
+ *     2026-09-24): input $4, output $20, cache read $0.20.
+ *   * `claude-sonnet-5-5` (2026-11-18): input $2, output $10, cache read $0.10.
+ * Update both the numbers and the date when the skill's numbers change.
  */
-export const PRICE_PER_MTOK = {
-  input: 4,
-  output: 20,
-  cacheRead: 0.2,
-  cacheWrite: 5,
-} as const;
+export const PRICE_PER_MTOK: Readonly<Record<ModelId, Readonly<ModelPrice>>> = {
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+};
 
 /** Token counters, summed across the continuations of one logical call. */
 export interface TokenCounts {
@@ -260,13 +290,21 @@ function hasAnyUsage(counts: TokenCounts): boolean {
   return counts.input + counts.output + counts.cacheRead + counts.cacheWrite > 0;
 }
 
-/** Cost of one logical call, rounded to the `numeric(10, 6)` column. */
-export function costUsd(counts: TokenCounts): number {
+/**
+ * Cost of one logical call on `model`, rounded to the `numeric(10, 6)` column.
+ * An unpriced model id throws {@link LlmConfigError} rather than pricing the
+ * call at zero (technical-plan.md D46).
+ */
+export function costUsd(model: ModelId, counts: TokenCounts): number {
+  const price = Object.hasOwn(PRICE_PER_MTOK, model) ? PRICE_PER_MTOK[model] : undefined;
+  if (price === undefined) {
+    throw new LlmConfigError(`No price for model ${String(model)}; add it to PRICE_PER_MTOK.`);
+  }
   const dollars =
-    (counts.input * PRICE_PER_MTOK.input +
-      counts.output * PRICE_PER_MTOK.output +
-      counts.cacheRead * PRICE_PER_MTOK.cacheRead +
-      counts.cacheWrite * PRICE_PER_MTOK.cacheWrite) /
+    (counts.input * price.input +
+      counts.output * price.output +
+      counts.cacheRead * price.cacheRead +
+      counts.cacheWrite * price.cacheWrite) /
     1_000_000;
   return Math.round(dollars * 1e6) / 1e6;
 }
@@ -642,11 +680,12 @@ function requestParams(
 ): Anthropic.MessageCreateParamsNonStreaming {
   const tools = request.tools === undefined ? undefined : [...request.tools];
   return {
-    model: MODEL,
+    model: MODEL_BY_STEP[request.step],
     max_tokens: maxTokens,
     system: systemBlocks(request.system),
     messages,
-    // Adaptive thinking on every call; Opus 5.5 rejects `budget_tokens` and "disabled".
+    // Adaptive thinking on every call, both models; Opus 5.5 rejects
+    // `budget_tokens` and "disabled".
     thinking: { type: "adaptive" },
     output_config: {
       effort: EFFORT_BY_STEP[request.step],
@@ -664,12 +703,12 @@ function usageRow(
   return {
     session_id: request.sessionId,
     step: request.step,
-    model: MODEL,
+    model: MODEL_BY_STEP[request.step],
     input_tokens: counts.input,
     output_tokens: counts.output,
     cache_read_input_tokens: counts.cacheRead,
     cache_creation_input_tokens: counts.cacheWrite,
-    cost_usd: costUsd(counts),
+    cost_usd: costUsd(MODEL_BY_STEP[request.step], counts),
     duration_ms: Math.max(0, Math.round(durationMs)),
   };
 }
@@ -882,7 +921,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
           messages: responses,
           metrics: {
             usage: counts,
-            costUsd: costUsd(counts),
+            costUsd: costUsd(MODEL_BY_STEP[request.step], counts),
             durationMs,
             continuations,
             stopReason: message.stop_reason,
