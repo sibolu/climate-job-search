@@ -32,7 +32,7 @@ an alpha, being piloted with a small group of fellows.
 Everything it knows about you lives in one plain-text profile you can read,
 edit, export and delete.
 
-[docs/data-flow.md](docs/data-flow.md) is a one-page diagram of how a pasted
+[docs/data-flow.html](docs/data-flow.html) is a one-page diagram of how a pasted
 resume becomes cards, fields, roles and queries, and where each piece of
 evidence comes from.
 
@@ -82,6 +82,6 @@ full command list, environment variables and repo conventions are in
 - [PLAN.md](PLAN.md): phases, status, and the backlog.
 - [docs/technical-plan.md](docs/technical-plan.md): architecture, the
   numbered design decisions, and what each review gate verified.
-- [docs/data-flow.md](docs/data-flow.md): the one-page flowchart.
+- [docs/data-flow.html](docs/data-flow.html): the data-flow diagrams (one box per API call).
 - [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md): conventions and
   working rules for Claude Code sessions in this repo.

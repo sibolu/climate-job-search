@@ -127,7 +127,7 @@ scripts/
   check-rls.ts         # asserts the RLS shape against a live stack
   smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
 docs/
-  data-flow.md         # the one high-level flowchart (keep current)
+  data-flow.html       # API calls and profile.md reads/writes (keep current)
   technical-plan.md    # this file
 evals/                 # synthetic profiles, structural checks, feedback-loop eval, baseline arm (3.1, not started)
 ```

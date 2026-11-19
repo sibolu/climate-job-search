@@ -25,8 +25,9 @@ agreement: how phases are run, who does what, and what each turn may cost.
   numbered decisions (`D1`…), and the verification log. A decision made
   mid-phase is appended there in the same commit as the change; if it
   affects contributors, CLAUDE.md is updated too.
-- [docs/data-flow.md](docs/data-flow.md): the one flowchart. Update it only
-  when a step, a data store or a source of ground truth is added or removed.
+- [docs/data-flow.html](docs/data-flow.html): the data-flow diagrams, one box
+  per API call. Update it when a call, a profile-writing click, a data store
+  or a source of ground truth is added or removed.
 - **Nothing project-related goes into Claude's private memory.** Other
   contributors must be able to read every decision.
 

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Flow</title>
+<!--
+  Keep current (CLAUDE.md): one box per Anthropic API call, one row per
+  profile.md change. Update when a call, a screen action that writes the
+  profile, a data store or a source of ground truth is added or removed.
+  Prompt links are relative to this file; line numbers are a hint only, the
+  constant / function name is the anchor.
+-->
+<style>
+  :root {
+    --bg: #ffffff; --fg: #111827; --muted: #6b7280; --line: #d1d5db; --panel: #f9fafb;
+    --you-bg: #dcfce7; --you-bd: #15803d;
+    --api-bg: #ede9fe; --api-bd: #6d28d9; --api-fg: #4c1d95;
+    --code-bg: #f3f4f6; --code-bd: #4b5563;
+    --store-bg: #dbeafe; --store-bd: #1d4ed8;
+    --write-bg: #f59e0b; --write-fg: #111827;
+    --read-bd: #92400e; --read-fg: #92400e;
+    --turn-bd: #6d28d9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1115; --fg: #e5e7eb; --muted: #9ca3af; --line: #374151; --panel: #161a20;
+      --you-bg: #14321f; --you-bd: #4ade80;
+      --api-bg: #241a3d; --api-bd: #a78bfa; --api-fg: #ddd6fe;
+      --code-bg: #1f2329; --code-bd: #9ca3af;
+      --store-bg: #132544; --store-bd: #60a5fa;
+      --write-bg: #f59e0b; --write-fg: #111827;
+      --read-bd: #fbbf24; --read-fg: #fbbf24;
+      --turn-bd: #a78bfa;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1115; --fg: #e5e7eb; --muted: #9ca3af; --line: #374151; --panel: #161a20;
+    --you-bg: #14321f; --you-bd: #4ade80;
+    --api-bg: #241a3d; --api-bd: #a78bfa; --api-fg: #ddd6fe;
+    --code-bg: #1f2329; --code-bd: #9ca3af;
+    --store-bg: #132544; --store-bd: #60a5fa;
+    --write-bg: #f59e0b; --write-fg: #111827;
+    --read-bd: #fbbf24; --read-fg: #fbbf24;
+    --turn-bd: #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 48px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  a { color: var(--api-bd); }
+  code { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  li { margin: 2px 0; }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; display: inline-block; }
+
+  /* round trip */
+  .trip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 16px; }
+  .trip > div { position: relative; padding: 10px 12px; margin-right: 22px; border-radius: 8px; border: 2px solid; font-size: 13px; }
+  .trip > div:not(:last-child)::after { content: "→"; position: absolute; right: -20px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 18px; }
+  .trip > div:last-child { margin-right: 0; }
+  .trip b { display: block; }
+
+  /* lanes */
+  .lanes, .row { display: grid; grid-template-columns: 1fr 1.6fr 1.05fr; gap: 14px; }
+  .lanes { margin-top: 14px; position: sticky; top: 0; background: var(--bg); z-index: 2; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .lanes div { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .row { position: relative; margin-top: 10px; }
+  .flow > .row + .row::before, .flow > .turn + .row::before, .flow > .row + .turn::before, .turn .row + .row::before {
+    content: ""; position: absolute; left: 49%; top: -10px; height: 10px; border-left: 2px solid var(--line);
+  }
+  .cell:empty { min-height: 1px; }
+  .box { border: 2px solid; border-radius: 8px; padding: 9px 11px; }
+  .you { background: var(--you-bg); border-color: var(--you-bd); }
+  .api { background: var(--api-bg); border-color: var(--api-bd); }
+  .codebox { background: var(--code-bg); border-color: var(--code-bd); }
+  .store { background: var(--store-bg); border-color: var(--store-bd); border-radius: 16px; }
+  .box h3 { font-size: 14px; margin: 0 0 4px; }
+  .box ul { font-size: 13px; }
+  .screen { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--you-bd); }
+
+  .api-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .num { background: var(--api-bd); color: #fff; font-weight: 700; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+  .tag { font-size: 11px; border: 1px solid var(--api-bd); color: var(--api-fg); padding: 0 6px; border-radius: 999px; }
+  .links { margin-top: 6px; font-size: 12px; display: grid; gap: 2px; }
+  .links span { color: var(--muted); display: inline-block; min-width: 92px; }
+  .io b { color: var(--api-fg); }
+
+  /* turn band */
+  .turn { position: relative; border: 2px dashed var(--turn-bd); border-radius: 12px; padding: 30px 10px 10px; margin-top: 18px; }
+  .turn-label { position: absolute; top: -11px; left: 12px; background: var(--bg); padding: 0 8px; font-size: 12px; font-weight: 600; color: var(--api-fg); }
+  .turn-foot { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+
+  /* profile chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 2px 0 6px; }
+  .chips em { font-style: normal; font-size: 11px; color: var(--muted); width: 44px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .w { background: var(--write-bg); color: var(--write-fg); font-weight: 600; }
+  .r { border: 1.5px solid var(--read-bd); color: var(--read-fg); }
+  .note { font-size: 12px; color: var(--muted); }
+  .nochange { font-size: 12px; color: var(--muted); font-style: italic; }
+
+  /* matrix */
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: center; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: var(--panel); font-size: 12px; }
+  td .chip { display: inline-block; }
+  .rowapi td:first-child { border-left: 4px solid var(--api-bd); }
+  .rowyou td:first-child { border-left: 4px solid var(--you-bd); }
+  .tablewrap { overflow-x: auto; }
+
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  @media (max-width: 760px) {
+    .lanes { display: none; }
+    .row { grid-template-columns: 1fr; gap: 6px; }
+    .flow > .row + .row::before, .flow > .turn + .row::before, .flow > .row + .turn::before, .turn .row + .row::before { left: 20px; }
+    .trip { grid-template-columns: 1fr; gap: 18px; }
+    .trip > div { margin-right: 0; }
+    .trip > div:not(:last-child)::after { content: "↓"; right: auto; left: 20px; top: auto; bottom: -22px; transform: none; }
+    .cols2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>How profile.md moves through the app</h1>
+<p class="sub">Two flows: paste → climate fields, and field board → search queries. Verified against the code on 2026-11-18 (branch <code>phase-2b</code>).</p>
+
+<div class="legend">
+  <span><i class="sw" style="background:var(--you-bg);border-color:var(--you-bd)"></i>You, in the browser</span>
+  <span><i class="sw" style="background:var(--api-bg);border-color:var(--api-bd)"></i>One Anthropic API call</span>
+  <span><i class="sw" style="background:var(--code-bg);border-color:var(--code-bd)"></i>Plain code, no model</span>
+  <span><i class="sw" style="background:var(--store-bg);border-color:var(--store-bd)"></i>Stored data</span>
+  <span><span class="chip w">Section</span> profile.md section written</span>
+  <span><span class="chip r">Section</span> section read / sent to the model</span>
+</div>
+
+<!-- ───────────── round trip ───────────── -->
+<h2 style="margin-top:28px">Where profile.md lives</h2>
+<div class="trip">
+  <div class="store"><b>Browser localStorage</b>profile.md is the only copy</div>
+  <div class="codebox"><b>POST /api/turn</b>sends the <u>whole</u> profile.md + a step name</div>
+  <div class="api"><b>Server, stateless</b>parse → API call(s) → code checks → serialize</div>
+  <div class="store"><b>Response</b>a <u>whole new</u> profile.md replaces the stored copy</div>
+</div>
+<ul class="note" style="margin-top:10px">
+  <li>Clicks on cards, fields and roles edit profile.md in the browser. No server call.</li>
+  <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content.</li>
+  <li>Every call: <code>claude-opus-5-5</code>, adaptive thinking, structured JSON output, no web tools. All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
+</ul>
+
+<!-- ───────────── flow 1 ───────────── -->
+<h2>1 · Paste → first climate fields</h2>
+<p class="sub">Screens: First run → Highlights → Field board. Three API calls.</p>
+
+<div class="lanes"><div>You / screen</div><div>What runs</div><div>profile.md</div></div>
+
+<div class="flow">
+  <div class="row">
+    <div class="cell"><div class="box you">
+      <div class="screen">First run</div>
+      <ul><li>Paste resume or bio</li><li>Optional notes: constraints, interests</li><li>Click <b>Start</b></li></ul>
+    </div></div>
+    <div class="cell"><div class="box codebox">
+      <h3>Browser builds the message</h3>
+      <ul><li>Notes appended under a <code>Notes</code> label (<a href="../src/lib/screens.ts">composeStartText · screens.ts:107</a>)</li></ul>
+    </div></div>
+    <div class="cell"><div class="nochange">Empty profile</div></div>
+  </div>
+
+  <div class="turn">
+    <div class="turn-label">Turn · step <code>cards</code> · one request, two API calls</div>
+
+    <div class="row">
+      <div class="cell"></div>
+      <div class="cell"><div class="box api">
+        <div class="api-head"><span class="num">API 1</span><code>extractCards</code><span class="tag">step cards</span><span class="tag">effort medium</span></div>
+        <h3>Pasted text → experience cards</h3>
+        <ul class="io">
+          <li><b>In:</b> pasted text + notes block; active cards already on file (so it doesn't repeat them)</li>
+          <li><b>Out:</b> cards (situation / actions / results / skills), inferred skills, preferences stated in the notes</li>
+        </ul>
+        <div class="links">
+          <div><span>System prompt</span><a href="../src/lib/cards.ts">CARDS_SYSTEM_PROMPT · cards.ts:182</a></div>
+          <div><span>User message</span><a href="../src/lib/cards.ts">buildExtractMessage · cards.ts:240</a></div>
+          <div><span>Call site</span><a href="../src/lib/cards.ts">extractCards · cards.ts:424</a></div>
+        </div>
+      </div></div>
+      <div class="cell">
+        <div class="chips"><em>reads</em><span class="chip r">Experience Cards</span></div>
+        <div class="chips"><em>writes</em><span class="chip w">Experience Cards</span><span class="chip w">Skills (inferred)</span><span class="chip w">Preferences (stated)</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="cell"></div>
+      <div class="cell"><div class="box api">
+        <div class="api-head"><span class="num">API 2</span><code>inferPreferences</code><span class="tag">step elicit</span><span class="tag">effort medium</span></div>
+        <h3>Cards → preferences they clearly support</h3>
+        <ul class="io">
+          <li><b>In:</b> active cards, skills, preferences already known</li>
+          <li><b>Out:</b> location, work mode, seniority, retraining appetite, climate interests, each with a confidence</li>
+          <li>Only <b>high</b>-confidence answers to still-missing preferences are kept</li>
+          <li>Skipped (no call) when nothing is missing</li>
+        </ul>
+        <div class="links">
+          <div><span>System prompt</span><a href="../src/lib/elicit.ts">INFER_SYSTEM · elicit.ts:499</a></div>
+          <div><span>User message</span><a href="../src/lib/elicit.ts">inline in inferPreferences · elicit.ts:563</a></div>
+          <div><span>Call site</span><a href="../src/lib/elicit.ts">inferPreferences · elicit.ts:553</a></div>
+        </div>
+      </div></div>
+      <div class="cell">
+        <div class="chips"><em>reads</em><span class="chip r">Experience Cards</span><span class="chip r">Skills</span><span class="chip r">Preferences</span></div>
+        <div class="chips"><em>writes</em><span class="chip w">Preferences (inferred)</span></div>
+      </div>
+    </div>
+    <div class="turn-foot">↓ whole profile.md returned, replaces the browser copy</div>
+  </div>
+
+  <div class="row">
+    <div class="cell"><div class="box you">
+      <div class="screen">Highlights</div>
+      <ul><li>Edit or Exclude a card</li><li>Answer up to 3 rail questions with pills: climate interests, seniority, retraining appetite (skipped if already known)</li><li>Click <b>Match fields</b></li></ul>
+    </div></div>
+    <div class="cell"><div class="box codebox">
+      <h3>Local edits, no API call</h3>
+      <ul><li>Each click rewrites profile.md in localStorage</li></ul>
+    </div></div>
+    <div class="cell">
+      <div class="chips"><em>writes</em><span class="chip w">Experience Cards</span><span class="chip w">Preferences (stated)</span></div>
+    </div>
+  </div>
+
+  <div class="turn">
+    <div class="turn-label">Turn · step <code>discover</code> · one API call</div>
+
+    <div class="row">
+      <div class="cell"><div class="box store">
+        <h3>Reference collection</h3>
+        <ul><li>Supabase, read-only</li><li>Climate fields + example roles, with source URLs</li><li>Curated in <a href="../data/">data/*.yaml</a></li></ul>
+      </div></div>
+      <div class="cell"><div class="box api">
+        <div class="api-head"><span class="num">API 3</span><code>discoverFields</code><span class="tag">step discover</span><span class="tag">effort medium</span></div>
+        <h3>Cards + preferences + catalogue → 4–7 ranked fields, 2–4 roles each</h3>
+        <ul class="io">
+          <li><b>In:</b> active cards, preferences, confirmed skills, fields already on file (rejected ones must not return), the reference catalogue</li>
+          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles, each citing cards</li>
+        </ul>
+        <div class="links">
+          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT · discover.ts:150</a></div>
+          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:272</a></div>
+          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:653</a></div>
+        </div>
+      </div></div>
+      <div class="cell">
+        <div class="chips"><em>reads</em><span class="chip r">Experience Cards</span><span class="chip r">Preferences</span><span class="chip r">Skills (confirmed)</span><span class="chip r">Fields</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="cell"></div>
+      <div class="cell"><div class="box codebox">
+        <h3>Code check</h3>
+        <ul>
+          <li>Drop any field or role that cites no active card</li>
+          <li>Strip source URLs the catalogue doesn't list</li>
+          <li>Cap at 7 fields, drop duplicates</li>
+        </ul>
+        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:573</a></div></div>
+      </div></div>
+      <div class="cell">
+        <div class="chips"><em>writes</em><span class="chip w">Fields</span><span class="chip w">Role Shortlist</span></div>
+      </div>
+    </div>
+    <div class="turn-foot">↓ whole profile.md returned → Field board</div>
+  </div>
+</div>
+
+<!-- ───────────── flow 2 ───────────── -->
+<h2>2 · Field board → search queries</h2>
+<p class="sub">Screens: Field board → Searches. One API call per field. No web, no reference data.</p>
+
+<div class="lanes"><div>You / screen</div><div>What runs</div><div>profile.md</div></div>
+
+<div class="flow">
+  <div class="row">
+    <div class="cell"><div class="box you">
+      <div class="screen">Field board</div>
+      <ul>
+        <li>Mark each field: Interesting / Unsure / Not for me</li>
+        <li>Expand a field, tick the roles you want</li>
+        <li>Optionally answer the field's one question</li>
+      </ul>
+    </div></div>
+    <div class="cell"><div class="box codebox">
+      <h3>Local edits, no API call</h3>
+      <ul><li>Each click rewrites profile.md in localStorage</li></ul>
+    </div></div>
+    <div class="cell">
+      <div class="chips"><em>writes</em><span class="chip w">Fields (status)</span><span class="chip w">Role Shortlist (ticked)</span><span class="chip w">Preferences (field answer)</span></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="cell"><div class="box you">
+      <ul><li>Click <b>Write searches</b> on one expanded field</li><li>Needs ≥ 1 ticked role; field not "Not for me"</li></ul>
+    </div></div>
+    <div class="cell"></div>
+    <div class="cell"></div>
+  </div>
+
+  <div class="turn">
+    <div class="turn-label">Turn · step <code>queries</code> · input: one field ID · one API call</div>
+
+    <div class="row">
+      <div class="cell"></div>
+      <div class="cell"><div class="box api">
+        <div class="api-head"><span class="num">API 4</span><code>generateQueries</code><span class="tag">step queries</span><span class="tag">effort high</span></div>
+        <h3>One field + its ticked roles → 3 queries, one per board</h3>
+        <ul class="io">
+          <li><b>In:</b> preferences (incl. field answers), confirmed skills, the one field (mark, fit, uncertainty, your answer), its ticked roles, queries already written for it</li>
+          <li><b>Out:</b> one query each for LinkedIn, Indeed, Climatebase</li>
+        </ul>
+        <div class="links">
+          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:155</a></div>
+          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:272</a></div>
+          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:784</a></div>
+        </div>
+      </div></div>
+      <div class="cell">
+        <div class="chips"><em>reads</em><span class="chip r">Preferences</span><span class="chip r">Skills (confirmed)</span><span class="chip r">Fields (this one)</span><span class="chip r">Role Shortlist (ticked)</span><span class="chip r">Queries (this field)</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="cell"></div>
+      <div class="cell"><div class="box codebox">
+        <h3>Code check</h3>
+        <ul>
+          <li>Exactly one query per board</li>
+          <li>Drop empty text and repeats of existing queries</li>
+          <li>A board left missing → the turn fails, nothing written</li>
+        </ul>
+        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateFieldDrafts, applyFieldDrafts · queries.ts:457</a></div></div>
+      </div></div>
+      <div class="cell">
+        <div class="chips"><em>writes</em><span class="chip w">Queries</span></div>
+      </div>
+    </div>
+    <div class="turn-foot">↓ whole profile.md returned → Searches screen</div>
+  </div>
+
+  <div class="row">
+    <div class="cell"><div class="box you">
+      <div class="screen">Searches</div>
+      <ul><li>Copy a query, run it on the board yourself</li></ul>
+    </div></div>
+    <div class="cell"></div>
+    <div class="cell"></div>
+  </div>
+</div>
+
+<!-- ───────────── matrix ───────────── -->
+<h2>Who touches which section</h2>
+<p class="sub">Both flows, top to bottom in order. Purple edge = API call, green edge = your clicks.</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Moment</th><th>Preferences</th><th>Experience Cards</th><th>Skills</th><th>Fields</th><th>Role Shortlist</th><th>Queries</th></tr></thead>
+  <tbody>
+    <tr class="rowapi"><td><b>API 1</b> extractCards</td><td><span class="chip w">W</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td><td></td></tr>
+    <tr class="rowapi"><td><b>API 2</b> inferPreferences</td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td></td><td></td><td></td></tr>
+    <tr class="rowyou"><td>Highlights clicks</td><td><span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td><td></td><td></td></tr>
+    <tr class="rowapi"><td><b>API 3</b> discoverFields</td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td></tr>
+    <tr class="rowyou"><td>Field board clicks</td><td><span class="chip w">W</span></td><td></td><td></td><td><span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td></tr>
+    <tr class="rowapi"><td><b>API 4</b> generateQueries</td><td><span class="chip r">R</span></td><td></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Section names are the <code>##</code> headings in profile.md; the format is defined in the header comment of <a href="../src/lib/profile.ts">profile.ts</a>.</p>
+
+<!-- ───────────── ground truth + out of scope ───────────── -->
+<div class="cols2">
+  <div>
+    <h2>Where the ground truth is</h2>
+    <ul>
+      <li><b>Your words:</b> pasted text, notes, pill answers, clicks. Every field and role must cite one of your cards.</li>
+      <li><b>Reference collection:</b> hand-curated YAML, mirrored to Supabase. Explains fields and roles; only source of links. Never powers a search.</li>
+      <li><b>The model's own knowledge:</b> fields or roles the collection lacks. Kept with no source link.</li>
+    </ul>
+  </div>
+  <div>
+    <h2>Not shown here</h2>
+    <ul>
+      <li><code>reviseQueries</code> (step <code>revise</code>): after you rate a query; a separate flow</li>
+      <li>In the code with no UI path: <code>exploreField</code> (web drill-down), <code>interpretAnswer</code>, <code>reviseCards</code></li>
+      <li>Profile drawer: export, import, delete everything</li>
+    </ul>
+  </div>
+</div>
+
+</main>
+</body>
+</html>

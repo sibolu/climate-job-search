@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Playwright MCP output (screenshots, snapshots, console logs): local only
 /.playwright-mcp/
+
+# Personal user data (resumes etc.) used for local testing: never committed
+/userdata/

@@ -12,9 +12,11 @@ environment, the hard constraints, and the rules each module enforces.
   comments cite them as `technical-plan.md D31`. Append a new decision there
   in the same commit as the change; never renumber. Do not rely on Claude's
   private memory for anything another contributor would need.
-- **Keep `docs/data-flow.md` current.** One high-level flowchart of what
-  talks to what. Update it only when a step, a data store or a source of
-  ground truth is added or removed. No implementation details.
+- **Keep `docs/data-flow.html` current.** Two flows (paste → fields,
+  field board → queries): one box per Anthropic API call with links to its
+  prompt, and which `profile.md` sections each call or click reads and
+  writes. Update it when an API call, a profile-writing click, a data store
+  or a source of ground truth is added or removed, or a prompt moves.
 - **Prompts** live as plain template strings in `src/lib/*.ts`, one module
   each, so they can be edited without touching React.
 - **Never read a whole file** (`profile.ts` is 49KB, `docs/technical-plan.md`
