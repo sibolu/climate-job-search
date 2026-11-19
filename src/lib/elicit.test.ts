@@ -98,7 +98,8 @@ function questionMarks(text: string): number {
 
 describe("acceptance: a scripted 5-turn transcript", () => {
   it("asks exactly one preference per turn, skips what is known, and stops for good", async () => {
-    // Cards exist; seniority is inferable from them, nothing else is.
+    // Cards exist; seniority is inferable from them and is recorded, though
+    // nothing asks for it or reads it (technical-plan.md D48).
     const { profile: afterInfer, updatedKeys } = await inferPreferences(
       fakeLlm(inference({ seniority: { value: "mid-level, 7 years", confidence: "high", evidence: "C1, C2" } })),
       { sessionId: SESSION_ID, profile: cardsOnly() },
@@ -117,7 +118,7 @@ describe("acceptance: a scripted 5-turn transcript", () => {
     p = applyPillAnswer(p, d.key, NOT_SURE_PILL);
     expect(isOpenToSuggestions(p)).toBe(true);
 
-    // Turn 2: seniority is inferred, so retraining appetite is next. It is
+    // Turn 2: retraining appetite, the second and last question. It is
     // answered in free text that also volunteers location and work mode —
     // neither is ever asked, but both are recorded when the person says them.
     d = nextQuestion(p, CTX);
@@ -160,7 +161,6 @@ describe("acceptance: a scripted 5-turn transcript", () => {
     for (const ask of asks) {
       expect(questionMarks(ask.question)).toBe(1);
       expect(ask.pills).toEqual(pillsFor(ask.key, CTX));
-      expect(ask.allowFreeText).toBe(true);
     }
 
     expect(isElicitationComplete(p)).toBe(true);
@@ -188,6 +188,34 @@ describe("acceptance: a scripted 5-turn transcript", () => {
 });
 
 describe("policy tables", () => {
+  it("asks two questions: climate interests, then retraining appetite", () => {
+    // technical-plan.md D48: seniority is out of the questions.
+    expect(ELICIT_ORDER).toEqual(["climateInterests", "retrainingAppetite"]);
+    let p = cardsOnly();
+    const first = nextQuestion(p, CTX);
+    if (first.kind !== "ask") throw new Error("expected a question");
+    expect(first.key).toBe("climateInterests");
+    p = applyPillAnswer(p, first.key, NOT_SURE_PILL);
+    const second = nextQuestion(p, CTX);
+    if (second.kind !== "ask") throw new Error("expected a question");
+    expect(second.key).toBe("retrainingAppetite");
+    p = applyPillAnswer(p, second.key, second.pills[0]);
+    expect(nextQuestion(p, CTX).kind).toBe("done");
+    // Done with no seniority on file: it is a preference key nothing asks for.
+    expect(p.preferences.seniority).toBeUndefined();
+    expect(isElicitationComplete(p)).toBe(true);
+  });
+
+  it("the asked questions can be answered by a tap alone", () => {
+    // The screen has pills and no text box, so a question may not invite typing.
+    for (const key of ELICIT_ORDER) {
+      expect(QUESTIONS[key]).not.toMatch(/\btyp(?:e|ing)\b|tell me|describe|your own|\bwrite\b/i);
+      expect(QUESTIONS[key]).toMatch(/\btap\b/i);
+      // Someone who cannot choose still has a pill to tap.
+      expect(pillsFor(key, CTX).some((pill) => /not sure/i.test(pill.label))).toBe(true);
+    }
+  });
+
   it("ELICIT_ORDER lists known preference keys, each at most once", () => {
     expect(new Set(ELICIT_ORDER).size).toBe(ELICIT_ORDER.length);
     for (const key of ELICIT_ORDER) expect(KNOWN_PREFERENCE_KEYS).toContain(key);
@@ -364,12 +392,12 @@ describe("interpretAnswer", () => {
     const r = await interpretAnswer(llm, {
       sessionId: SESSION_ID,
       profile: cardsOnly(),
-      key: "seniority",
+      key: "retrainingAppetite",
       answer: "no idea what area yet",
     });
     expect(r.answered).toBe(false);
     expect(r.updatedKeys).toEqual(["climateInterests"]);
     expect(isOpenToSuggestions(r.profile)).toBe(true);
-    expect(nextQuestion(r.profile, CTX)).toMatchObject({ kind: "ask", key: "seniority" });
+    expect(nextQuestion(r.profile, CTX)).toMatchObject({ kind: "ask", key: "retrainingAppetite" });
   });
 });

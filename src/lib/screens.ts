@@ -145,7 +145,7 @@ export interface QuestionContext {
 /**
  * The question the rail shows: the overridden one when the person picked a
  * row from "Change an answer", else the first unanswered key. `undefined`
- * once all three are answered and nothing is being changed.
+ * once both are answered and nothing is being changed.
  */
 export function activeQuestion(p: Profile, ctx: QuestionContext = {}): QuestionView | undefined {
   const key = ctx.override ?? remainingQuestions(p)[0];
@@ -165,7 +165,7 @@ export interface AnswerRow {
   value: string;
 }
 
-/** The "Change an answer" rows: all three keys with their current values. */
+/** The "Change an answer" rows: both asked keys with their current values. */
 export function answerRows(p: Profile): AnswerRow[] {
   return ELICIT_ORDER.map((key) => ({
     key,

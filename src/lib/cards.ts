@@ -62,6 +62,13 @@ export const MAX_SKILLS_PER_CARD = 6;
 /** How many skills a card is asked for at minimum. One is still enough to keep it. */
 export const MIN_SKILLS_PER_CARD = 2;
 
+/**
+ * A skill is an area of expertise: a short noun phrase, never longer than
+ * this many words (technical-plan.md D48). The prompt asks for it and
+ * `pnpm try:cards` checks it; {@link normalizeSkills} does not cut a phrase.
+ */
+export const MAX_SKILL_WORDS = 6;
+
 /** Candidate skills merged into `Skills → Inferred` in one extraction. */
 export const MAX_INFERRED_SKILLS = 20;
 
@@ -95,7 +102,9 @@ export const CardDraftSchema = z.object({
   results: z.string().describe("What changed, quantified wherever the text says so."),
   skills: z
     .array(z.string())
-    .describe("Two to five short noun phrases this card demonstrates."),
+    .describe(
+      "Two to five areas of expertise this card demonstrates: noun phrases of two to four words, six at most. No tool names, verbs or generic traits.",
+    ),
 });
 export type CardDraft = z.infer<typeof CardDraftSchema>;
 
@@ -126,7 +135,7 @@ export const CardsOutputSchema = z.object({
   cards: z.array(CardDraftSchema),
   inferredSkills: z
     .array(z.string())
-    .describe("Cross-cutting skills the text supports but no single card owns."),
+    .describe("Areas of expertise the text supports but no single card owns, at the same grain as a card's skills."),
   notedPreferences: NotedPreferencesSchema.describe(
     `Filled only from a trailing "${NOTES_LABEL}" block in the pasted text; all null and empty when there is none.`,
   ),
@@ -186,7 +195,15 @@ An experience card is one coherent piece of work, described in four parts:
 - Situation: the context — where, when, what was at stake, what the constraints were.
 - Actions: what this person personally did. Use their verbs. Never "the team".
 - Results: what changed because of it, with the numbers the text gives. If the text gives no number, say what changed in plain terms rather than inventing a figure.
-- Skills: ${String(MIN_SKILLS_PER_CARD)} to ${String(MAX_SKILLS_PER_CARD - 1)} short noun phrases (two to four words) that this card actually demonstrates, such as "field production", "experiment design", "developer handoff". Not tools alone, not adjectives, not "communication".
+- Skills: ${String(MIN_SKILLS_PER_CARD)} to ${String(MAX_SKILLS_PER_CARD - 1)} areas of expertise this card actually demonstrates, each a noun phrase of two to four words and never more than ${String(MAX_SKILL_WORDS)}.
+
+What counts as a skill: an area of expertise, meaning a kind of problem this person knows how to solve. A hiring manager in a different industry should be able to read the phrase and know what the person is expert in. "recommendation systems", "fairness evaluation", "two-sided marketplace design", "documentary field production" and "grant portfolio management" are at the right grain. Three kinds of phrase are not skills here:
+
+- A tool, language or platform on its own ("Python", "SQL", "Figma", "Salesforce"). Name the expertise the tool served: SQL on a card about predicting demand is "demand forecasting".
+- A verb or activity lifted from the Actions ("led", "launched", "collaborated", "managing stakeholders"). The Actions field already says what they did.
+- A trait anyone could claim ("communication", "leadership", "problem solving", "teamwork").
+
+Prefer the narrower phrase when the text supports it ("clinical trial data management" over "data management"), and stay as broad as the text when it does not. "inferredSkills" follows the same rules.
 
 How to choose cards:
 
@@ -200,9 +217,9 @@ Hard rules:
 - Do not include the person's name, email, phone number, street address or links in any card. The title names the work, not the person.
 - Do not evaluate, rank or praise the person, and do not mention climate fields, job titles or next steps. Later steps do that. Here you only describe what happened.
 - Give each card its "years": the period as written in the text (such as "2019–2022" or "Mar 2021 – present"), or null when the text gives none. Never guess a date.
+- Write plainly, in the third person with the subject implied ("Scouted and scheduled shoots across two states"). No bullet characters inside a field; a field is one short paragraph.
 
 Notes: the pasted text may end with a line reading "${NOTES_LABEL}" followed by notes the person typed for this tool — constraints such as the level they want, whether they will retrain, where they want to work, remote or on-site, and the climate areas they care about. Put those into "notedPreferences", short and in their words, and do not turn them into cards or skills. With no such block, every notedPreferences value is null and every list empty; never fill one from the resume itself.
-- Write plainly, in the third person with the subject implied ("Scouted and scheduled shoots across two states"). No bullet characters inside a field; a field is one short paragraph.
 
 You always answer with the JSON object the caller's schema describes, and nothing else.`;
 

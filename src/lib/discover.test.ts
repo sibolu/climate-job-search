@@ -11,6 +11,10 @@ import {
   DISCOVER_SYSTEM_PROMPT,
   type DiscoverOutput,
   DiscoverInputError,
+  LEADING_LEVEL_MODIFIERS,
+  LEVEL_HEADS,
+  LEVEL_MODIFIERS,
+  LEVEL_WORD_OCCUPATIONS,
   MAX_CHIPS,
   MAX_FIELDS,
   REF_KEY,
@@ -22,8 +26,12 @@ import {
   cleanCatalogueSources,
   cleanSources,
   discoverFields,
+  hasLevelHead,
+  hasLevelWord,
   renderCardsForDiscover,
   renderCatalogue,
+  renderPreferencesForDiscover,
+  stripLevelWords,
   validateOutput,
 } from "./discover";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
@@ -35,6 +43,7 @@ import {
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
+  setPreference,
 } from "./profile";
 
 const METRICS: CallMetrics = {
@@ -439,5 +448,151 @@ describe("profile writes", () => {
     await expect(
       discoverFields({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]), reference }),
     ).rejects.toBeInstanceOf(DiscoverInputError);
+  });
+});
+
+describe("level words (technical-plan.md D48)", () => {
+  it("strips level modifiers and leaves the occupation", () => {
+    const cases: [string, string][] = [
+      ["Senior Data Scientist", "Data Scientist"],
+      ["Sr. Product Manager", "Product Manager"],
+      ["junior policy analyst", "policy analyst"],
+      ["Senior software engineer, full stack", "Software engineer, full stack"],
+      ["Lead Process Engineer, Battery Recycling", "Process Engineer, Battery Recycling"],
+      ["Principal Engineer", "Engineer"],
+      ["Staff Software Engineer", "Software Engineer"],
+      ["Senior Staff Engineer", "Engineer"],
+      ["Senior / Staff Manufacturing Engineer - High Voltage", "Manufacturing Engineer - High Voltage"],
+      ["Associate Product Manager", "Product Manager"],
+      ["Assistant Site Manager, Electrical Operations", "Site Manager, Electrical Operations"],
+      ["Founding Engineer, Next-Gen Geothermal", "Engineer, Next-Gen Geothermal"],
+      ["Wind Technician II", "Wind Technician"],
+      ["Engineer I, Fuel Cell System Test", "Engineer, Fuel Cell System Test"],
+      ["Process Operator I/II", "Process Operator"],
+      ["Building Energy Analyst (entry-level)", "Building Energy Analyst"],
+      ["HVAC Engineer (Mid Level)", "HVAC Engineer"],
+      ["Analyst, Senior", "Analyst"],
+      ["Technician, Level 2", "Technician"],
+    ];
+    for (const [title, plain] of cases) {
+      expect(stripLevelWords(title)).toBe(plain);
+      expect(hasLevelWord(title)).toBe(true);
+      expect(hasLevelWord(plain)).toBe(false);
+    }
+  });
+
+  it("leaves a title alone when the word is the occupation itself", () => {
+    const occupations = [
+      "Product Manager",
+      "Project Manager, Hydrogen Systems",
+      "Engineering Manager",
+      "Offshore Operations & Maintenance Lead",
+      "Research Associate",
+      "Associate, Renewable Development",
+      "Executive Assistant",
+      "Account Executive, Enterprise",
+      "Chief of Staff",
+      "Principal Investigator",
+      "Art Director",
+      "Lead Generation Specialist",
+      "Environmental Consultant, Phase II",
+      "Level 2 Charger Installer",
+      "Carbon Accountant, Scope 3",
+      "I/O Psychologist",
+      "Staffing Coordinator",
+      "Leadership Development Trainer",
+      "Wellhead Technician",
+      "Data scientist",
+    ];
+    for (const title of occupations) {
+      expect(stripLevelWords(title)).toBe(title);
+      expect(hasLevelWord(title)).toBe(false);
+    }
+  });
+
+  it("flags a rank it cannot strip down to an occupation", () => {
+    const ranks = [
+      "Director of Data Science",
+      "Policy director",
+      "Head of Partnerships",
+      "VP, Investor Relations",
+      "Vice President of Sales",
+      "Chief Sustainability Officer",
+      "CTO",
+      "Associate Director, Development",
+    ];
+    for (const title of ranks) {
+      expect(hasLevelHead(title)).toBe(true);
+      expect(hasLevelWord(title)).toBe(true);
+      // Stripping never invents an occupation: the rank is still there.
+      expect(hasLevelHead(stripLevelWords(title))).toBe(true);
+    }
+    expect(hasLevelHead("Product Manager")).toBe(false);
+  });
+
+  it("every list entry is lower case, and no entry is both protected and stripped", () => {
+    const all = [...LEVEL_MODIFIERS, ...LEADING_LEVEL_MODIFIERS, ...LEVEL_HEADS, ...LEVEL_WORD_OCCUPATIONS];
+    for (const word of all) expect(word).toBe(word.toLowerCase().trim());
+    expect(new Set(all).size).toBe(all.length);
+    expect(LEVEL_HEADS).not.toContain("manager");
+    for (const title of LEVEL_WORD_OCCUPATIONS) expect(hasLevelWord(title)).toBe(false);
+  });
+
+  it("validation strips levels, dedupes within the field and drops a rank", () => {
+    const profile = fixture("videographer");
+    const role = (title: string, ref: string | null = null) => ({
+      ref,
+      title,
+      companies: ["Example Coalition"],
+      why: "Same field craft as C1.",
+      sources: [],
+    });
+    const v = validateOutput(
+      output({
+        roles: [
+          role("Senior Video Producer"),
+          role("video producer"),
+          role("Director of Communications"),
+          role("Lead Storyteller, Video II", "ow-video"),
+        ],
+      }),
+      profile,
+      ALLOWED,
+    );
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video Producer", "Storyteller, Video"]);
+    expect(v.dropped.rolesLevelTitled).toBe(1);
+    expect(v.dropped.rolesUncited).toBe(0);
+    for (const r of v.fields[0]!.roles) expect(hasLevelWord(r.title)).toBe(false);
+  });
+
+  it("a re-run updates a role stored with a level in place", () => {
+    const profile = fixture("videographer");
+    const draft = (title: string) =>
+      output({ roles: [{ ref: null, title, companies: [], why: "Same field craft as C1.", sources: [] }] });
+    const validated = validateOutput(draft("Video Producer"), profile, ALLOWED);
+    const first = applyDiscovery(profile, validated.fields);
+    // An older profile may hold the levelled title; it is the same role.
+    const stored = {
+      ...first.profile,
+      roles: first.profile.roles.map((r) => ({ ...r, title: `Senior ${r.title}` })),
+    };
+    const second = applyDiscovery(stored, validated.fields);
+    expect(second.profile.roles.map((r) => r.id)).toEqual(first.profile.roles.map((r) => r.id));
+    expect(second.profile.roles.map((r) => r.title)).toEqual(["Video Producer"]);
+  });
+
+  it("the prompt asks for plain occupations at companies, and seniority is not sent", () => {
+    expect(DISCOVER_SYSTEM_PROMPT).toContain("carries no level");
+    expect(DISCOVER_SYSTEM_PROMPT).not.toMatch(/employer/i);
+    expect(DISCOVER_SYSTEM_PROMPT).not.toMatch(/seniority/i);
+    const profile = setPreference(fixture("videographer"), "seniority", "director or above", "stated");
+    const prefs = renderPreferencesForDiscover(profile);
+    expect(prefs).not.toMatch(/seniority|director/i);
+    expect(buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES)).not.toContain("director or above");
+  });
+
+  it("shows the catalogue's roles without their level modifiers", () => {
+    const roles: CatalogueRole[] = CAT_ROLES.map((r, i) => (i === 0 ? { ...r, title: `Senior ${r.title} II` } : r));
+    expect(renderCatalogue(CAT_FIELDS, roles)).toBe(renderCatalogue(CAT_FIELDS, CAT_ROLES));
   });
 });

@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
 import { DiscoverInputError, discoverFields, droppedSummary } from "../src/lib/discover";
-import { catalogueSourceUrls, citedActiveCardIds } from "../src/lib/discover";
+import { catalogueSourceUrls, citedActiveCardIds, hasLevelWord } from "../src/lib/discover";
 import { listFields, listRoles } from "../src/lib/reference";
 import { parseProfile, serializeProfile } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
@@ -110,11 +110,13 @@ async function main(): Promise<void> {
   }
   for (const r of result.roles) {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
+    // A title names the occupation, never a level (technical-plan.md D48).
+    if (hasLevelWord(r.title)) problems.push(`${r.id} has a level word in its title`);
     for (const u of r.sources) if (!catalogue.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
   }
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
   process.stderr.write(
-    "PASS: every field has a fit level, sector, an evidence line per cited card and an ask; every field and role cites a card and only catalogue URLs\n",
+    "PASS: every field has a fit level, sector, an evidence line per cited card and an ask; every field and role cites a card and only catalogue URLs; no role title carries a level word\n",
   );
 }
 

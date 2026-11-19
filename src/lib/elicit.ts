@@ -67,17 +67,19 @@ import type { AnswerPill } from "./session";
 // ---------------------------------------------------------------------------
 
 /**
- * The order questions are asked in. Rationale, most decision-relevant first:
+ * The order questions are asked in: two questions, each answered by tapping a
+ * pill (technical-plan.md D48). Most decision-relevant first:
  *
  *   1. `climateInterests` — it is the axis discovery ranks fields on; without
- *      it every other answer only filters an unknown set. It is also the one
- *      question where "not sure yet" is a good answer (see
- *      {@link OPEN_TO_SUGGESTIONS}), so it never blocks.
- *   2. `seniority` — calibrates the role level; the cards usually make this
- *      inferable, so it is often skipped.
- *   3. `retrainingAppetite` — decides between a sector move, an adjacent role
- *      and a retrain. It is most useful once fields are on the table, so it
- *      goes last; it is rarely inferable, so it is still asked.
+ *      it every other answer only filters an unknown set. "Not sure yet" is a
+ *      good answer here (see {@link OPEN_TO_SUGGESTIONS}), so it never blocks.
+ *   2. `retrainingAppetite` — decides between a sector move, an adjacent role
+ *      and a retrain. It is rarely inferable from the cards, so it is asked.
+ *
+ * `seniority` is deliberately **not** asked (technical-plan.md D48). Role
+ * titles carry no level, so no later step reads it. It remains a
+ * {@link PreferenceKey} and {@link inferPreferences} may still fill it from
+ * the cards.
  *
  * `location` and `workMode` are deliberately **not** asked (technical-plan.md D36).
  * They are native filters on every major job board, so the app guides the
@@ -87,11 +89,7 @@ import type { AnswerPill } from "./session";
  * by {@link inferPreferences}, still editable in the Profile tab, still
  * settable from query feedback — only the asking stops.
  */
-export const ELICIT_ORDER: readonly PreferenceKey[] = [
-  "climateInterests",
-  "seniority",
-  "retrainingAppetite",
-];
+export const ELICIT_ORDER: readonly PreferenceKey[] = ["climateInterests", "retrainingAppetite"];
 
 /**
  * Display order for the closing summary: every known preference, asked or
@@ -136,7 +134,8 @@ function missingAskedPreferences(p: Profile): PreferenceKey[] {
 
 /**
  * Every preference the conversation asks for is known (stated or inferred).
- * `location` and `workMode` are not asked, so they never hold this back.
+ * `seniority`, `location` and `workMode` are not asked, so they never hold
+ * this back.
  */
 export function isElicitationComplete(p: Profile): boolean {
   return missingAskedPreferences(p).length === 0;
@@ -155,13 +154,19 @@ export function nextMissingPreference(p: Profile): PreferenceKey | undefined {
  * One question per key. Each is exactly one question sentence — the
  * acceptance test counts question marks — framed by a sentence on why it
  * matters, the way a career coach would ask rather than a form.
+ *
+ * The two asked keys ({@link ELICIT_ORDER}) must be answerable by a tap: the
+ * screen shows pills and no text box (technical-plan.md D48), so neither may
+ * invite typing, and each has a pill for someone who cannot choose. The other
+ * three are never asked; their wording stays for {@link interpretAnswer},
+ * which quotes the question a reply was given to.
  */
 export const QUESTIONS: Record<PreferenceKey, string> = {
   climateInterests:
-    "Let's start with what draws you to climate work, since it shapes everything else I suggest. " +
-    "Is there a part of the climate picture you already lean toward? " +
-    "Tap one below to start, or type your own — a few words is plenty, and \"not sure yet\" " +
-    "is a perfectly good answer.",
+    "Let's start with what draws you to climate work, since it decides which fields I show you first. " +
+    "Which part of the climate picture do you lean toward? " +
+    "Tap the closest one below. If none stands out yet, \"Not sure yet\" is a perfectly good " +
+    "answer, and I'll show you options across all of them.",
   location:
     "Now, geography, because it changes which employers are even in reach. " +
     "Where do you want to be based? " +
@@ -178,7 +183,8 @@ export const QUESTIONS: Record<PreferenceKey, string> = {
   retrainingAppetite:
     "Last one: how much retraining are you up for? " +
     "Some moves reuse what you already do, others need a certificate or a longer course, " +
-    "and I'd rather show you options that match the time you actually want to spend.",
+    "and I'd rather show you options that match the time you actually want to spend. " +
+    "Tap the closest fit below.",
 };
 
 /**
@@ -224,6 +230,8 @@ const PILLS: Record<Exclude<PreferenceKey, "climateInterests">, readonly PillDef
       label: "Open to a degree or a full retrain (a year or more)",
       value: "high, open to a degree or full retrain",
     },
+    // With no text box, "it depends" needs a pill of its own (technical-plan.md D48).
+    { label: "Not sure yet — it depends on the role", value: "not sure yet, depends on the role" },
   ],
 };
 
@@ -293,9 +301,8 @@ export interface ElicitAsk {
   key: PreferenceKey;
   /** Exactly one question sentence, with a line of framing. */
   question: string;
+  /** Every asked question can be answered from these alone (technical-plan.md D48). */
   pills: AnswerPill[];
-  /** The chat input stays open; a pill is a shortcut, never the only way. */
-  allowFreeText: true;
 }
 
 export interface ElicitDone {
@@ -313,7 +320,7 @@ export type ElicitDecision = ElicitAsk | ElicitDone;
 export function nextQuestion(p: Profile, ctx: ElicitContext): ElicitDecision {
   const key = nextMissingPreference(p);
   if (key === undefined) return { kind: "done", summary: doneSummary(p) };
-  return { kind: "ask", key, question: QUESTIONS[key], pills: pillsFor(key, ctx), allowFreeText: true };
+  return { kind: "ask", key, question: QUESTIONS[key], pills: pillsFor(key, ctx) };
 }
 
 /** The inferred tag as the summary shows it; the test looks for it. */

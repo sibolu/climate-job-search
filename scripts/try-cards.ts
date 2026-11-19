@@ -22,7 +22,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
-import { CardsInputError, extractCards } from "../src/lib/cards";
+import { CardsInputError, MAX_SKILL_WORDS, extractCards } from "../src/lib/cards";
 import { llm } from "../src/lib/llm";
 import { serializeProfile } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
@@ -76,7 +76,9 @@ async function main(): Promise<void> {
 
   for (const card of result.cards) {
     process.stderr.write(`${card.id} ${card.title} — years: ${card.years ?? "(none)"}\n`);
+    process.stderr.write(`  skills: ${card.skills.join(" | ")}\n`);
   }
+  process.stderr.write(`inferred skills: ${result.profile.skills.inferred.join(" | ") || "(none)"}\n`);
   const prefs = result.profile.preferences;
   const noted = result.noted.map((key) => {
     if (key === "climateInterests") return `climateInterests=${(prefs.climateInterests?.values ?? []).join(", ")}`;
@@ -99,8 +101,15 @@ async function main(): Promise<void> {
     if (missing.length > 0) problems.push(`${card.id} is missing ${missing.join(", ")}`);
     if (card.skills.length === 0) problems.push(`${card.id} has no skills`);
   }
+  // Areas of expertise are short noun phrases (technical-plan.md D48). Whether a
+  // phrase names an expertise is read by eye from the lines printed above.
+  const printed = new Set([...result.cards.flatMap((card) => card.skills), ...result.profile.skills.inferred]);
+  const wordy = [...printed].filter((skill) => skill.trim().split(/\s+/).length > MAX_SKILL_WORDS);
+  if (wordy.length > 0) {
+    problems.push(`${String(wordy.length)} skills run over ${String(MAX_SKILL_WORDS)} words`);
+  }
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
-  process.stderr.write("PASS: every card has situation, actions, results and >=1 skill\n");
+  process.stderr.write(`PASS: every card has situation, actions, results and >=1 skill; no skill runs over ${String(MAX_SKILL_WORDS)} words\n`);
 }
 
 main().catch((error: unknown) => {

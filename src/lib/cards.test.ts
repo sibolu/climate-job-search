@@ -113,7 +113,8 @@ describe("CARDS_SYSTEM_PROMPT", () => {
   it("is a byte-stable constant with no per-call content", () => {
     expect(CARDS_SYSTEM_PROMPT).toBe(CARDS_SYSTEM_PROMPT);
     expect(CARDS_SYSTEM_PROMPT).toContain("Situation:");
-    expect(CARDS_SYSTEM_PROMPT).toContain("2 to 5 short noun phrases");
+    expect(CARDS_SYSTEM_PROMPT).toContain("2 to 5 areas of expertise");
+    expect(CARDS_SYSTEM_PROMPT).toContain("never more than 6");
     // No placeholders left unrendered, no dates, no session ids.
     expect(CARDS_SYSTEM_PROMPT).not.toMatch(/\$\{|undefined|NaN/);
   });

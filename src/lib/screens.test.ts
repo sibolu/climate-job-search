@@ -55,7 +55,6 @@ function card(patch: Partial<Card> = {}): Omit<Card, "id"> & { id?: string } {
 function answered(): Profile {
   let p = upsertCard(emptyProfile(), card());
   p = setClimateInterests(p, ["clean energy & grid"], "stated");
-  p = setPreference(p, "seniority", "mid-level", "stated");
   p = setPreference(p, "retrainingAppetite", "short courses", "stated");
   return p;
 }
@@ -117,6 +116,8 @@ describe("composeStartText", () => {
 
 describe("preference questions", () => {
   it("lists the unanswered keys in ELICIT_ORDER", () => {
+    expect(remainingQuestions(emptyProfile())).toEqual(["climateInterests", "retrainingAppetite"]);
+    // Seniority is not asked (technical-plan.md D48): having it on file answers nothing.
     const p = setPreference(emptyProfile(), "seniority", "mid-level", "stated");
     expect(remainingQuestions(p)).toEqual(["climateInterests", "retrainingAppetite"]);
     expect(remainingQuestions(answered())).toEqual([]);
@@ -130,17 +131,13 @@ describe("preference questions", () => {
 
   it("re-asks an overridden key even when everything is answered", () => {
     expect(activeQuestion(answered())).toBeUndefined();
-    expect(activeQuestion(answered(), { override: "seniority" })?.key).toBe("seniority");
+    expect(activeQuestion(answered(), { override: "retrainingAppetite" })?.key).toBe("retrainingAppetite");
   });
 
   it("renders current values for the Change an answer rows", () => {
     const rows = answerRows(answered());
-    expect(rows.map((row) => row.key)).toEqual([
-      "climateInterests",
-      "seniority",
-      "retrainingAppetite",
-    ]);
-    expect(rows[1].value).toBe("mid-level");
+    expect(rows.map((row) => row.key)).toEqual(["climateInterests", "retrainingAppetite"]);
+    expect(rows[1].value).toBe("short courses");
     expect(preferenceText(emptyProfile(), "seniority")).toBe("");
   });
 
@@ -157,7 +154,7 @@ describe("matchFieldsGate", () => {
     expect(matchFieldsGate(p).note).toMatch(/highlight/i);
   });
 
-  it("needs the three questions answered", () => {
+  it("needs the questions answered", () => {
     const p = upsertCard(emptyProfile(), card());
     const gate = matchFieldsGate(p);
     expect(gate.enabled).toBe(false);

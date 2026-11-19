@@ -90,7 +90,7 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         profile: next,
         fields: [next.fields.find((f) => f.id === "F9")!],
         roles: [],
-        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 },
+        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 0 },
         call: METRICS,
       });
     },
@@ -236,7 +236,7 @@ describe("pure helpers", () => {
   });
 
   it("messages render without throwing on empty results", () => {
-    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 }, call: METRICS })).toContain("could not find");
+    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 0 }, call: METRICS })).toContain("could not find");
     expect(queriesMessage({ profile: emptyProfile(), roles: [], written: [], added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS })).toContain("could not write");
     expect(reviseMessage({ profile: emptyProfile(), explanation: "Nothing.", retired: [], added: [], narrowed: [], fieldChanges: [], dropped: {} as never, metrics: METRICS })).toContain("No queries changed");
   });
