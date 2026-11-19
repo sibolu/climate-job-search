@@ -8,7 +8,7 @@
 
 import type { FieldStatus, Profile } from "@/lib/profile";
 import { rolesForField } from "@/lib/profile";
-import { matchFieldsGate, orderFields } from "@/lib/screens";
+import { FIND_ROLES_PILL, findRolesGate, orderFields } from "@/lib/screens";
 
 import FieldCard from "./FieldCard";
 import type { AskState } from "./FieldCard";
@@ -42,7 +42,7 @@ export default function FieldBoard({
   onMatchFields,
 }: FieldBoardProps) {
   if (profile.fields.length === 0) {
-    const gate = matchFieldsGate(profile);
+    const gate = findRolesGate(profile);
     return (
       <section>
         <h2 className="cc-h2">Climate fields worth a look</h2>
@@ -54,7 +54,7 @@ export default function FieldBoard({
           disabled={!gate.enabled}
           onClick={onMatchFields}
         >
-          Match fields
+          {FIND_ROLES_PILL.label}
         </button>
         <p className="cc-note" style={{ marginTop: 8 }}>
           {gate.note}

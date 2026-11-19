@@ -27,6 +27,7 @@
  */
 
 import { cardsSummary, extractCards } from "./cards";
+import { FIND_ROLES_PILL } from "./screens";
 import { discoverFields, type DiscoverResult } from "./discover";
 import {
   applyPillAnswer,
@@ -100,8 +101,12 @@ export class TurnInputError extends Error {
   }
 }
 
-/** Offered when elicitation is complete; the browser routes "go" to `discover`. */
-export const GO_PILL: AnswerPill = { label: "Find climate fields for me", value: "go" };
+/**
+ * Offered when elicitation is complete; the browser routes "go" to `discover`.
+ * The label is the Highlights button's ("Find climate roles"), owned by the
+ * browser-safe `screens.ts` so client and server share one source.
+ */
+export const GO_PILL: AnswerPill = FIND_ROLES_PILL;
 
 /** Offered after explore and discover when the profile has fields to search on. */
 

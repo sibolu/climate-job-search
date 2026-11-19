@@ -25,9 +25,9 @@ const FIT_WIDTHS: Record<string, string> = {
 };
 
 export const MOVE_LABELS: Record<string, string> = {
-  sector: "Sector move",
-  adjacent: "Adjacent role",
-  retraining: "Retraining",
+  sector: "Same work, new sector",
+  adjacent: "A step sideways",
+  retraining: "Needs retraining",
 };
 
 const MARKS: { status: FieldStatus; label: string }[] = [
@@ -39,11 +39,6 @@ const MARKS: { status: FieldStatus; label: string }[] = [
 /** Where the field's ask has got to, which is what the button label says. */
 export type AskState = "idle" | "live" | "noted";
 
-const ASK_LABELS: Record<AskState, string> = {
-  idle: "Add info in chat",
-  live: "Open in the chat rail",
-  noted: "Noted — in your profile",
-};
 
 export interface FieldCardProps {
   profile: Profile;
@@ -66,12 +61,10 @@ export default function FieldCard({
   rank,
   open,
   roles,
-  askState,
   canWriteSearches,
   onToggle,
   onMark,
   onRole,
-  onAsk,
   onWriteSearches,
 }: FieldCardProps) {
   const selected = roles.filter((role) => role.selected);
@@ -185,23 +178,13 @@ export default function FieldCard({
                     What is uncertain
                   </div>
                   <p style={{ fontSize: 13.5, lineHeight: 1.55 }}>{field.uncertain}</p>
-                  {field.ask ? (
-                    <button
-                      type="button"
-                      className="cc-btn-outline"
-                      disabled={askState === "noted"}
-                      onClick={onAsk}
-                    >
-                      {ASK_LABELS[askState]}
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
             </div>
 
             {allEmployers.length > 0 ? (
               <div>
-                <div className="cc-mono-label">Potential employers</div>
+                <div className="cc-mono-label">Companies</div>
                 <div className="cc-chips">
                   {allEmployers.map((name) => (
                     <span key={name} className="cc-chip cc-chip-outline">

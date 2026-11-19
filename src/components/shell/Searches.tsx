@@ -47,7 +47,7 @@ export default function Searches({
           </p>
         </div>
         <button type="button" className="cc-btn-outline" onClick={onBackToFields}>
-          Back to fields
+          Back to roles
         </button>
       </div>
 
@@ -58,15 +58,15 @@ export default function Searches({
             Open a field, tick the roles that interest you, and the searches for them appear here.
           </p>
           <button type="button" className="cc-btn" onClick={onBackToFields}>
-            Back to fields
+            Back to roles
           </button>
         </div>
       ) : null}
 
-      {groups.map((group) => (
+      {groups.map((group, index) => (
         <div key={group.field.id} className="cc-group">
           <div className="cc-group-head">
-            <span className="cc-rank">{group.field.id}</span>
+            <span className="cc-rank">{index + 1}</span>
             <span style={{ fontSize: 15.5, fontWeight: 600 }}>{group.field.name}</span>
           </div>
           {group.roles.length > 0 ? (

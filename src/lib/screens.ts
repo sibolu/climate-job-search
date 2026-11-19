@@ -11,7 +11,6 @@
 import type { AnswerPill } from "./session";
 import {
   ELICIT_ORDER,
-  PREFERENCE_LABELS,
   QUESTIONS,
   isOpenToSuggestions,
   pillsFor,
@@ -29,7 +28,7 @@ import { MAX_FEEDBACK_REASON } from "./workspace";
 export type Screen = "firstRun" | "highlights" | "pending" | "board" | "searches" | "feedback";
 
 /** The three header steps. */
-export type NavStep = "highlights" | "fields" | "searches";
+export type NavStep = "highlights" | "roles" | "searches";
 
 /**
  * Which of the post-discovery panels the person navigated to. The screen is
@@ -37,13 +36,18 @@ export type NavStep = "highlights" | "fields" | "searches";
  */
 export type View = "board" | "searches" | "feedback";
 
-export const NAV_STEPS: readonly NavStep[] = ["highlights", "fields", "searches"];
+export const NAV_STEPS: readonly NavStep[] = ["highlights", "roles", "searches"];
 
 export const NAV_LABELS: Record<NavStep, string> = {
   highlights: "1 Highlights",
-  fields: "2 Fields",
+  roles: "2 Roles",
   searches: "3 Searches",
 };
+
+/** The header's "Start over" confirm text; everything lives in this browser only. */
+export const START_OVER_CONFIRM =
+  "Start over? This removes your highlights, answers, roles and searches from this browser. " +
+  "Save a copy from Your profile first if you want to keep them.";
 
 export interface ScreenInput {
   /** Any card at all on the profile, excluded ones included. */
@@ -73,24 +77,40 @@ export function currentScreen({ hasCards, hasFields, busy, view }: ScreenInput):
 /** The header step highlighted for a screen. */
 export function navStepFor(screen: Screen): NavStep {
   if (screen === "searches" || screen === "feedback") return "searches";
-  return screen === "board" || screen === "pending" ? "fields" : "highlights";
+  return screen === "board" || screen === "pending" ? "roles" : "highlights";
 }
 
 /** Steps ahead of what the person has reached are disabled. */
 export function navStepEnabled(step: NavStep, input: ScreenInput): boolean {
   if (step === "highlights") return input.hasCards;
-  if (step === "fields") return input.hasFields;
+  if (step === "roles") return input.hasFields;
   return input.hasQueries === true;
 }
 
-/** The nav is hidden entirely on first run (handoff, Shell). */
+/**
+ * The nav, "Your profile" and "Start over" are hidden entirely on first run
+ * (handoff, Shell). There is no rail: the flow is one centred column
+ * (technical-plan.md D49).
+ */
 export function showNav(screen: Screen): boolean {
   return screen !== "firstRun";
 }
 
-/** The rail is absent on first run and present everywhere else (D42). */
-export function showRail(screen: Screen): boolean {
-  return screen !== "firstRun";
+// ---------------------------------------------------------------------------
+// Info tips: what each input changes (step 2b.11)
+// ---------------------------------------------------------------------------
+
+export const INFO_TIPS = {
+  excludeCard: "Excluded highlights are not used to match roles.",
+  removeSkill: "Removed expertise is not used to match roles.",
+  answer: "Your answer is used to rank roles.",
+} as const;
+
+/** "3 of 4 highlights used to match roles." */
+export function highlightsCountNote(p: Profile): string {
+  const total = p.cards.length;
+  const used = activeCards(p).length;
+  return `${used} of ${total} highlight${total === 1 ? "" : "s"} used to match roles.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +132,21 @@ export function composeStartText(pasted: string, notes: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// The three preference questions (D38)
+// The two preference questions (D38, D48: seniority is no longer asked)
 // ---------------------------------------------------------------------------
+
+/**
+ * Plain-words names for the asked questions. `PREFERENCE_LABELS` in
+ * `elicit.ts` are profile keys ("Retraining appetite"); these are what a
+ * person reads on screen.
+ */
+export const QUESTION_LABELS: Record<PreferenceKey, string> = {
+  climateInterests: "What draws you to climate work",
+  retrainingAppetite: "How much retraining you're open to",
+  location: "Where you want to be based",
+  workMode: "How you want to work",
+  seniority: "Your level",
+};
 
 /** True when this preference already has a value on the profile. */
 export function hasPreference(p: Profile, key: PreferenceKey): boolean {
@@ -128,34 +161,55 @@ export function remainingQuestions(p: Profile): PreferenceKey[] {
   return ELICIT_ORDER.filter((key) => !hasPreference(p, key));
 }
 
+export interface QuestionPill extends AnswerPill {
+  /** This pill is the recorded answer; drawn pressed. */
+  selected: boolean;
+}
+
 export interface QuestionView {
   key: PreferenceKey;
   label: string;
   question: string;
-  pills: AnswerPill[];
+  pills: QuestionPill[];
+  /** The recorded answer in plain words; empty while unanswered. */
+  answer: string;
 }
 
 export interface QuestionContext {
   /** Sector groups from the server's own pills, when the cards turn sent any. */
   sectorGroups?: readonly string[];
-  /** A key the person re-opened through "Change an answer". */
-  override?: PreferenceKey;
+}
+
+function sameAnswer(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** True when `pill` is the answer recorded for `key`. */
+export function pillSelected(p: Profile, key: PreferenceKey, pill: AnswerPill): boolean {
+  if (key === "climateInterests") {
+    const values = p.preferences.climateInterests?.values ?? [];
+    return values.some((value) => sameAnswer(value, pill.value));
+  }
+  const value = p.preferences[key]?.value ?? "";
+  return value.trim() !== "" && sameAnswer(value, pill.value);
 }
 
 /**
- * The question the rail shows: the overridden one when the person picked a
- * row from "Change an answer", else the first unanswered key. `undefined`
- * once both are answered and nothing is being changed.
+ * Both asked questions, in `ELICIT_ORDER`, shown at once on the Highlights
+ * screen. An answered one keeps its pills so tapping another changes the
+ * answer (this replaced the rail's "Change an answer", technical-plan.md D49).
  */
-export function activeQuestion(p: Profile, ctx: QuestionContext = {}): QuestionView | undefined {
-  const key = ctx.override ?? remainingQuestions(p)[0];
-  if (key === undefined) return undefined;
-  return {
+export function questionViews(p: Profile, ctx: QuestionContext = {}): QuestionView[] {
+  return ELICIT_ORDER.map((key) => ({
     key,
-    label: PREFERENCE_LABELS[key],
+    label: QUESTION_LABELS[key],
     question: QUESTIONS[key],
-    pills: pillsFor(key, { sectorGroups: ctx.sectorGroups ?? [] }),
-  };
+    pills: pillsFor(key, { sectorGroups: ctx.sectorGroups ?? [] }).map((pill) => ({
+      ...pill,
+      selected: pillSelected(p, key, pill),
+    })),
+    answer: preferenceText(p, key),
+  }));
 }
 
 export interface AnswerRow {
@@ -165,11 +219,11 @@ export interface AnswerRow {
   value: string;
 }
 
-/** The "Change an answer" rows: both asked keys with their current values. */
+/** Both asked keys with their current values, in plain words. */
 export function answerRows(p: Profile): AnswerRow[] {
   return ELICIT_ORDER.map((key) => ({
     key,
-    label: PREFERENCE_LABELS[key],
+    label: QUESTION_LABELS[key],
     value: preferenceText(p, key),
   }));
 }
@@ -185,27 +239,37 @@ export function preferenceText(p: Profile, key: PreferenceKey): string {
 }
 
 // ---------------------------------------------------------------------------
-// "Match fields"
+// "Find climate roles"
 // ---------------------------------------------------------------------------
 
-export interface MatchGate {
+/**
+ * The button that starts discovery, and the pill the server offers for it.
+ * The one source of truth for the label: `turn.ts` re-exports it as
+ * `GO_PILL`, and the browser routes `value` "go" to `discover`.
+ */
+export const FIND_ROLES_PILL: AnswerPill = { label: "Find climate roles", value: "go" };
+
+export interface FindRolesGate {
   enabled: boolean;
-  /** One line saying why not, or why it is safe to run. */
+  /** One line naming what is missing on this screen, or what happens next. */
   note: string;
 }
 
 /**
  * Discovery never auto-starts (D38): the person excludes highlights first,
- * and the turn costs about $0.50.
+ * and the turn costs about $0.50. The note names only things visible on the
+ * Highlights screen, never a panel that no longer exists (D49).
  */
-export function matchFieldsGate(p: Profile): MatchGate {
+export function findRolesGate(p: Profile): FindRolesGate {
   if (activeCards(p).length === 0) {
-    return { enabled: false, note: "Include at least one highlight to match on." };
+    return { enabled: false, note: "Include at least one highlight above first." };
   }
   const remaining = remainingQuestions(p);
+  if (remaining.length === ELICIT_ORDER.length) {
+    return { enabled: false, note: "Answer the two questions above first." };
+  }
   if (remaining.length > 0) {
-    const labels = remaining.map((key) => PREFERENCE_LABELS[key].toLowerCase()).join(", ");
-    return { enabled: false, note: `Answer ${labels} in the assistant rail first.` };
+    return { enabled: false, note: `Answer “${QUESTION_LABELS[remaining[0]]}” above first.` };
   }
   return { enabled: true, note: "About a minute. Nothing else to do while it runs." };
 }
@@ -220,8 +284,13 @@ export interface LogLine {
   text: string;
 }
 
-/** How many log lines the rail keeps; older ones fall off the top. */
+/** How many log lines the pending screen keeps; older ones fall off the top. */
 export const MAX_LOG_LINES = 60;
+
+/** The pending screen's status line: the latest progress line, or a default. */
+export function pendingStatusLine(log: readonly LogLine[]): string {
+  return log.length > 0 ? log[log.length - 1].text : "Getting started…";
+}
 
 /** `134_000` → `2:14`. Negative and non-finite input clamp to `0:00`. */
 export function formatElapsed(ms: number): string {
@@ -381,7 +450,7 @@ export const VERDICT_LABELS: Record<Verdict, string> = {
 
 /** The "What was off?" chips offered per verdict. */
 export const VERDICT_CHIPS: Record<Verdict, readonly string[]> = {
-  good: ["A bit broad", "A bit narrow", "Mostly one employer"],
+  good: ["A bit broad", "A bit narrow", "Mostly one company"],
   partly: ["Too senior", "Too junior", "Wrong discipline", "Wrong location", "Too few postings"],
   wrong: ["Too senior", "Too junior", "Wrong discipline", "Needs a licence", "Wrong location"],
   none: ["Too narrow", "Wrong wording", "Too few postings"],

@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * The exploration-first shell (technical-plan.md D37, D38, D42). It owns the
+ * The exploration-first shell (technical-plan.md D37, D38, D42): one centred
+ * column, no rail (technical-plan.md D49). It owns the
  * browser session (`localStorage` through `session.ts` — nothing is stored
  * server-side), the single in-flight turn and its abort controller, and the
  * screen state, which is derived in `screens.ts` rather than tracked here.
@@ -13,9 +14,8 @@ import { useRouter } from "next/navigation";
 import type { AnswerPill, QueryFeedback, SessionState, StepName, TurnInput } from "@/lib/session";
 import { clearSession, buildTurnRequest, loadSession, saveSession, startOver } from "@/lib/session";
 import { applyPillAnswer } from "@/lib/elicit";
-import type { Card, FieldStatus, PreferenceKey, Profile } from "@/lib/profile";
+import type { Card, FieldStatus, Profile } from "@/lib/profile";
 import {
-  addOtherPreference,
   parseProfile,
   serializeProfile,
   setCardExcluded,
@@ -26,6 +26,7 @@ import {
 } from "@/lib/profile";
 import type { LogLine, NavStep, RevisionState, TurnSnapshot, Verdict, View } from "@/lib/screens";
 import {
+  FIND_ROLES_PILL,
   appendLogLines,
   boardOrder,
   currentScreen,
@@ -35,7 +36,6 @@ import {
   restoreSnapshot,
   revisedQueryFor,
   showNav,
-  showRail,
   takeSnapshot,
   verdictToServer,
 } from "@/lib/screens";
@@ -45,7 +45,9 @@ import {
   applyTurnResponse,
   buildSelectedRolesTurnInput,
   canWriteQueries,
+  confirmProfileSkill,
   nextStep,
+  rejectProfileSkill,
 } from "@/lib/workspace";
 
 import FeedbackScreen from "./Feedback";
@@ -55,7 +57,6 @@ import Header from "./Header";
 import Highlights from "./Highlights";
 import Pending from "./Pending";
 import ProfileDrawer from "./ProfileDrawer";
-import Rail from "./Rail";
 import Searches from "./Searches";
 
 /**
@@ -76,12 +77,10 @@ export default function AppShell() {
   const [elapsed, setElapsed] = useState("0:00");
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [questionOverride, setQuestionOverride] = useState<PreferenceKey | undefined>(undefined);
   const [sectorGroups, setSectorGroups] = useState<string[]>([]);
   const [view, setView] = useState<View>("board");
   const [order, setOrder] = useState<string[]>([]);
   const [expandedId, setExpandedId] = useState<string | undefined>(undefined);
-  const [askFieldId, setAskFieldId] = useState<string | undefined>(undefined);
   const [copiedAt, setCopiedAt] = useState<Record<string, number>>({});
   const [now, setNow] = useState(0);
   const [judged, setJudged] = useState<{ queryId: string; verdict: Verdict } | null>(null);
@@ -124,6 +123,16 @@ export default function AppShell() {
   function persist(next: SessionState) {
     setState(next);
     saveSession(next);
+  }
+
+  /** Applies a `workspace.ts` session update and saves it. */
+  function writeSession(update: (current: SessionState) => SessionState) {
+    setState((current) => {
+      if (current === null) return current;
+      const next = update(current);
+      saveSession(next);
+      return next;
+    });
   }
 
   function writeProfile(mutate: (profile: Profile) => Profile) {
@@ -210,23 +219,16 @@ export default function AppShell() {
     view,
   };
   const screen = currentScreen(screenInput);
-  const lastAssistant = [...(state?.messages ?? [])].reverse().find((m) => m.role === "assistant");
+  // The post-turn assistant message is stored but never shown: there is no
+  // rail to show it in, and the screens say what happened (technical-plan.md D49).
 
   function onStart(text: string) {
     void runTurn(nextStep(profile, { source: "paste" }), { kind: "message", content: text });
   }
 
-  function onMatchFields() {
-    void runTurn("discover", { kind: "message", content: "go" });
-  }
-
-  const askField = profile.fields.find((field) => field.id === askFieldId);
-  const notedKeys = new Set(profile.preferences.other.map((entry) => entry.key));
-
-  function askStateFor(fieldId: string) {
-    const field = profile.fields.find((f) => f.id === fieldId);
-    if (field?.ask !== undefined && notedKeys.has(field.ask.key)) return "noted" as const;
-    return fieldId === askFieldId ? ("live" as const) : ("idle" as const);
+  // Discovery never auto-starts: the person presses "Find climate roles" (D38).
+  function onFindRoles() {
+    void runTurn("discover", { kind: "message", content: FIND_ROLES_PILL.value });
   }
 
   function goToBoard() {
@@ -284,13 +286,25 @@ export default function AppShell() {
     setRevisionState("proposed");
   }
 
-  function onDelete() {
+  /** "Start over" in the header, after its confirm: clears this browser's copy. */
+  function onStartOver() {
+    abortRef.current?.abort();
+    abortRef.current = null;
     clearSession();
+    setBusy(false);
     setDrawerOpen(false);
     setSectorGroups([]);
-    setQuestionOverride(undefined);
     setErrorText(undefined);
     setLog([]);
+    setView("board");
+    setOrder([]);
+    setExpandedId(undefined);
+    setCopiedAt({});
+    setJudged(null);
+    setSentFeedback(null);
+    setSnapshot(null);
+    setRevisedReady(false);
+    setRevisionState("proposed");
     persist(startOver());
   }
 
@@ -298,34 +312,47 @@ export default function AppShell() {
     <main className="cc-page">
       <div className="cc-shell">
         <Header
-          screen={screen}
           input={screenInput}
           current={navStepFor(screen)}
           showNav={showNav(screen)}
+          profileOpen={drawerOpen}
           onNavigate={onNavigate}
+          onToggleProfile={() => setDrawerOpen((open) => !open)}
+          onStartOver={onStartOver}
         />
         {drawerOpen && state !== null ? (
           <ProfileDrawer
             state={state}
             profileMd={profileMd}
             onImport={persist}
-            onDelete={onDelete}
             onClose={() => setDrawerOpen(false)}
           />
         ) : null}
-        <div className="cc-body" data-rail={showRail(screen) ? "open" : "closed"}>
+        <div className="cc-body">
           <div className="cc-main">
+            {errorText !== undefined || parsed.warnings.length > 0 ? (
+              <div className="cc-banner" role="alert">
+                {errorText !== undefined ? <p>{errorText}</p> : null}
+                {parsed.warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+            ) : null}
             {screen === "firstRun" ? (
               <FirstRun busy={busy} onStart={onStart} onOpenProfile={() => setDrawerOpen(true)} />
             ) : null}
             {screen === "highlights" ? (
               <Highlights
                 profile={profile}
+                sectorGroups={sectorGroups}
                 onExclude={(cardId, excluded) =>
                   writeProfile((p) => setCardExcluded(p, cardId, excluded))
                 }
                 onEditCard={(card: Card) => writeProfile((p) => upsertCard(p, card))}
-                onMatchFields={onMatchFields}
+                onConfirmSkill={(skill) => writeSession((s) => confirmProfileSkill(s, skill))}
+                onRemoveSkill={(skill) => writeSession((s) => rejectProfileSkill(s, skill))}
+                onAnswer={(key, pill) => writeProfile((p) => applyPillAnswer(p, key, pill))}
+                onFindRoles={onFindRoles}
               />
             ) : null}
             {screen === "pending" ? <Pending elapsed={elapsed} log={log} /> : null}
@@ -341,11 +368,13 @@ export default function AppShell() {
                 onRole={(roleId, selected) =>
                   writeProfile((p) => setRoleSelected(p, roleId, selected))
                 }
-                onAsk={setAskFieldId}
-                askStateFor={askStateFor}
+                // The per-field ask has no home without the rail; the next step
+                // puts it on the Roles screen (technical-plan.md D49).
+                onAsk={() => undefined}
+                askStateFor={() => "idle"}
                 canWriteSearches={() => canWriteQueries(profile)}
                 onWriteSearches={() => void writeSearches()}
-                onMatchFields={onMatchFields}
+                onMatchFields={onFindRoles}
               />
             ) : null}
             {screen === "searches" ? (
@@ -391,43 +420,6 @@ export default function AppShell() {
               />
             ) : null}
           </div>
-          {showRail(screen) ? (
-            <Rail
-              profile={profile}
-              busy={busy}
-              elapsed={elapsed}
-              log={log}
-              warnings={parsed.warnings}
-              errorText={errorText}
-              assistantMessage={lastAssistant?.content}
-              sectorGroups={sectorGroups}
-              questionOverride={questionOverride}
-              ask={
-                askField?.ask === undefined
-                  ? undefined
-                  : {
-                      fieldId: askField.id,
-                      fieldName: askField.name,
-                      question: askField.ask.question,
-                      profileKey: askField.ask.key,
-                      placeholder: askField.ask.placeholder,
-                    }
-              }
-              onDismissAsk={() => setAskFieldId(undefined)}
-              onPill={(key, pill) => {
-                writeProfile((p) => applyPillAnswer(p, key, pill));
-                setQuestionOverride(undefined);
-              }}
-              onChangeAnswer={setQuestionOverride}
-              // D43: a per-field ask is a local profile write, never a model call.
-              onAsk={(key, answer) => {
-                writeProfile((p) => addOtherPreference(p, key, answer, "stated"));
-                setAskFieldId(undefined);
-                setDrawerOpen(true);
-              }}
-              onOpenProfile={() => setDrawerOpen((open) => !open)}
-            />
-          ) : null}
         </div>
       </div>
     </main>

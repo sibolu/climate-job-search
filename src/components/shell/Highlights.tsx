@@ -2,98 +2,206 @@
 
 import { useState } from "react";
 
-import type { Card, Profile } from "@/lib/profile";
-import { activeCards } from "@/lib/profile";
-import { matchFieldsGate } from "@/lib/screens";
+import type { AnswerPill } from "@/lib/session";
+import type { Card, PreferenceKey, Profile } from "@/lib/profile";
+import {
+  FIND_ROLES_PILL,
+  INFO_TIPS,
+  findRolesGate,
+  highlightsCountNote,
+  questionViews,
+} from "@/lib/screens";
+
+import InfoTip from "./InfoTip";
 
 export interface HighlightsProps {
   profile: Profile;
+  /** Sector groups carried by the cards turn's pills, when it sent any. */
+  sectorGroups: readonly string[];
   onExclude: (cardId: string, excluded: boolean) => void;
   onEditCard: (card: Card) => void;
-  onMatchFields: () => void;
+  onConfirmSkill: (skill: string) => void;
+  onRemoveSkill: (skill: string) => void;
+  onAnswer: (key: PreferenceKey, pill: AnswerPill) => void;
+  onFindRoles: () => void;
 }
 
 /**
- * The extracted work highlights. Corrections happen here and in the rail —
- * there is no free-text composer in the beta (technical-plan.md D42).
+ * The Highlights step, top to bottom: the person's expertise, the collapsed
+ * highlight cards, the two preference questions, and one button. Corrections
+ * happen here, through the UI — there is no free-text composer (D42) and no
+ * rail (technical-plan.md D49). Discovery starts only when the person presses
+ * the button (D38).
  */
 export default function Highlights({
   profile,
+  sectorGroups,
   onExclude,
   onEditCard,
-  onMatchFields,
+  onConfirmSkill,
+  onRemoveSkill,
+  onAnswer,
+  onFindRoles,
 }: HighlightsProps) {
   const [editing, setEditing] = useState<string | undefined>(undefined);
-  const gate = matchFieldsGate(profile);
-  const included = activeCards(profile).length;
+  const gate = findRolesGate(profile);
+  const questions = questionViews(profile, { sectorGroups });
+  const { confirmed, inferred } = profile.skills;
 
   return (
     <section>
-      <div className="cc-screen-head">
-        <div>
-          <h2 className="cc-h2">Your highlights</h2>
-          <p className="cc-sub">
-            Fix anything wrong. Exclude what you do not want to be matched on.
-          </p>
-        </div>
-        <span className="cc-counter">
-          Matching fields · {included} of {profile.cards.length} in
-        </span>
-      </div>
+      <h2 className="cc-h2">Your highlights</h2>
+      <p className="cc-sub">Fix anything wrong. Exclude what you do not want to be matched on.</p>
 
-      <div className="cc-grid">
-        {profile.cards.map((card) =>
-          editing === card.id ? (
-            <CardEditor
-              key={card.id}
-              card={card}
-              onCancel={() => setEditing(undefined)}
-              onSave={(next) => {
-                onEditCard(next);
-                setEditing(undefined);
-              }}
-            />
-          ) : (
-            <article key={card.id} className="cc-card" data-excluded={card.excluded}>
-              <div className="cc-card-head">
-                <span className="cc-card-title">{card.title}</span>
-                {card.years ? <span className="cc-years">{card.years}</span> : null}
-              </div>
-              <dl className="cc-dl">
-                <dt>Situation</dt>
-                <dd>{card.situation}</dd>
-                <dt>Action</dt>
-                <dd>{card.actions}</dd>
-                <dt>Result</dt>
-                <dd>{card.results}</dd>
-              </dl>
+      {confirmed.length + inferred.length > 0 ? (
+        <div className="cc-block">
+          <h3 className="cc-h3">Your expertise</h3>
+          {confirmed.length > 0 ? (
+            <div className="cc-chips">
+              {confirmed.map((skill) => (
+                <span key={skill} className="cc-chip cc-chip-green">
+                  {skill}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {inferred.length > 0 ? (
+            <>
+              <p className="cc-note cc-with-tip" style={{ marginTop: 12 }}>
+                Read from your resume. Keep or remove each one.
+                <InfoTip text={INFO_TIPS.removeSkill} label="What removing expertise changes" />
+              </p>
               <div className="cc-chips">
-                {card.skills.map((skill) => (
-                  <span key={skill} className="cc-chip">
-                    {skill}
+                {inferred.map((skill) => (
+                  <span key={skill} className="cc-skill">
+                    <span>{skill}</span>
+                    <button
+                      type="button"
+                      className="cc-skill-btn"
+                      aria-label={`Keep ${skill}`}
+                      title="Keep"
+                      onClick={() => onConfirmSkill(skill)}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="cc-skill-btn"
+                      aria-label={`Remove ${skill}`}
+                      title="Remove"
+                      onClick={() => onRemoveSkill(skill)}
+                    >
+                      ×
+                    </button>
                   </span>
                 ))}
               </div>
-              <div className="cc-card-footer">
-                <button type="button" className="cc-btn-outline" onClick={() => setEditing(card.id)}>
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="cc-btn-outline"
-                  onClick={() => onExclude(card.id, !card.excluded)}
-                >
-                  {card.excluded ? "Excluded — include" : "Exclude"}
-                </button>
-              </div>
-            </article>
-          ),
-        )}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="cc-block">
+        <h3 className="cc-h3">Highlights</h3>
+        <p className="cc-note cc-with-tip">
+          {highlightsCountNote(profile)}
+          <InfoTip text={INFO_TIPS.excludeCard} label="What excluding a highlight changes" />
+        </p>
+        <div className="cc-grid">
+          {profile.cards.map((card) =>
+            editing === card.id ? (
+              <CardEditor
+                key={card.id}
+                card={card}
+                onCancel={() => setEditing(undefined)}
+                onSave={(next) => {
+                  onEditCard(next);
+                  setEditing(undefined);
+                }}
+              />
+            ) : (
+              <article key={card.id} className="cc-card" data-excluded={card.excluded}>
+                <div className="cc-card-head">
+                  <span className="cc-card-title">{card.title}</span>
+                  {card.years ? <span className="cc-years">{card.years}</span> : null}
+                </div>
+                {card.results ? (
+                  <p className="cc-card-result" title={card.results}>
+                    {card.results}
+                  </p>
+                ) : null}
+                <div className="cc-chips">
+                  {card.skills.map((skill) => (
+                    <span key={skill} className="cc-chip">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+                <details className="cc-details">
+                  <summary>Details</summary>
+                  <dl className="cc-dl">
+                    <dt>Situation</dt>
+                    <dd>{card.situation}</dd>
+                    <dt>Action</dt>
+                    <dd>{card.actions}</dd>
+                    <dt>Result</dt>
+                    <dd>{card.results}</dd>
+                  </dl>
+                </details>
+                <div className="cc-card-footer">
+                  <button
+                    type="button"
+                    className="cc-btn-outline"
+                    onClick={() => setEditing(card.id)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="cc-btn-outline"
+                    aria-pressed={card.excluded}
+                    onClick={() => onExclude(card.id, !card.excluded)}
+                  >
+                    {card.excluded ? "Excluded — include" : "Exclude"}
+                  </button>
+                </div>
+              </article>
+            ),
+          )}
+        </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 22 }}>
-        <button type="button" className="cc-btn" disabled={!gate.enabled} onClick={onMatchFields}>
-          Match fields
+      {questions.map((question) => (
+        <div key={question.key} className="cc-block">
+          <h3 className="cc-h3 cc-with-tip">
+            {question.label}
+            <InfoTip text={INFO_TIPS.answer} label={`What your answer to “${question.label}” changes`} />
+          </h3>
+          <p className="cc-question-text">{question.question}</p>
+          <div className="cc-chips" role="group" aria-label={question.label}>
+            {question.pills.map((pill) => (
+              <button
+                key={pill.value}
+                type="button"
+                className="cc-pill"
+                aria-pressed={pill.selected}
+                onClick={() => onAnswer(question.key, { label: pill.label, value: pill.value })}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+          {question.answer !== "" ? (
+            <p className="cc-note" style={{ marginTop: 8 }}>
+              Your answer: {question.answer}. Tap another option to change it.
+            </p>
+          ) : null}
+        </div>
+      ))}
+
+      <div className="cc-cta-row" style={{ marginTop: 26 }}>
+        <button type="button" className="cc-btn" disabled={!gate.enabled} onClick={onFindRoles}>
+          {FIND_ROLES_PILL.label}
         </button>
         <span className="cc-note">{gate.note}</span>
       </div>
@@ -170,7 +278,7 @@ function Labelled({
 }) {
   return (
     <label className="cc-edit-label">
-      <span className="cc-mono-label">{label}</span>
+      <span className="cc-field-label">{label}</span>
       {multiline ? (
         <textarea
           className="cc-field-input"

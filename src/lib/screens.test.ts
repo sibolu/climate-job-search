@@ -1,20 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  activeQuestion,
   answerRows,
+  findRolesGate,
+  highlightsCountNote,
+  pendingStatusLine,
+  questionViews,
+  FIND_ROLES_PILL,
   appendLogLines,
   composeStartText,
   currentScreen,
   formatElapsed,
-  matchFieldsGate,
   navStepEnabled,
   navStepFor,
   preferenceText,
   remainingQuestions,
   restoreSnapshot,
   showNav,
-  showRail,
   takeSnapshot,
   boardOrder,
   boardSearchUrl,
@@ -80,25 +82,24 @@ describe("currentScreen", () => {
 });
 
 describe("nav", () => {
-  it("maps board and pending onto the Fields step", () => {
-    expect(navStepFor("board")).toBe("fields");
-    expect(navStepFor("pending")).toBe("fields");
+  it("maps board and pending onto the Roles step", () => {
+    expect(navStepFor("board")).toBe("roles");
+    expect(navStepFor("pending")).toBe("roles");
     expect(navStepFor("highlights")).toBe("highlights");
   });
 
   it("disables steps the person has not reached", () => {
     const early = { hasCards: true, hasFields: false, busy: false };
     expect(navStepEnabled("highlights", early)).toBe(true);
-    expect(navStepEnabled("fields", early)).toBe(false);
+    expect(navStepEnabled("roles", early)).toBe(false);
     expect(navStepEnabled("searches", early)).toBe(false);
-    expect(navStepEnabled("fields", { ...early, hasFields: true })).toBe(true);
+    expect(navStepEnabled("roles", { ...early, hasFields: true })).toBe(true);
   });
 
-  it("hides the nav and the rail on first run only", () => {
+  it("hides the nav on first run only", () => {
     expect(showNav("firstRun")).toBe(false);
-    expect(showRail("firstRun")).toBe(false);
     expect(showNav("highlights")).toBe(true);
-    expect(showRail("pending")).toBe(true);
+    expect(showNav("pending")).toBe(true);
   });
 });
 
@@ -123,18 +124,33 @@ describe("preference questions", () => {
     expect(remainingQuestions(answered())).toEqual([]);
   });
 
-  it("asks the first unanswered key and uses the server's sector groups", () => {
-    const view = activeQuestion(emptyProfile(), { sectorGroups: ["energy/grid"] });
-    expect(view?.key).toBe("climateInterests");
-    expect(view?.pills.some((pill) => pill.value === "energy/grid")).toBe(true);
+  it("shows both questions at once and uses the server's sector groups", () => {
+    const views = questionViews(emptyProfile(), { sectorGroups: ["energy/grid"] });
+    expect(views.map((view) => view.key)).toEqual(["climateInterests", "retrainingAppetite"]);
+    expect(views[0].pills.some((pill) => pill.value === "energy/grid")).toBe(true);
+    expect(views.every((view) => view.answer === "")).toBe(true);
+    expect(views.flatMap((view) => view.pills).some((pill) => pill.selected)).toBe(false);
   });
 
-  it("re-asks an overridden key even when everything is answered", () => {
-    expect(activeQuestion(answered())).toBeUndefined();
-    expect(activeQuestion(answered(), { override: "retrainingAppetite" })?.key).toBe("retrainingAppetite");
+  it("keeps an answered question's pills and marks the recorded one", () => {
+    const p = setPreference(answered(), "retrainingAppetite", "low, a short course or certificate", "stated");
+    const [interests, retraining] = questionViews(p, { sectorGroups: ["clean energy & grid"] });
+    expect(retraining.answer).toBe("low, a short course or certificate");
+    expect(retraining.pills.filter((pill) => pill.selected).map((pill) => pill.value)).toEqual([
+      "low, a short course or certificate",
+    ]);
+    expect(interests.pills.filter((pill) => pill.selected).map((pill) => pill.value)).toEqual([
+      "clean energy & grid",
+    ]);
   });
 
-  it("renders current values for the Change an answer rows", () => {
+  it("labels the questions in plain words, never by profile key", () => {
+    const labels = questionViews(emptyProfile()).map((view) => view.label);
+    expect(labels.join(" ")).not.toMatch(/appetite/i);
+    expect(labels[1]).toBe("How much retraining you're open to");
+  });
+
+  it("renders current values for the answer rows", () => {
     const rows = answerRows(answered());
     expect(rows.map((row) => row.key)).toEqual(["climateInterests", "retrainingAppetite"]);
     expect(rows[1].value).toBe("short courses");
@@ -147,31 +163,52 @@ describe("preference questions", () => {
   });
 });
 
-describe("matchFieldsGate", () => {
+describe("findRolesGate", () => {
   it("needs at least one active card", () => {
     const p = setClimateInterests(emptyProfile(), ["clean energy & grid"], "stated");
-    expect(matchFieldsGate(p).enabled).toBe(false);
-    expect(matchFieldsGate(p).note).toMatch(/highlight/i);
+    expect(findRolesGate(p).enabled).toBe(false);
+    expect(findRolesGate(p).note).toMatch(/highlight/i);
   });
 
   it("needs the questions answered", () => {
     const p = upsertCard(emptyProfile(), card());
-    const gate = matchFieldsGate(p);
+    const gate = findRolesGate(p);
     expect(gate.enabled).toBe(false);
-    expect(gate.note).toMatch(/climate interests/i);
+    expect(gate.note).toBe("Answer the two questions above first.");
+    expect(gate.note).not.toMatch(/rail|assistant/i);
+  });
+
+  it("names the one question still open", () => {
+    let p = upsertCard(emptyProfile(), card());
+    p = setClimateInterests(p, ["clean energy & grid"], "stated");
+    expect(findRolesGate(p).note).toMatch(/how much retraining you're open to/i);
+  });
+
+  it("labels the button with the pill the server offers", () => {
+    expect(FIND_ROLES_PILL).toEqual({ label: "Find climate roles", value: "go" });
+  });
+
+  it("counts the highlights used to match", () => {
+    const p = upsertCard(answered(), card({ excluded: true }));
+    expect(highlightsCountNote(p)).toBe("1 of 2 highlights used to match roles.");
   });
 
   it("opens once both hold", () => {
-    expect(matchFieldsGate(answered()).enabled).toBe(true);
+    expect(findRolesGate(answered()).enabled).toBe(true);
   });
 
   it("stays shut when every card is excluded", () => {
     const p = upsertCard(answered(), { ...card({ excluded: true }), id: "C1" });
-    expect(matchFieldsGate(p).enabled).toBe(false);
+    expect(findRolesGate(p).enabled).toBe(false);
   });
 });
 
 describe("the pending log", () => {
+  it("shows the latest line as the status, or a default", () => {
+    expect(pendingStatusLine([])).toBe("Getting started…");
+    expect(pendingStatusLine([{ time: "0:01", text: "a" }, { time: "0:02", text: "b" }])).toBe("b");
+  });
+
   it("formats elapsed time as m:ss and clamps junk to 0:00", () => {
     expect(formatElapsed(134_000)).toBe("2:14");
     expect(formatElapsed(9_000)).toBe("0:09");
