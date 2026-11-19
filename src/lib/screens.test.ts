@@ -15,21 +15,20 @@ import {
   navStepFor,
   preferenceText,
   remainingQuestions,
-  restoreSnapshot,
   showNav,
-  takeSnapshot,
-  boardOrder,
+  askAnswer,
   boardSearchUrl,
-  feedbackReason,
+  citationsToTitles,
   hasLiveQueries,
-  orderFields,
-  orderedFieldGroups,
-  revisedQueryFor,
-  verdictToServer,
+  roleGroups,
+  searchCards,
+  selectedRolesNote,
+  sourceLabel,
+  writeSearchesLabel,
   MAX_LOG_LINES,
 } from "./screens";
-import { MAX_FEEDBACK_REASON } from "./workspace";
 import {
+  addOtherPreference,
   emptyProfile,
   setClimateInterests,
   setPreference,
@@ -76,14 +75,14 @@ describe("currentScreen", () => {
     expect(currentScreen({ hasCards: true, hasFields: true, busy: true })).toBe("pending");
   });
 
-  it("is the board once discovery has landed", () => {
-    expect(currentScreen({ hasCards: true, hasFields: true, busy: false })).toBe("board");
+  it("is the Roles screen once discovery has landed", () => {
+    expect(currentScreen({ hasCards: true, hasFields: true, busy: false })).toBe("roles");
   });
 });
 
 describe("nav", () => {
-  it("maps board and pending onto the Roles step", () => {
-    expect(navStepFor("board")).toBe("roles");
+  it("maps roles and pending onto the Roles step", () => {
+    expect(navStepFor("roles")).toBe("roles");
     expect(navStepFor("pending")).toBe("roles");
     expect(navStepFor("highlights")).toBe("highlights");
   });
@@ -239,16 +238,8 @@ describe("the pending log", () => {
   });
 });
 
-describe("the pre-turn snapshot", () => {
-  it("round-trips the profile text that was in place", () => {
-    const snapshot = takeSnapshot("# Profile\n", 1_700_000_000_000);
-    expect(snapshot.startedAt).toBe(1_700_000_000_000);
-    expect(restoreSnapshot(snapshot)).toBe("# Profile\n");
-  });
-});
-
 // ---------------------------------------------------------------------------
-// The board / searches ordering and the feedback helpers (2b.5)
+// The Roles and Searches screens (technical-plan.md D47, D50)
 // ---------------------------------------------------------------------------
 
 function field(id: string, patch: Partial<Field> = {}): Field {
@@ -290,52 +281,133 @@ function withFields(fields: Field[], roles: Role[] = [], queries: Query[] = []):
   return { ...emptyProfile(), fields, roles, queries };
 }
 
-describe("boardOrder", () => {
-  it("bands Interesting, Unsure, unmarked, Not for me and is stable inside a band", () => {
-    const p = withFields([
-      field("F1", { status: "rejected" }),
-      field("F2"),
-      field("F3", { status: "unsure" }),
-      field("F4", { status: "accepted" }),
-      field("F5"),
-    ]);
-    expect(boardOrder(p)).toEqual(["F4", "F3", "F2", "F5", "F1"]);
-  });
-});
+function card2(id: string, title: string): Card {
+  return { id, title, situation: "s", actions: "a", results: "r", skills: [], excluded: false, extra: {} };
+}
 
-describe("orderFields", () => {
-  it("applies a stored order and appends fields the snapshot never saw", () => {
-    const p = withFields([field("F1"), field("F2"), field("F3")]);
-    expect(orderFields(p, ["F2", "F1"]).map((f) => f.id)).toEqual(["F2", "F1", "F3"]);
-  });
+describe("citationsToTitles", () => {
+  const p = { ...emptyProfile(), cards: [card2("C1", "Grid analyst"), card2("C3", "Ops lead")] };
 
-  it("drops ids that no longer exist", () => {
-    const p = withFields([field("F1")]);
-    expect(orderFields(p, ["F9", "F1"]).map((f) => f.id)).toEqual(["F1"]);
-  });
-});
-
-describe("orderedFieldGroups", () => {
-  it("keeps only fields with ticked roles or live queries, Interesting first", () => {
-    const p = withFields(
-      [field("F1"), field("F2", { status: "accepted" }), field("F3")],
-      [role("R1", "F1", true), role("R2", "F2", true), role("R3", "F3", false)],
-      [query("Q1", "linkedin", ["F1"])],
+  it("renders card ids as the cards' titles, possessives included", () => {
+    expect(citationsToTitles(p, "C1's ranking work and C3's rollout")).toBe(
+      "Grid analyst's ranking work and Ops lead's rollout",
     );
-    const groups = orderedFieldGroups(p);
-    expect(groups.map((g) => g.field.id)).toEqual(["F2", "F1"]);
-    expect(groups[1].queries.map((q) => q.id)).toEqual(["Q1"]);
-    expect(groups[0].queries).toEqual([]);
+    expect(citationsToTitles(p, "Draws on (C1, C03).")).toBe("Draws on (Grid analyst, Ops lead).");
   });
 
-  it("hides retired queries", () => {
+  it("never leaves a raw id for an unknown card and leaves other text alone", () => {
+    expect(citationsToTitles(p, "C7 shows it")).toBe("one of your highlights shows it");
+    expect(citationsToTitles(p, "CO2 and ABC1 stay")).toBe("CO2 and ABC1 stay");
+  });
+});
+
+describe("roleGroups", () => {
+  const p: Profile = {
+    ...withFields(
+      [
+        field("F2", {
+          status: "rejected",
+          fitLevel: "strong",
+          move: "sector",
+          evidence: [{ cardId: "C1", why: "x" }, { cardId: "C9", why: "y" }],
+          fit: "C3 and C1",
+          uncertain: "Unclear whether C3 counts.",
+          ask: { question: "Licensed?", key: "PE licence", placeholder: "" },
+        }),
+        field("F1"),
+      ],
+      [role("R1", "F1", false), role("R2", "F2", true), role("R3", "F9", true)],
+    ),
+    cards: [card2("C1", "Grid analyst"), card2("C3", "Ops lead")],
+  };
+
+  it("keeps discovery's rank order and ignores the field status", () => {
+    expect(roleGroups(p).map((g) => g.field.id)).toEqual(["F2", "F1"]);
+  });
+
+  it("builds the heading data with card titles, never ids", () => {
+    const [group] = roleGroups(p);
+    expect(group.fitLabel).toBe("Strong overlap");
+    expect(group.moveLabel).toBe("Same work, new sector");
+    expect(group.summary).toBe("");
+    expect(group.drawsOn).toEqual(["Grid analyst", "Ops lead"]);
+    expect(group.uncertain).toBe("Unclear whether Ops lead counts.");
+    expect(group.askAnswer).toBeUndefined();
+  });
+
+  it("lists each field's roles and leaves out roles under no field", () => {
+    const groups = roleGroups(p);
+    expect(groups[0].roles.map((r) => r.role.id)).toEqual(["R2"]);
+    expect(groups[1].roles.map((r) => r.role.id)).toEqual(["R1"]);
+  });
+
+  it("renders the role why and the example companies", () => {
+    const q = {
+      ...p,
+      roles: [{ ...role("R1", "F1", false), why: "C1's ranking work", companies: ["Acme", "Volt"] }],
+    };
+    const row = roleGroups(q)[1].roles[0];
+    expect(row.why).toBe("Grid analyst's ranking work");
+    expect(row.companies).toBe("Example companies: Acme, Volt");
+    expect(roleGroups(p)[1].roles[0].companies).toBe("");
+  });
+
+  it("reads a saved ask answer by key, whatever its spacing or case", () => {
+    const answeredP = addOtherPreference(p, "pe  LICENCE", "Yes, since 2019");
+    expect(roleGroups(answeredP)[0].askAnswer).toBe("Yes, since 2019");
+    expect(askAnswer(answeredP, { question: "", key: "other", placeholder: "" })).toBeUndefined();
+  });
+});
+
+describe("sourceLabel", () => {
+  it("shows a link's host, or the raw text when it is not a URL", () => {
+    expect(sourceLabel("https://www.example.org/a/b?c=1")).toBe("example.org");
+    expect(sourceLabel("not a url")).toBe("not a url");
+  });
+});
+
+describe("the write-searches label", () => {
+  it("is singular for one role", () => {
+    expect(writeSearchesLabel(1)).toBe("Write LinkedIn searches for 1 role");
+    expect(writeSearchesLabel(3)).toBe("Write LinkedIn searches for 3 roles");
+    expect(selectedRolesNote(0)).toBe("Tick at least one role first.");
+    expect(selectedRolesNote(2)).toBe("2 roles ticked.");
+  });
+});
+
+describe("searchCards and hasLiveQueries", () => {
+  const fields = [field("F1"), field("F2")];
+
+  it("gives one card per selected role in selectedRoles order, with its live LinkedIn query", () => {
     const p = withFields(
-      [field("F1")],
+      fields,
+      [role("R1", "F2", true), role("R2", "F1", true), role("R3", "F1", false), role("R4", "F1", true)],
+      [
+        query("Q1", "linkedin", ["F1"], { roleId: "R2" }),
+        query("Q2", "linkedin", ["F2"], { roleId: "R1", extra: { Retired: "yes" } }),
+        query("Q3", "linkedin", ["F2"], { roleId: "R1" }),
+      ],
+    );
+    const cards = searchCards(p);
+    expect(cards.map((c) => c.role.id)).toEqual(["R2", "R4", "R1"]);
+    expect(cards.map((c) => c.fieldName)).toEqual(["Field F1", "Field F1", "Field F2"]);
+    expect(cards.map((c) => c.query?.id)).toEqual(["Q1", undefined, "Q3"]);
+    expect(hasLiveQueries(p)).toBe(true);
+  });
+
+  it("is false when no selected role has a live search", () => {
+    const retired = withFields(
+      fields,
       [role("R1", "F1", true)],
-      [query("Q1", "indeed", ["F1"], { extra: { Retired: "yes" } })],
+      [query("Q1", "linkedin", ["F1"], { roleId: "R1", extra: { Retired: "yes" } })],
     );
-    expect(orderedFieldGroups(p)[0].queries).toEqual([]);
-    expect(hasLiveQueries(p)).toBe(false);
+    expect(hasLiveQueries(retired)).toBe(false);
+    const unticked = withFields(
+      fields,
+      [role("R1", "F1", false)],
+      [query("Q1", "linkedin", ["F1"], { roleId: "R1" })],
+    );
+    expect(hasLiveQueries(unticked)).toBe(false);
   });
 });
 
@@ -351,71 +423,18 @@ describe("boardSearchUrl", () => {
   });
 });
 
-describe("feedback", () => {
-  it("collapses the four verdicts onto the server's two", () => {
-    expect(verdictToServer("good")).toBe("good");
-    expect(verdictToServer("partly")).toBe("bad");
-    expect(verdictToServer("wrong")).toBe("bad");
-    expect(verdictToServer("none")).toBe("bad");
-  });
-
-  it("prefixes the verdict label and the chips onto the free text", () => {
-    expect(feedbackReason("wrong", ["Too senior", "Wrong discipline"], " agency jobs ")).toBe(
-      "Wrong roles; Too senior; Wrong discipline — agency jobs",
-    );
-  });
-
-  it("omits the dash when there is no free text and caps the length", () => {
-    expect(feedbackReason("none", [], "   ")).toBe("No results");
-    expect(feedbackReason("good", [], "x".repeat(MAX_FEEDBACK_REASON + 50))).toHaveLength(
-      MAX_FEEDBACK_REASON,
-    );
-  });
-});
-
-describe("revisedQueryFor", () => {
-  const before = withFields([field("F1")], [], [query("Q1", "indeed", ["F1"])]);
-
-  it("finds the same query edited in place", () => {
-    const after = withFields([field("F1")], [], [query("Q1", "indeed", ["F1"], { query: "new" })]);
-    expect(revisedQueryFor(before, after, "Q1")).toEqual({
-      query: after.queries[0],
-      previousText: "q-Q1",
-      changed: true,
-    });
-  });
-
-  it("falls back to the live replacement on the same field and board", () => {
-    const after = withFields(
-      [field("F1")],
-      [],
-      [
-        query("Q1", "indeed", ["F1"], { extra: { Retired: "yes" } }),
-        query("Q2", "indeed", ["F1"], { query: "new" }),
-      ],
-    );
-    expect(revisedQueryFor(before, after, "Q1")?.query.id).toBe("Q2");
-  });
-
-  it("is undefined when the query is unknown or gone", () => {
-    expect(revisedQueryFor(before, before, "Q9")).toBeUndefined();
-    expect(revisedQueryFor(before, withFields([field("F1")]), "Q1")).toBeUndefined();
-  });
-});
-
 describe("currentScreen and the nav with searches", () => {
   const base = { hasCards: true, hasFields: true, busy: false };
 
   it("renders the view the person navigated to", () => {
     expect(currentScreen({ ...base, view: "searches" })).toBe("searches");
-    expect(currentScreen({ ...base, view: "feedback" })).toBe("feedback");
-    expect(currentScreen(base)).toBe("board");
+    expect(currentScreen({ ...base, view: "roles" })).toBe("roles");
+    expect(currentScreen(base)).toBe("roles");
     expect(currentScreen({ ...base, view: "searches", busy: true })).toBe("pending");
   });
 
   it("marks searches as the current step and unlocks it once a query exists", () => {
     expect(navStepFor("searches")).toBe("searches");
-    expect(navStepFor("feedback")).toBe("searches");
     expect(navStepEnabled("searches", base)).toBe(false);
     expect(navStepEnabled("searches", { ...base, hasQueries: true })).toBe(true);
   });

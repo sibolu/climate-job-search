@@ -15,17 +15,16 @@ import {
   isOpenToSuggestions,
   pillsFor,
 } from "./elicit";
-import type { Board, Field, PreferenceKey, Profile, Query, Role } from "./profile";
-import { activeCards, rolesForField } from "./profile";
-import { isRetiredQuery } from "./boards";
-import { MAX_FEEDBACK_REASON } from "./workspace";
+import type { Ask, Board, Field, PreferenceKey, Profile, Query, Role } from "./profile";
+import { activeCards, citedCardIds, rolesForField } from "./profile";
+import { liveQueryForRole, selectedRoles } from "./workspace";
 
 // ---------------------------------------------------------------------------
 // Screens and the header nav
 // ---------------------------------------------------------------------------
 
 /** Every main panel the beta shell can render. */
-export type Screen = "firstRun" | "highlights" | "pending" | "board" | "searches" | "feedback";
+export type Screen = "firstRun" | "highlights" | "pending" | "roles" | "searches";
 
 /** The three header steps. */
 export type NavStep = "highlights" | "roles" | "searches";
@@ -33,8 +32,10 @@ export type NavStep = "highlights" | "roles" | "searches";
 /**
  * Which of the post-discovery panels the person navigated to. The screen is
  * otherwise derived, so this is the only piece of navigation the shell keeps.
+ * There is no feedback panel: query feedback has no UI path in the alpha
+ * (technical-plan.md D51).
  */
-export type View = "board" | "searches" | "feedback";
+export type View = "roles" | "searches";
 
 export const NAV_STEPS: readonly NavStep[] = ["highlights", "roles", "searches"];
 
@@ -56,9 +57,9 @@ export interface ScreenInput {
   hasFields: boolean;
   /** A turn is in flight. */
   busy: boolean;
-  /** Any query at all on the profile, retired ones included. */
+  /** Some selected role has a live search (`hasLiveQueries`). */
   hasQueries?: boolean;
-  /** The panel the person navigated to; `board` when they have not moved. */
+  /** The panel the person navigated to; `roles` when they have not moved. */
   view?: View;
 }
 
@@ -71,13 +72,13 @@ export function currentScreen({ hasCards, hasFields, busy, view }: ScreenInput):
   if (busy) return hasCards ? "pending" : "firstRun";
   if (!hasCards) return "firstRun";
   if (!hasFields) return "highlights";
-  return view ?? "board";
+  return view ?? "roles";
 }
 
 /** The header step highlighted for a screen. */
 export function navStepFor(screen: Screen): NavStep {
-  if (screen === "searches" || screen === "feedback") return "searches";
-  return screen === "board" || screen === "pending" ? "roles" : "highlights";
+  if (screen === "searches") return "searches";
+  return screen === "roles" || screen === "pending" ? "roles" : "highlights";
 }
 
 /** Steps ahead of what the person has reached are disabled. */
@@ -104,6 +105,8 @@ export const INFO_TIPS = {
   excludeCard: "Excluded highlights are not used to match roles.",
   removeSkill: "Removed expertise is not used to match roles.",
   answer: "Your answer is used to rank roles.",
+  writeSearches: "Each ticked role becomes one LinkedIn search.",
+  fieldAsk: "Your answer is saved to your profile. It does not change the order of these roles.",
 } as const;
 
 /** "3 of 4 highlights used to match roles." */
@@ -318,96 +321,152 @@ export function appendLogLines(lines: readonly LogLine[], text: string, elapsedM
 }
 
 // ---------------------------------------------------------------------------
-// Pre-turn snapshot (accept / keep the old one)
+// The Roles screen: fields are headings, roles are what you tick
+// (technical-plan.md D50)
 // ---------------------------------------------------------------------------
 
-export interface TurnSnapshot {
-  /** The profile text as it stood before the turn was sent. */
-  profileMd: string;
-  /** Wall-clock start, for the elapsed counter. */
-  startedAt: number;
-}
-
-/** Taken before a turn goes out so "Keep the old one" can restore it (D38). */
-export function takeSnapshot(profileMd: string, now: number): TurnSnapshot {
-  return { profileMd, startedAt: now };
-}
-
-/** Restores a snapshot: the profile text that was in place before the turn. */
-export function restoreSnapshot(snapshot: TurnSnapshot): string {
-  return snapshot.profileMd;
-}
-
-// ---------------------------------------------------------------------------
-// Ordering: the board snapshot and the search groups (D39, D40)
-// ---------------------------------------------------------------------------
-
-/**
- * Interesting first, then Unsure, then unmarked, then Not for me. The board
- * resolves this **on arrival only** (D39) so cards never jump out from under
- * a cursor that is mid-mark; the Searches screen uses the same weights.
- */
-const STATUS_WEIGHT: Record<string, number> = {
-  accepted: 0,
-  unsure: 1,
-  candidate: 2,
-  rejected: 3,
+/** The three fit levels in plain words; never a percentage (technical-plan.md D39). */
+export const FIT_LABELS: Record<string, string> = {
+  strong: "Strong overlap",
+  some: "Some overlap",
+  stretch: "Stretch",
 };
 
-function statusWeight(field: Field): number {
-  return STATUS_WEIGHT[field.status] ?? 2;
+/** The kind of move a field asks of the person, in plain words. */
+export const MOVE_LABELS: Record<string, string> = {
+  sector: "Same work, new sector",
+  adjacent: "A step sideways",
+  retraining: "Needs retraining",
+};
+
+/** The id → title lookup `citationsToTitles` and the "Draws on" line use. */
+function cardTitles(p: Profile): Map<string, string> {
+  return new Map(p.cards.map((card) => [card.id, card.title.trim() || "one of your highlights"]));
 }
 
 /**
- * The field ids in board order. Discovery writes the fields already ranked,
- * so the sort is stable within a status band and never renumbers anything.
+ * Renders card ids in model text as the cards' titles, so the person never
+ * sees a raw `C3`: "C1's ranking work and C3" becomes "Grid analyst's ranking
+ * work and Ops lead". An id with no card reads "one of your highlights".
  */
-export function boardOrder(p: Profile): string[] {
-  return p.fields
-    .map((field, index) => ({ field, index }))
-    .sort((a, b) => statusWeight(a.field) - statusWeight(b.field) || a.index - b.index)
-    .map(({ field }) => field.id);
+export function citationsToTitles(p: Profile, text: string): string {
+  const titles = cardTitles(p);
+  return text.replace(/\bC(\d+)\b/g, (_match, digits: string) => {
+    return titles.get(`C${Number(digits)}`) ?? "one of your highlights";
+  });
 }
 
-/** Re-applies a stored order, appending any field the snapshot has not seen. */
-export function orderFields(p: Profile, order: readonly string[]): Field[] {
-  const seen = new Set(order);
-  const byId = new Map(p.fields.map((field) => [field.id, field] as const));
-  const known = order.map((id) => byId.get(id)).filter((f): f is Field => f !== undefined);
-  return [...known, ...p.fields.filter((field) => !seen.has(field.id))];
+/** The Roles and Searches footer button label:"Write LinkedIn searches for 1 role" / "… for 3 roles". */
+export function writeSearchesLabel(count: number): string {
+  return `Write LinkedIn searches for ${count} role${count === 1 ? "" : "s"}`;
 }
 
-export interface FieldGroup {
+/** The note under the footer button. */
+export function selectedRolesNote(count: number): string {
+  return count === 0 ? "Tick at least one role first." : `${count} role${count === 1 ? "" : "s"} ticked.`;
+}
+
+export interface RoleRow {
+  role: Role;
+  /** The one-line why, with card ids rendered as card titles. */
+  why: string;
+  /** "Example companies: …", or empty when the role names none. */
+  companies: string;
+}
+
+export interface RoleGroupView {
   field: Field;
-  /** The roles this person ticked, in profile order. */
-  roles: Role[];
-  /** Live (non-retired) queries serving this field. */
-  queries: Query[];
+  fitLabel?: string;
+  moveLabel?: string;
+  /** The field's one-line summary, with card ids rendered as card titles. */
+  summary: string;
+  /** Titles of the cards the field draws on, in citation order, deduplicated. */
+  drawsOn: string[];
+  /** The field's uncertainty, with card ids rendered as card titles. */
+  uncertain: string;
+  ask?: Ask;
+  /** The answer already saved under the ask's key, if any. */
+  askAnswer?: string;
+  roles: RoleRow[];
+}
+
+function normKey(key: string): string {
+  return key.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** The value saved under a field ask's key (`addOtherPreference`), if any. */
+export function askAnswer(p: Profile, ask: Ask): string | undefined {
+  const key = normKey(ask.key);
+  return p.preferences.other.find((entry) => normKey(entry.key) === key)?.value;
 }
 
 /**
- * The Searches screen's groups: one per field that has ticked roles or live
- * queries, Interesting first (D40). A field with ticked roles but no queries
- * yet still gets a group, so its CTA has somewhere to live.
+ * One group per discovered field, in the rank order discovery wrote them.
+ * A field's status is never read: every field is a heading with no marking
+ * (technical-plan.md D50), and an answered ask does not re-rank (D43).
+ * Roles under no known field are left out, as `selectedRoles` leaves them out.
  */
-export function orderedFieldGroups(p: Profile): FieldGroup[] {
-  return p.fields
-    .map((field, index) => ({
+export function roleGroups(p: Profile): RoleGroupView[] {
+  const titles = cardTitles(p);
+  return p.fields.map((field) => {
+    const cited = [
+      ...field.evidence.map((line) => line.cardId),
+      ...citedCardIds(field.fit),
+    ];
+    const drawsOn = [
+      ...new Set(cited.map((id) => titles.get(id)).filter((t): t is string => t !== undefined)),
+    ];
+    return {
       field,
-      index,
-      roles: rolesForField(p, field.id, true),
-      queries: p.queries.filter(
-        (query) => !isRetiredQuery(query) && query.fieldIds.includes(field.id),
-      ),
-    }))
-    .filter((group) => group.roles.length > 0 || group.queries.length > 0)
-    .sort((a, b) => statusWeight(a.field) - statusWeight(b.field) || a.index - b.index)
-    .map(({ field, roles, queries }) => ({ field, roles, queries }));
+      fitLabel: field.fitLevel === undefined ? undefined : FIT_LABELS[field.fitLevel],
+      moveLabel: field.move === undefined ? undefined : MOVE_LABELS[field.move],
+      summary: citationsToTitles(p, field.summary),
+      drawsOn,
+      uncertain: citationsToTitles(p, field.uncertain),
+      ask: field.ask,
+      askAnswer: field.ask === undefined ? undefined : askAnswer(p, field.ask),
+      roles: rolesForField(p, field.id).map((role) => ({
+        role,
+        why: citationsToTitles(p, role.why),
+        companies: role.companies.length > 0 ? `Example companies: ${role.companies.join(", ")}` : "",
+      })),
+    };
+  });
 }
 
-/** True once any live query exists, which is what unlocks the Searches step. */
+/** A source link's visible text: its host without `www.`, or the raw text when it is not a URL. */
+export function sourceLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The Searches screen: one card per ticked role (technical-plan.md D47)
+// ---------------------------------------------------------------------------
+
+export interface SearchCardView {
+  role: Role;
+  fieldName: string;
+  /** The role's live LinkedIn search; undefined when it was ticked after the last write. */
+  query?: Query;
+}
+
+/** One entry per selected role, in `selectedRoles` order. */
+export function searchCards(p: Profile): SearchCardView[] {
+  const names = new Map(p.fields.map((field) => [field.id, field.name] as const));
+  return selectedRoles(p).map((role) => ({
+    role,
+    fieldName: names.get(role.fieldId) ?? "",
+    query: liveQueryForRole(p, role.id),
+  }));
+}
+
+/** True once some selected role has a live search: that unlocks the Searches step. */
 export function hasLiveQueries(p: Profile): boolean {
-  return p.queries.some((query) => !isRetiredQuery(query));
+  return selectedRoles(p).some((role) => liveQueryForRole(p, role.id) !== undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -431,98 +490,3 @@ export function boardSearchUrl(board: Board, query: string): string | undefined 
   if (base === "") return undefined;
   return `${base}${encodeURIComponent(query)}`;
 }
-
-// ---------------------------------------------------------------------------
-// Feedback (D41)
-// ---------------------------------------------------------------------------
-
-/** The four verdicts the feedback screen offers. */
-export type Verdict = "good" | "partly" | "wrong" | "none";
-
-export const VERDICTS: readonly Verdict[] = ["good", "partly", "wrong", "none"];
-
-export const VERDICT_LABELS: Record<Verdict, string> = {
-  good: "Good fit",
-  partly: "Partly right",
-  wrong: "Wrong roles",
-  none: "No results",
-};
-
-/** The "What was off?" chips offered per verdict. */
-export const VERDICT_CHIPS: Record<Verdict, readonly string[]> = {
-  good: ["A bit broad", "A bit narrow", "Mostly one company"],
-  partly: ["Too senior", "Too junior", "Wrong discipline", "Wrong location", "Too few postings"],
-  wrong: ["Too senior", "Too junior", "Wrong discipline", "Needs a licence", "Wrong location"],
-  none: ["Too narrow", "Wrong wording", "Too few postings"],
-};
-
-/**
- * The four verdicts collapse onto the two the server contract knows (D41):
- * only "Good fit" is `good`, so `QueryFeedbackSchema` and the revise prompt
- * stay unchanged.
- */
-export function verdictToServer(verdict: Verdict): "good" | "bad" {
-  return verdict === "good" ? "good" : "bad";
-}
-
-/**
- * The `reason` string sent with the feedback: the verdict label and the
- * ticked chips are prefixed onto the free text (D41), e.g.
- * `Wrong roles; too senior; agency jobs — mostly PE-licence postings`.
- */
-export function feedbackReason(
-  verdict: Verdict,
-  chips: readonly string[],
-  text: string,
-): string {
-  const parts = [VERDICT_LABELS[verdict], ...chips.map((chip) => chip.trim()).filter((c) => c !== "")];
-  const head = parts.join("; ");
-  const tail = text.trim();
-  const full = tail === "" ? head : `${head} — ${tail}`;
-  return full.slice(0, MAX_FEEDBACK_REASON);
-}
-
-export interface RevisedQuery {
-  /** The query as it stands after the revise turn. */
-  query: Query;
-  /** Its text before the turn, for "Keep the old one". */
-  previousText: string;
-  /** False when the revision left the text alone. */
-  changed: boolean;
-}
-
-/**
- * The query to show in the revised card: the same id when the revision edited
- * it in place, else the live query the revision wrote for the same field and
- * board. `undefined` when neither exists.
- */
-export function revisedQueryFor(
-  before: Profile,
-  after: Profile,
-  queryId: string,
-): RevisedQuery | undefined {
-  const old = before.queries.find((query) => query.id === queryId);
-  if (old === undefined) return undefined;
-  const live = after.queries.filter((query) => !isRetiredQuery(query));
-  const replacement =
-    live.find((query) => query.id === queryId) ??
-    live.find(
-      (query) =>
-        query.board === old.board && query.fieldIds.some((id) => old.fieldIds.includes(id)),
-    );
-  if (replacement === undefined) return undefined;
-  return {
-    query: replacement,
-    previousText: old.query,
-    changed: replacement.query !== old.query,
-  };
-}
-
-/** The three states the revised card can be in (handoff, section 7). */
-export type RevisionState = "proposed" | "edited" | "accepted";
-
-export const REVISION_NOTES: Record<RevisionState, string> = {
-  proposed: "Proposed from your feedback. Edit it before accepting.",
-  edited: "Edited by you. Not applied yet.",
-  accepted: "",
-};

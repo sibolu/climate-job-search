@@ -1,15 +1,17 @@
 "use client";
 
 /**
- * The Searches screen (technical-plan.md D40): one group per field that has ticked roles
- * or live queries, Interesting first. Retired queries are hidden. A field
- * whose roles are ticked but whose searches have not been written yet keeps
- * its own CTA here.
+ * The Searches screen (technical-plan.md D47): one card per ticked role, in
+ * `selectedRoles` order. A role ticked after the last write has no search
+ * yet; the screen says so and offers the same button as the Roles screen
+ * rather than showing an empty card. No verdicts (D51).
  */
 
 import type { Profile } from "@/lib/profile";
-import { orderedFieldGroups } from "@/lib/screens";
+import { INFO_TIPS, searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
+import { canWriteQueries } from "@/lib/workspace";
 
+import InfoTip from "./InfoTip";
 import QueryCard from "./QueryCard";
 
 export interface SearchesProps {
@@ -18,10 +20,8 @@ export interface SearchesProps {
   copiedAt: Record<string, number>;
   now: number;
   onCopy: (queryId: string) => void;
-  onFeedback: (queryId: string, verdict: "good" | "wrong") => void;
-  onWriteSearches: (fieldId: string) => void;
-  canWriteSearches: (fieldId: string) => boolean;
-  onBackToFields: () => void;
+  onWriteSearches: () => void;
+  onChangeRoles: () => void;
 }
 
 export default function Searches({
@@ -29,90 +29,76 @@ export default function Searches({
   copiedAt,
   now,
   onCopy,
-  onFeedback,
   onWriteSearches,
-  canWriteSearches,
-  onBackToFields,
+  onChangeRoles,
 }: SearchesProps) {
-  const groups = orderedFieldGroups(profile);
+  const cards = searchCards(profile);
+  const missing = cards.filter((card) => card.query === undefined);
 
   return (
-    <section>
+    <section className="cc-searches-screen">
       <div className="cc-screen-head">
         <div>
-          <h2 className="cc-h2">Searches to run</h2>
+          <h2 className="cc-h2">Your LinkedIn searches</h2>
           <p className="cc-sub">
-            Built from the roles you selected, grouped by field. Copy one, run it in your own tab,
-            then tell us how it went.
+            One search for each role you ticked. Open it on LinkedIn, then set your location and
+            remote filters there.
           </p>
         </div>
-        <button type="button" className="cc-btn-outline" onClick={onBackToFields}>
-          Back to roles
+        <button type="button" className="cc-btn-outline cc-screen-head-action" onClick={onChangeRoles}>
+          Change roles
         </button>
       </div>
 
-      {groups.length === 0 ? (
+      {cards.length === 0 ? (
         <div className="cc-empty">
-          <div style={{ fontWeight: 600, fontSize: 15 }}>No roles selected yet</div>
-          <p className="cc-note">
-            Open a field, tick the roles that interest you, and the searches for them appear here.
-          </p>
-          <button type="button" className="cc-btn" onClick={onBackToFields}>
-            Back to roles
+          <div style={{ fontWeight: 600, fontSize: 15 }}>No roles ticked yet</div>
+          <p className="cc-note">Tick the roles you want on the Roles screen.</p>
+          <button type="button" className="cc-btn" onClick={onChangeRoles}>
+            Change roles
           </button>
         </div>
       ) : null}
 
-      {groups.map((group, index) => (
-        <div key={group.field.id} className="cc-group">
-          <div className="cc-group-head">
-            <span className="cc-rank">{index + 1}</span>
-            <span style={{ fontSize: 15.5, fontWeight: 600 }}>{group.field.name}</span>
+      {missing.length > 0 ? (
+        <div className="cc-empty">
+          <div style={{ fontWeight: 600, fontSize: 15 }}>
+            {missing.length === 1
+              ? "1 ticked role has no search yet"
+              : `${missing.length} ticked roles have no search yet`}
           </div>
-          {group.roles.length > 0 ? (
-            <div className="cc-group-roles">
-              <div className="cc-mono-label">Selected roles</div>
-              <div className="cc-chips">
-                {group.roles.map((role) => (
-                  <span key={role.id} className="cc-chip cc-chip-green">
-                    {role.title}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {group.queries.length === 0 ? (
-            <div className="cc-group-roles">
-              <button
-                type="button"
-                className="cc-btn"
-                disabled={!canWriteSearches(group.field.id)}
-                onClick={() => onWriteSearches(group.field.id)}
-              >
-                Write searches for these roles
-              </button>
-            </div>
-          ) : (
-            <div className="cc-query-grid">
-              {group.queries.map((query) => {
-                const at = copiedAt[query.id];
-                return (
-                  <QueryCard
-                    key={query.id}
-                    query={query}
-                    copiedMinutes={
-                      at === undefined ? undefined : Math.max(0, Math.floor((now - at) / 60000))
-                    }
-                    onCopy={() => onCopy(query.id)}
-                    onFeedback={(verdict) => onFeedback(query.id, verdict)}
-                  />
-                );
-              })}
-            </div>
-          )}
+          <p className="cc-note">{missing.map((card) => card.role.title).join(", ")}</p>
+          <div className="cc-cta-row">
+            <button
+              type="button"
+              className="cc-btn"
+              disabled={!canWriteQueries(profile)}
+              onClick={onWriteSearches}
+            >
+              {writeSearchesLabel(cards.length)}
+            </button>
+            <InfoTip text={INFO_TIPS.writeSearches} label="What this button does" />
+            <span className="cc-note">{selectedRolesNote(cards.length)}</span>
+          </div>
         </div>
-      ))}
+      ) : null}
+
+      <div className="cc-query-list">
+        {cards.map(({ role, fieldName, query }) => {
+          if (query === undefined) return null;
+          const at = copiedAt[query.id];
+          return (
+            <QueryCard
+              key={role.id}
+              roleTitle={role.title}
+              fieldName={fieldName}
+              query={query}
+              copiedMinutes={at === undefined ? undefined : Math.max(0, Math.floor((now - at) / 60000))}
+              onCopy={() => onCopy(query.id)}
+            />
+          );
+        })}
+      </div>
     </section>
   );
 }
