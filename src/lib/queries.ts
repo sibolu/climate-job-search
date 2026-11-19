@@ -1,34 +1,48 @@
 /**
- * Query generation and revision (Phase 2.3).
+ * Query generation and revision (Phase 2.3, reworked in 2b.8).
  *
- * `generateQueries` writes searches for ONE field from the roles the person
- * ticked on it (technical-plan.md D40): exactly three, one each for linkedin,
- * indeed and climatebase, every one serving that field only. The person can
- * paste them into a board's search box and follow the static per-board
- * instructions for saving each as an email alert ({@link ALERT_STEPS}). `reviseQueries`
- * takes one piece of "Tried it" feedback and returns updated queries, field
- * status changes, profile edits and a one-paragraph explanation for the chat.
+ * `generateQueries` writes ONE LinkedIn search per selected role, for every
+ * role with `Selected: yes` across all fields, in one model call
+ * (technical-plan.md D47, which supersedes the per-field, three-board design
+ * of D40). Each query carries its role's id (`Role: R3`) and that role's
+ * field. The person pastes it into LinkedIn's job search box and follows the
+ * static instructions for saving it as an email alert ({@link ALERT_STEPS}).
+ * `reviseQueries` takes one piece of "Tried it" feedback and returns updated
+ * queries, field status changes, profile edits and a one-paragraph
+ * explanation; it stays dispatchable, but nothing in the browser sends it.
  *
  * Rules this module enforces:
  * - Every model call goes through `src/lib/llm.ts` (`structured`, no web
- *   tools). This module fetches nothing; the boards are never contacted, and
+ *   tools). This module fetches nothing; LinkedIn is never contacted, and
  *   telling the user where to search is not scraping.
- * - IDs are stable: a query is never deleted or renumbered. A revision may
- *   retire only an `untried` query, by setting `extra["Retired"] = "yes"` and
- *   `extra["Retired reason"]`; it never rewrites a `good`/`bad` status, which
- *   is the user speaking. A `narrow` rewrites an untried, unretired query in
- *   place; a narrow aimed at a judged query becomes an `add` on the same
- *   board and fields under a new id, so the judged query keeps its record.
- * - Generating for a field replaces its existing untried query on each board
- *   in place (same `Q` id, text swapped, status stays untried); judged
- *   (`good`/`bad`) queries are never touched, and a further untried query on
- *   the same field and board is retired as superseded. A draft whose
- *   `(board, normalized query)` key ({@link queryKey}) repeats a judged query
- *   or another field's untried query is dropped, and because every board must
- *   end up with one query the run then fails with {@link QueriesOutputError}
- *   rather than re-asking the model. Revision dedupes by the same key.
- *   Malformed drafts are never kept silently: every drop is a counter in
- *   {@link QueriesDropped}.
+ * - LinkedIn only: generation and revision write `board: linkedin` and
+ *   nothing else. Queries on other boards written before D47 stay in the
+ *   file untouched.
+ * - IDs are stable: a query is never deleted or renumbered. A query is
+ *   retired only while `untried`, by setting `extra["Retired"] = "yes"` and
+ *   `extra["Retired reason"]`; a `good`/`bad` status is the user speaking and
+ *   is never rewritten.
+ * - Generating replaces each selected role's first untried, unretired
+ *   LinkedIn query in place (same `Q` id, text swapped, status stays
+ *   untried); any further untried one for that role is retired as
+ *   superseded; a role with none gets a new id. Judged queries, queries of
+ *   roles that are no longer selected, and queries with no `Role` are left
+ *   alone.
+ * - The output schema is built per call from the selected role ids
+ *   ({@link generateOutputSchema}), so the model cannot skip a role or write
+ *   two for one. A draft with empty text, or one that repeats a judged query
+ *   ({@link queryKey}), leaves its role without a query and the run fails
+ *   with {@link QueriesOutputError} rather than re-asking the model. Two
+ *   roles receiving the same text is not an error; the prompt steers away
+ *   from it.
+ * - No seniority words and no location or work-mode wording in a query: the
+ *   prompt forbids both, and neither preference is rendered into the
+ *   generation message (LinkedIn filters on them itself, technical-plan.md
+ *   D36). {@link levelWordsIn} reports level words for the CLI check.
+ * - Revision: a `narrow` rewrites an untried, unretired query in place; a
+ *   narrow aimed at a judged query becomes an added LinkedIn query under a
+ *   new id that keeps the judged query's fields and `Role`. An added query
+ *   that serves the judged query's field takes its `Role` too.
  * - Field statuses: the model may move `candidate`/`unsure` freely; it may
  *   move `accepted` only to `unsure`, and only for a field the feedback's
  *   query serves; `rejected` is never touched. The model's reason lands in
@@ -50,6 +64,7 @@ import {
   type Query,
   type Role,
   rolesForField,
+  selectedRoles,
   setFieldStatus,
   setPreference,
   setQueryStatus,
@@ -58,7 +73,7 @@ import {
   upsertQuery,
 } from "./profile";
 import type { QueryFeedback } from "./session";
-import { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY } from "./boards";
+import { ALERT_STEPS, BOARD_LABELS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY } from "./boards";
 
 /** Re-exported for callers of this module; `boards.ts` is the client-safe owner. */
 export { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY };
@@ -68,12 +83,13 @@ export { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY };
 // ---------------------------------------------------------------------------
 
 export const BOARDS: readonly Board[] = BoardSchema.options;
-/** The boards a generation run writes exactly one query for each (technical-plan.md D40). */
-export const QUERY_BOARDS = ["linkedin", "indeed", "climatebase"] as const;
+/** The boards this module writes for: LinkedIn only (technical-plan.md D47). */
+export const QUERY_BOARDS = ["linkedin"] as const;
 export type QueryBoard = (typeof QUERY_BOARDS)[number];
-/** Revision (D32) still caps additions per board so a run cannot flood the list. */
-const MAX_REVISION_ADDS_PER_BOARD = 4;
-const MAX_REVISION_ADDS_TOTAL = 12;
+/** The one board every query written here is on. */
+const WRITE_BOARD: QueryBoard = QUERY_BOARDS[0];
+/** A revision may add this many queries at most, so a run cannot flood the list. */
+const MAX_REVISION_ADDS = 4;
 /** Fields a revision's added query may serve. */
 const FIELDS_IN_PLAY: readonly FieldStatus[] = ["accepted", "unsure"];
 
@@ -81,37 +97,74 @@ const FIELDS_IN_PLAY: readonly FieldStatus[] = ["accepted", "unsure"];
 export const WHY_KEY = "Rationale";
 export const STATUS_NOTE_KEY = "Status note";
 
+/**
+ * Words that say how senior a job is rather than what the job is. The prompts
+ * forbid them in every query; {@link levelWordsIn} finds them afterwards.
+ */
+export const LEVEL_WORDS = [
+  "senior",
+  "sr",
+  "junior",
+  "jr",
+  "lead",
+  "principal",
+  "staff",
+  "entry-level",
+  "mid-level",
+  "head",
+  "director",
+  "VP",
+  "vice president",
+  "chief",
+  "intern",
+] as const;
+
+const LEVEL_WORD_PATTERN = new RegExp(
+  `\\b(${LEVEL_WORDS.map((w) => w.replace(/[- ]/g, "[- ]")).join("|")})\\b`,
+  "gi",
+);
+
+/**
+ * The level words a query text contains, lowercased and deduplicated. A
+ * check for the CLI and tests, never a reason to fail a turn: "lead" and
+ * "staff" also occur in honest domain terms ("lead generation").
+ */
+export function levelWordsIn(text: string): string[] {
+  const found = text.match(LEVEL_WORD_PATTERN) ?? [];
+  return [...new Set(found.map((w) => w.toLowerCase()))];
+}
+
 // ---------------------------------------------------------------------------
 // Output schemas (passed to `structured`)
 // ---------------------------------------------------------------------------
 
+/** One added query in a revision. Always LinkedIn, so it names no board. */
 export const QueryDraftSchema = z.object({
-  board: BoardSchema,
   query: z.string(),
   fieldIds: z.array(z.string()),
-  /** Required when `board` is "other"; null otherwise. */
-  boardName: z.string().nullable(),
   rationale: z.string(),
 });
 export type QueryDraft = z.infer<typeof QueryDraftSchema>;
 
-/** One search for the field being written for; the board is the key it sits under. */
-export const FieldQueryDraftSchema = z.object({
+/** One LinkedIn search for one role; the role id is the key it sits under. */
+export const RoleQueryDraftSchema = z.object({
   query: z.string(),
   rationale: z.string(),
 });
-export type FieldQueryDraft = z.infer<typeof FieldQueryDraftSchema>;
+export type RoleQueryDraft = z.infer<typeof RoleQueryDraftSchema>;
+
+/** What generation returns: one draft under each selected role's id. */
+export type GenerateOutput = Record<string, RoleQueryDraft>;
 
 /**
- * Exactly one draft per board, enforced by the schema itself: the model
- * cannot return two for one board or none for another (technical-plan.md D40).
+ * The generation schema for one call: an object with exactly one required
+ * draft per selected role id, e.g. `{ R3: draft, R5: draft }`. The schema
+ * itself keeps the model from skipping a role or writing two for one
+ * (technical-plan.md D47).
  */
-export const GenerateOutputSchema = z.object({
-  linkedin: FieldQueryDraftSchema,
-  indeed: FieldQueryDraftSchema,
-  climatebase: FieldQueryDraftSchema,
-});
-export type GenerateOutput = z.infer<typeof GenerateOutputSchema>;
+export function generateOutputSchema(roleIds: readonly string[]) {
+  return z.object(Object.fromEntries(roleIds.map((id) => [id, RoleQueryDraftSchema])));
+}
 
 export const PreferenceEditKeySchema = z.enum(["location", "workMode", "seniority", "retrainingAppetite"]);
 
@@ -130,47 +183,56 @@ export type ReviseOutput = z.infer<typeof ReviseOutputSchema>;
 // Prompts (byte-stable: sent as cached blocks)
 // ---------------------------------------------------------------------------
 
-const BOARD_SYNTAX = `Boards and their syntax. Every query must paste straight into that board's search box:
-- linkedin: LinkedIn Jobs search supports AND, OR, NOT, parentheses and double quotes for exact phrases. Use them; stay under about 200 characters.
-- indeed: Indeed supports double quotes for phrases, a leading - to exclude a word, and lowercase "or" between alternatives; adjacent terms are ANDed and there is no AND keyword. Keep parentheses to one level.
-- climatebase: keyword-only; no boolean operators or quotes. Give 2-4 plain keywords and let the site's filters narrow.
-- other: a named board or careers page (a company or association careers page, Google Jobs, a niche board). Put the board's name in boardName and write the query in that site's syntax, plain keywords unless you know its operators.`;
+const LINKEDIN_SYNTAX = `LinkedIn syntax. Every query must paste straight into the keyword box of LinkedIn's job search and work as typed:
+- Double quotes make an exact phrase: "program manager". Quote every term of two or more words. A single word needs no quotes.
+- AND, OR and NOT are the only operators, always in capitals. Parentheses group alternatives: ("a b" OR c) AND (d OR "e f").
+- LinkedIn's job search supports nothing else. No wildcards (*), no + or - prefixes, no brackets or braces, no field operators such as title: or company:, no site:.
+- Stay under about 200 characters. Every extra AND group removes real jobs from the results, so a short query that finds twenty relevant postings beats a precise one that finds none.`;
 
-const QUERY_RULES = `Rules for every query:
-- fieldIds lists only ids from the Fields section, and every query serves at least one. Prefer role titles and domain terms that appear in the roles and fit reasoning; never a bare generic word such as "climate" or "sustainability".
-- Respect the preferences: seniority words and anything the person has excluded.
-- Never put location or remote/hybrid wording in a query string — no city, state, country or "remote"/"hybrid" terms. Every board filters on those itself, and the alert steps tell the person to set the board's own location and remote filters. Use the stated location and work mode only as context for which fields, employers and role titles are realistic (offshore wind, utilities and manufacturing are regional).
-- Learn from tried queries: never repeat a listed query, keep what made a good query good, avoid what made a bad one bad.
-- rationale is one sentence naming the field ids and skills the query targets and why those terms were chosen.
-- Use nothing about the person beyond what the profile states; invent no personal detail.`;
+const NO_LEVEL_WORDS = `No seniority or level words anywhere in a query. A level word says how senior the job is, not what the job is: ${LEVEL_WORDS.join(", ")}, and grade numerals such as II or III. When a role title carries one, drop it and keep the function: "Senior Mechanical Engineer" becomes "mechanical engineer". If dropping it leaves no job title ("Head of Partnerships"), use the titles employers post for that work ("partnerships manager" OR "business development manager"). Words that name the job itself stay: "project manager", "program manager", "account executive". LinkedIn has its own experience-level filter, and a level word in the keyword box hides every posting that words the level differently.`;
 
-const FIELD_QUERY_RULES = `Rules for every query:
-- Build it from the ticked roles' titles and the field's domain terms as they appear in the roles, the fit reasoning and the summary; never a bare generic word such as "climate" or "sustainability". The three queries target the same roles and differ only in each board's syntax and how broad that board lets a query be.
-- Respect the preferences: seniority words and anything the person has excluded. The person's answer to the field's question, when given, is a hard constraint.
-- Never put location or remote/hybrid wording in a query string — no city, state, country or "remote"/"hybrid" terms. Every board filters on those itself, and the alert steps tell the person to set the board's own location and remote filters. Use the stated location and work mode only as context for which employers and role titles are realistic (offshore wind, utilities and manufacturing are regional).
-- Learn from the field's existing searches: never repeat a listed query, keep what made a good one good, avoid what made a bad one bad, and improve on an untried one rather than restating it.
-- rationale is one sentence naming the role ids and skills the query targets and why those terms were chosen.
-- Use nothing about the person beyond what the profile states; invent no personal detail.`;
+const NO_LOCATION = `No location or work-mode wording in a query: no city, state, region or country, and no "remote", "hybrid" or "on-site". The person sets those with LinkedIn's own filters beside the search box.`;
 
-export const QUERIES_SYSTEM_PROMPT = `You write job-board search queries for one career switcher moving into climate work. You get their preferences, confirmed skills, ONE climate field they are considering (how they marked it, why it fits, what is uncertain), the example roles in that field they ticked, and every search already written for that field. Return JSON with exactly one query for each of linkedin, indeed and climatebase. All three serve this one field only — never a query that reaches across other fields, because a board ranks results against one coherent role profile.
+export const QUERIES_SYSTEM_PROMPT = `You write LinkedIn job searches for one career switcher moving into climate work. The person has ticked the roles they want to look for. You get their areas of expertise and climate interests, then every ticked role under the climate field it belongs to, with what that field is and any searches the person has already judged. Return JSON with exactly one entry for each role id listed at the end of the message, keyed by that id, each holding a query and a rationale. One search per role, written for that role alone.
 
-${BOARD_SYNTAX}
+${LINKEDIN_SYNTAX}
 
-${FIELD_QUERY_RULES}`;
+Build each query in this order:
+1. Title group. Start from the role's title as employers post it: keep the job function and drop anything after a comma or in brackets, which describes the focus and belongs in step 2 if anywhere. Add one or two alternate titles that employers use for the same job, joined with OR. Do not add titles for different jobs.
+2. Field group. AND the title group with two to four terms that postings in the role's field actually contain: the technology, product, sector or programme names found in the field's name, summary and fit, and in the role's focus. Join them with OR. Never use a generic word such as climate, sustainability, green or "clean energy" as a field term on its own; those words sit in every employer's boilerplate and narrow nothing.
+3. Expertise group, optional. Add a third AND group drawn from the person's areas of expertise only when the first two groups would still return mostly jobs outside what they do, and only with terms a posting for this role would plausibly contain. When in doubt, leave it out.
+4. NOT, rarely. Use NOT only to remove one specific wrong kind of result that the person named when judging an earlier search.
+The shape, shown with made-up vocabulary: ("video producer" OR videographer OR "multimedia producer") AND (solar OR "community solar" OR "energy storage"). Take the shape from this, never the words.
 
-export const REVISE_SYSTEM_PROMPT = `You revise job-board search queries for one career switcher moving into climate work. You get their preferences, confirmed skills, the fields they have accepted or are unsure about, the example roles, every query with its status, and one piece of feedback the person just gave on one query: a verdict (good or bad) and a reason in their own words. The verdict is already recorded on that query; never change that query and never rewrite any query the person has judged. Return JSON:
-- explanation: one paragraph for the chat. Quote or closely paraphrase the person's reason, name exactly which query ids you retired or narrowed and why, describe each added query by its board and terms (added queries get their ids later; never invent ids), and mention any field status change or note.
+Rules for every query:
+- ${NO_LEVEL_WORDS}
+- ${NO_LOCATION}
+- No employer names. The companies listed with a role are examples of who hires for it, not a filter.
+- Every query in your answer differs from every other. Two roles in the same field share field terms, so their title groups must differ; two roles with similar titles in different fields must differ in their field terms.
+- Earlier searches: never return the text of a search listed as judged. If one was judged good, keep what made it good and vary the terms; if one was judged bad, the person's reason says what to avoid. A search marked as the current untried one is the one you are replacing: improve on it rather than restating it.
+- The person's answer to a field's question, when shown, is a hard constraint on that field's searches.
+- rationale is one plain sentence saying which titles and field terms the search combines and why those were chosen.
+- Use nothing about the person beyond what the message states; invent no personal detail.`;
+
+export const REVISE_SYSTEM_PROMPT = `You revise LinkedIn job searches for one career switcher moving into climate work. You get their preferences, confirmed skills, the fields they have accepted or are unsure about, the example roles, every query with its status and the role it was written for, and one piece of feedback the person just gave on one query: a verdict (good or bad) and a reason in their own words. The verdict is already recorded on that query; never change that query and never rewrite any query the person has judged. Every query you write is a LinkedIn search. Return JSON:
+- explanation: one paragraph for the chat. Quote or closely paraphrase the person's reason, name exactly which query ids you retired or narrowed and why, describe each added query by its terms (added queries get their ids later; never invent ids), and mention any field status change or note.
 - retire: untried query ids the reason also invalidates (same field, same problem), each with a reason.
-- narrow: untried query ids rewritten in place to sidestep the problem, with the full new query text in that board's syntax.
-- add: replacement or sibling queries, same draft shape as generation.
+- narrow: untried LinkedIn query ids rewritten in place to sidestep the problem, with the full new query text. To replace the judged query itself, name its id here with the new text; it is saved as a new query for the same role and the judged one keeps its record.
+- add: further queries, each with query, fieldIds and rationale. Add one only when the reason calls for a search the existing ones do not cover.
 - fieldStatus: only when the reason is about a field itself, such as a hard requirement (license, degree, clearance) the person lacks or will not pursue. You may move candidate or unsure fields, and move an accepted field the query serves to unsure. Never reject an accepted field; the person decides that.
 - notes: one short line for the session notes, or null.
 - preferenceEdits: only when the reason states a preference about location, work mode, seniority or retraining appetite.
-For a good verdict retire nothing and, at most, add one or two sibling queries on other boards for the same fields.
+For a good verdict retire nothing, narrow nothing and add nothing unless the reason asks for a variation.
 
-${BOARD_SYNTAX}
+${LINKEDIN_SYNTAX}
 
-${QUERY_RULES}`;
+Rules for every query:
+- fieldIds lists only ids from the Fields section, and every query serves at least one. Build the query from role titles and the field's own terms as they appear in the roles and fit reasoning; never a bare generic word such as "climate" or "sustainability".
+- ${NO_LEVEL_WORDS}
+- ${NO_LOCATION} Use the stated location and work mode only as context for which fields and role titles are realistic.
+- Learn from tried queries: never repeat a listed query, keep what made a good query good, avoid what made a bad one bad.
+- rationale is one sentence naming the field ids and terms the query targets and why those terms were chosen.
+- Use nothing about the person beyond what the profile states; invent no personal detail.`;
 
 // ---------------------------------------------------------------------------
 // Rendering the profile for the model
@@ -180,31 +242,26 @@ function fieldsInPlay(p: Profile): Field[] {
   return p.fields.filter((f) => FIELDS_IN_PLAY.includes(f.status));
 }
 
-/** How the field's status reads on the card (technical-plan.md D40). */
-const MARK_LABEL: Record<FieldStatus, string> = {
-  accepted: "Interesting",
-  unsure: "Unsure",
-  candidate: "not marked yet",
-  rejected: "Not for me",
-};
+function isRetired(q: Query): boolean {
+  return q.extra[RETIRED_KEY] === "yes";
+}
 
+/** Revision context. Seniority is deliberately absent: no query may carry a level word. */
 function renderPreferences(p: Profile): string {
   const pr = p.preferences;
   const text = (v: { value: string } | undefined) => v?.value ?? "(not stated)";
   return [
     `- Location (context for what is realistic; never a query term): ${text(pr.location)}`,
     `- Work mode (context for what is realistic; never a query term): ${text(pr.workMode)}`,
-    `- Seniority: ${text(pr.seniority)}`,
     `- Retraining appetite: ${text(pr.retrainingAppetite)}`,
     `- Climate interests: ${pr.climateInterests?.values.join(", ") ?? "(not stated)"}`,
     ...pr.other.map((o) => `- ${o.key}: ${o.value}`),
   ].join("\n");
 }
 
-function renderRole(r: Role, withWhy = false): string {
+function renderRole(r: Role): string {
   const companies = r.companies.length === 0 ? "" : ` (${r.companies.join(", ")})`;
-  const why = withWhy && r.why !== "" ? ` — ${r.why}` : "";
-  return `  - ${r.id}: ${r.title}${companies}${why}`;
+  return `  - ${r.id}: ${r.title}${companies}`;
 }
 
 function renderFields(p: Profile): string {
@@ -221,14 +278,15 @@ function renderFields(p: Profile): string {
     .join("\n\n");
 }
 
-function renderQueries(p: Profile, queries: readonly Query[] = p.queries): string {
-  if (queries.length === 0) return "(none yet)";
-  return queries
+function renderQueries(p: Profile): string {
+  if (p.queries.length === 0) return "(none yet)";
+  return p.queries
     .map((q) => {
       const name = q.extra[BOARD_NAME_KEY] === undefined ? q.board : `${q.board}: ${q.extra[BOARD_NAME_KEY]}`;
-      const retired = q.extra[RETIRED_KEY] === "yes" ? `; retired: ${q.extra[RETIRED_REASON_KEY] ?? ""}` : "";
+      const role = q.roleId === "" ? "" : ` role ${q.roleId};`;
+      const retired = isRetired(q) ? `; retired: ${q.extra[RETIRED_REASON_KEY] ?? ""}` : "";
       const reason = q.reason === "" ? "" : `; reason: ${q.reason}`;
-      return `- ${q.id} [${name}] fields ${q.fieldIds.join(", ")}; status ${q.status}${reason}${retired}\n  ${q.query}`;
+      return `- ${q.id} [${name}]${role} fields ${q.fieldIds.join(", ")}; status ${q.status}${reason}${retired}\n  ${q.query}`;
     })
     .join("\n");
 }
@@ -249,47 +307,84 @@ function renderProfileContext(p: Profile): string {
   ].join("\n");
 }
 
-/** The one field, its mark, its ticked roles and its existing searches (technical-plan.md D40). */
+/** The role's untried, unretired LinkedIn queries, oldest first: the ones a generation run may replace. */
+function untriedQueriesForRole(p: Profile, roleId: string): Query[] {
+  return p.queries.filter(
+    (q) => q.roleId === roleId && q.board === WRITE_BOARD && q.status === "untried" && !isRetired(q),
+  );
+}
+
+/** One ticked role as the generation prompt sees it. */
+function renderRoleForQueries(p: Profile, role: Role): string {
+  const current = untriedQueriesForRole(p, role.id)[0];
+  return [
+    `### ${role.id}: ${role.title}`,
+    ...(role.companies.length === 0
+      ? []
+      : [`- Companies that hire for it (examples only, never query terms): ${role.companies.join(", ")}`]),
+    ...(role.why === "" ? [] : [`- Why this role: ${role.why}`]),
+    ...(current === undefined ? [] : [`- Current untried search (you are replacing it): ${current.query}`]),
+  ].join("\n");
+}
+
+/** One field with its ticked roles and the searches the person has judged on it (technical-plan.md D47). */
 function renderFieldForQueries(p: Profile, field: Field, roles: readonly Role[]): string {
   const ask = field.ask;
   const answer = ask === undefined ? undefined : p.preferences.other.find((o) => o.key === ask.key);
   const optional = (label: string, value: string | undefined) =>
     value === undefined || value === "" ? [] : [`- ${label}: ${value}`];
+  const judged = p.queries.filter((q) => q.status !== "untried" && q.fieldIds.includes(field.id));
   return [
-    `### ${field.id}: ${field.name}`,
-    `- Mark: ${MARK_LABEL[field.status]}`,
+    `## ${field.id}: ${field.name}`,
     ...optional("Sector", field.sector),
-    ...optional("Fit level", field.fitLevel),
     ...optional("Summary", field.summary),
-    `- Fit: ${field.fit}`,
-    `- Uncertain: ${field.uncertain}`,
+    ...optional("Why it fits the person", field.fit),
+    ...optional("Transferable skills", field.chips.join(", ")),
     ...(ask === undefined || answer === undefined ? [] : [`- Asked "${ask.question}"; the person answered: ${answer.value}`]),
-    "- Ticked roles (write for these):",
-    ...roles.map((r) => renderRole(r, true)),
+    ...(judged.length === 0
+      ? []
+      : [
+          "- Searches the person already judged in this field (never return one of these):",
+          ...judged.map((q) => {
+            const role = q.roleId === "" ? "" : ` for ${q.roleId}`;
+            const reason = q.reason === "" ? "" : `; their reason: ${q.reason}`;
+            return `  - ${q.id}${role} on ${BOARD_LABELS[q.board]}, judged ${q.status}${reason}\n    ${q.query}`;
+          }),
+        ]),
+    "",
+    ...roles.map((r) => renderRoleForQueries(p, r)),
   ].join("\n");
 }
 
-export function buildGenerateMessage(p: Profile, field: Field, roles: readonly Role[]): string {
+/**
+ * The per-call half of the generation prompt. Location, work mode and
+ * seniority are left out on purpose: none may appear in a query, and what is
+ * not in the message cannot leak into one (technical-plan.md D36, D47).
+ */
+export function buildGenerateMessage(p: Profile, roles: readonly Role[]): string {
+  const fields = p.fields.filter((f) => roles.some((r) => r.fieldId === f.id));
+  const interests = p.preferences.climateInterests?.values ?? [];
   return [
-    "# Preferences",
-    renderPreferences(p),
+    "# The person",
+    `- Areas of expertise: ${p.skills.confirmed.length === 0 ? "(none stated)" : p.skills.confirmed.join(", ")}`,
+    `- Climate interests: ${interests.length === 0 ? "(none stated)" : interests.join(", ")}`,
     "",
-    "# Confirmed skills",
-    p.skills.confirmed.length === 0 ? "(none confirmed)" : p.skills.confirmed.join(", "),
+    "# Ticked roles, grouped by field",
     "",
-    "# The field to write searches for",
-    renderFieldForQueries(p, field, roles),
+    fields
+      .map((f) => renderFieldForQueries(p, f, roles.filter((r) => r.fieldId === f.id)))
+      .join("\n\n"),
     "",
-    "# Searches already written for this field",
-    renderQueries(p, p.queries.filter((q) => q.fieldIds.includes(field.id))),
-    "",
-    `Write the three searches for ${field.id}.`,
+    `Write one LinkedIn search for each of these role ids: ${roles.map((r) => r.id).join(", ")}.`,
   ].join("\n");
 }
 
 export function buildReviseMessage(p: Profile, feedback: QueryFeedback): string {
   const q = p.queries.find((x) => x.id === feedback.queryId);
-  const about = q === undefined ? feedback.queryId : `${q.id} [${q.board}] fields ${q.fieldIds.join(", ")}\n  ${q.query}`;
+  const about =
+    q === undefined
+      ? feedback.queryId
+      : `${q.id} [${q.board}]${q.roleId === "" ? "" : ` role ${q.roleId};`} fields ${q.fieldIds.join(", ")}\n  ${q.query}`;
   return [
     renderProfileContext(p),
     "",
@@ -307,15 +402,13 @@ export function buildReviseMessage(p: Profile, feedback: QueryFeedback): string 
 // ---------------------------------------------------------------------------
 
 export interface QueriesDropped {
-  /** Drafts with an empty query text. */
+  /** Drafts with an empty (or absent) query text. */
   emptyQuery: number;
-  /** Drafts whose fieldIds named no accepted/unsure field. */
+  /** Revision drafts whose fieldIds named no accepted/unsure field. */
   unfielded: number;
-  /** "other" drafts without a board name. */
-  unnamedBoard: number;
-  /** Drafts repeating an earlier draft's `(board, normalized query)` key. */
+  /** Revision drafts repeating an earlier draft's `(board, normalized query)` key. */
   duplicate: number;
-  /** Revision drafts beyond the per-board or total cap. */
+  /** Revision drafts beyond the cap. */
   surplus: number;
   /** Drafts or edits aimed at a query the user has already judged good/bad. */
   judgedQueries: number;
@@ -331,7 +424,6 @@ export function zeroDropped(): QueriesDropped {
   return {
     emptyQuery: 0,
     unfielded: 0,
-    unnamedBoard: 0,
     duplicate: 0,
     surplus: 0,
     judgedQueries: 0,
@@ -357,24 +449,27 @@ export function queryKey(board: Board, query: string): string {
   return `${board} ${normalizeQueryText(query).toLowerCase()}`;
 }
 
+/** A revision's added query plus the role it is for (empty when it replaces no role's query). */
+export interface RevisionDraft extends QueryDraft {
+  roleId: string;
+}
+
 export interface ValidatedDraft {
-  board: Board;
   query: string;
   fieldIds: string[];
-  boardName: string | null;
+  roleId: string;
   rationale: string;
 }
 
 /** Drops malformed, unfielded, duplicate and surplus revision drafts, counting each. */
 export function validateDrafts(
-  drafts: readonly QueryDraft[],
+  drafts: readonly RevisionDraft[],
   profile: Profile,
   dropped: QueriesDropped,
 ): ValidatedDraft[] {
   const eligible = new Set(fieldsInPlay(profile).map((f) => f.id));
   const inProfile = new Set(profile.fields.map((f) => f.id));
   const seen = new Set<string>();
-  const perBoard = new Map<Board, number>();
   const kept: ValidatedDraft[] = [];
   for (const d of drafts) {
     const query = normalizeQueryText(d.query);
@@ -390,30 +485,17 @@ export function validateDrafts(
       dropped.unfielded += 1;
       continue;
     }
-    const boardName = d.boardName?.trim() ?? "";
-    if (d.board === "other" && boardName === "") {
-      dropped.unnamedBoard += 1;
-      continue;
-    }
-    const key = queryKey(d.board, query);
+    const key = queryKey(WRITE_BOARD, query);
     if (seen.has(key)) {
       dropped.duplicate += 1;
       continue;
     }
-    const onBoard = perBoard.get(d.board) ?? 0;
-    if (onBoard >= MAX_REVISION_ADDS_PER_BOARD || kept.length >= MAX_REVISION_ADDS_TOTAL) {
+    if (kept.length >= MAX_REVISION_ADDS) {
       dropped.surplus += 1;
       continue;
     }
     seen.add(key);
-    perBoard.set(d.board, onBoard + 1);
-    kept.push({
-      board: d.board,
-      query,
-      fieldIds: known,
-      boardName: d.board === "other" ? boardName : null,
-      rationale: d.rationale.trim(),
-    });
+    kept.push({ query, fieldIds: known, roleId: d.roleId, rationale: d.rationale.trim() });
   }
   return kept;
 }
@@ -422,127 +504,122 @@ export interface ApplyDraftsResult {
   profile: Profile;
   /** Queries created this run, in draft order. */
   added: Query[];
-  /** Existing untried queries refreshed by key match, in draft order. */
+  /** Existing untried queries refreshed in place, in draft order. */
   updated: Query[];
 }
 
-export interface ValidatedFieldDraft {
-  board: QueryBoard;
+export interface ValidatedRoleDraft {
+  roleId: string;
+  /** The role's field; empty when the role names none. */
+  fieldId: string;
   query: string;
   rationale: string;
 }
 
 /**
- * Thrown when the model's answer, once validated, leaves a board without a
- * query. The run fails rather than re-asking the model (one call per turn is
- * the contract; the person just presses the button again). Carries board
- * names and counters only, never model text.
+ * Thrown when the model's answer, once validated, leaves a selected role
+ * without a query. The run fails rather than re-asking the model (one call
+ * per turn is the contract; the person just presses the button again).
+ * Carries role ids and counters only, never model text.
  */
 export class QueriesOutputError extends Error {
   constructor(
-    readonly missingBoards: readonly QueryBoard[],
+    readonly missingRoles: readonly string[],
     readonly dropped: QueriesDropped,
   ) {
-    super(`No usable query came back for ${missingBoards.join(", ")}.`);
+    super(`No usable query came back for ${missingRoles.join(", ")}.`);
     this.name = "QueriesOutputError";
   }
 }
 
 /**
- * One validated draft per board, in {@link QUERY_BOARDS} order. A draft is
- * dropped (and counted) when its text is empty or its key repeats a judged
- * query or another field's untried query; any drop is a missing board, so
- * this throws {@link QueriesOutputError}.
+ * One validated draft per role, in the order of `roles`. A draft is dropped
+ * (and counted) when its text is empty or absent, or its key repeats a query
+ * the person has judged; any drop is a role without a query, so this throws
+ * {@link QueriesOutputError}. Two roles with the same text both pass.
  */
-export function validateFieldDrafts(
+export function validateRoleDrafts(
   output: GenerateOutput,
   profile: Profile,
-  fieldId: string,
+  roles: readonly Role[],
   dropped: QueriesDropped,
-): ValidatedFieldDraft[] {
-  const kept: ValidatedFieldDraft[] = [];
-  const missing: QueryBoard[] = [];
-  for (const board of QUERY_BOARDS) {
-    const d = output[board];
-    const query = normalizeQueryText(d.query);
-    if (query === "") {
+): ValidatedRoleDraft[] {
+  const judged = new Set(
+    profile.queries.filter((q) => q.status !== "untried").map((q) => queryKey(q.board, q.query)),
+  );
+  const kept: ValidatedRoleDraft[] = [];
+  const missing: string[] = [];
+  for (const role of roles) {
+    const d = output[role.id];
+    const query = d === undefined ? "" : normalizeQueryText(d.query);
+    if (d === undefined || query === "") {
       dropped.emptyQuery += 1;
-      missing.push(board);
+      missing.push(role.id);
       continue;
     }
-    const key = queryKey(board, query);
-    const clash = profile.queries.find((q) => queryKey(q.board, q.query) === key);
-    if (clash !== undefined && clash.status !== "untried") {
+    if (judged.has(queryKey(WRITE_BOARD, query))) {
       dropped.judgedQueries += 1;
-      missing.push(board);
+      missing.push(role.id);
       continue;
     }
-    if (clash !== undefined && !clash.fieldIds.includes(fieldId)) {
-      dropped.duplicate += 1;
-      missing.push(board);
-      continue;
-    }
-    kept.push({ board, query, rationale: d.rationale.trim() });
+    kept.push({ roleId: role.id, fieldId: role.fieldId, query, rationale: d.rationale.trim() });
   }
   if (missing.length > 0) throw new QueriesOutputError(missing, dropped);
   return kept;
 }
 
-export interface ApplyFieldDraftsResult extends ApplyDraftsResult {
-  /** Further untried queries on the same field and board, retired as superseded. */
+export interface ApplyRoleDraftsResult extends ApplyDraftsResult {
+  /** The query written for each draft, in draft (selected-role) order. */
+  written: Query[];
+  /** Further untried LinkedIn queries of the same role, retired as superseded. */
   superseded: string[];
 }
 
 /**
- * Writes one query per board for `fieldId`: the field's first untried,
- * unretired query on that board is replaced in place (id kept), any other
- * untried one on that board is retired as superseded, and a board with none
- * gets a new id. Judged queries are never touched.
+ * Writes one LinkedIn query per role draft: the role's first untried,
+ * unretired LinkedIn query is replaced in place (id kept), any other untried
+ * one for that role is retired as superseded, and a role with none gets a new
+ * id. Judged queries, other roles' queries and queries with no `Role` are
+ * never touched (technical-plan.md D47).
  */
-export function applyFieldDrafts(
-  profile: Profile,
-  fieldId: string,
-  drafts: readonly ValidatedFieldDraft[],
-): ApplyFieldDraftsResult {
+export function applyRoleDrafts(profile: Profile, drafts: readonly ValidatedRoleDraft[]): ApplyRoleDraftsResult {
   let next = profile;
+  const written: Query[] = [];
   const added: Query[] = [];
   const updated: Query[] = [];
   const superseded: string[] = [];
   for (const d of drafts) {
-    const untried = next.queries.filter(
-      (q) => q.board === d.board && q.fieldIds.includes(fieldId) && q.status === "untried" && !isRetired(q),
-    );
-    const [existing, ...rest] = untried;
+    const [existing, ...rest] = untriedQueriesForRole(next, d.roleId);
     const extra = { ...(existing?.extra ?? {}) };
-    delete extra[RETIRED_KEY];
-    delete extra[RETIRED_REASON_KEY];
     delete extra[BOARD_NAME_KEY];
     if (d.rationale === "") delete extra[WHY_KEY];
     else extra[WHY_KEY] = d.rationale;
     next = upsertQuery(next, {
       ...(existing === undefined ? {} : { id: existing.id }),
-      board: d.board,
+      board: WRITE_BOARD,
       query: d.query,
-      fieldIds: [fieldId],
+      fieldIds: d.fieldId === "" ? [] : [d.fieldId],
+      roleId: d.roleId,
       status: "untried",
       reason: "",
       extra,
     });
-    const written = existing === undefined ? next.queries.at(-1) : next.queries.find((q) => q.id === existing.id);
-    if (written === undefined) continue; // unreachable: upsertQuery always writes
-    (existing === undefined ? added : updated).push(written);
+    const query = existing === undefined ? next.queries.at(-1) : next.queries.find((q) => q.id === existing.id);
+    if (query === undefined) continue; // unreachable: upsertQuery always writes
+    written.push(query);
+    (existing === undefined ? added : updated).push(query);
     for (const stale of rest) {
       next = upsertQuery(next, {
         ...stale,
-        extra: { ...stale.extra, [RETIRED_KEY]: "yes", [RETIRED_REASON_KEY]: `Superseded by ${written.id}` },
+        extra: { ...stale.extra, [RETIRED_KEY]: "yes", [RETIRED_REASON_KEY]: `Superseded by ${query.id}` },
       });
       superseded.push(stale.id);
     }
   }
-  return { profile: next, added, updated, superseded };
+  return { profile: next, written, added, updated, superseded };
 }
 
-/** Upserts revision drafts by `(board, normalized query)`; never touches a judged query. */
+/** Upserts revision drafts as LinkedIn queries by normalized text; never touches a judged query. */
 export function applyDrafts(
   profile: Profile,
   drafts: readonly ValidatedDraft[],
@@ -552,7 +629,7 @@ export function applyDrafts(
   const added: Query[] = [];
   const updated: Query[] = [];
   for (const d of drafts) {
-    const key = queryKey(d.board, d.query);
+    const key = queryKey(WRITE_BOARD, d.query);
     const existing = next.queries.find((q) => queryKey(q.board, q.query) === key);
     if (existing !== undefined && existing.status !== "untried") {
       dropped.judgedQueries += 1;
@@ -561,15 +638,15 @@ export function applyDrafts(
     const extra = { ...(existing?.extra ?? {}) };
     delete extra[RETIRED_KEY];
     delete extra[RETIRED_REASON_KEY];
+    delete extra[BOARD_NAME_KEY];
     if (d.rationale === "") delete extra[WHY_KEY];
     else extra[WHY_KEY] = d.rationale;
-    if (d.boardName === null) delete extra[BOARD_NAME_KEY];
-    else extra[BOARD_NAME_KEY] = d.boardName;
     next = upsertQuery(next, {
       ...(existing === undefined ? {} : { id: existing.id }),
-      board: d.board,
+      board: WRITE_BOARD,
       query: d.query,
       fieldIds: d.fieldIds,
+      roleId: d.roleId !== "" ? d.roleId : (existing?.roleId ?? ""),
       status: "untried",
       reason: "",
       extra,
@@ -585,10 +662,6 @@ export interface FieldChange {
   id: string;
   from: FieldStatus;
   to: FieldStatus;
-}
-
-function isRetired(q: Query): boolean {
-  return q.extra[RETIRED_KEY] === "yes";
 }
 
 /** Applies the model's field status changes under the rule in the module header. */
@@ -651,7 +724,7 @@ export function applyRevision(
   let next = profile;
   const retired: string[] = [];
   const narrowed: string[] = [];
-  const extraDrafts: QueryDraft[] = [];
+  const extraDrafts: RevisionDraft[] = [];
 
   for (const r of output.retire) {
     const q = next.queries.find((x) => x.id === r.id.trim());
@@ -684,14 +757,9 @@ export function applyRevision(
       continue;
     }
     if (q.status !== "untried" || isRetired(q)) {
-      // A judged (or retired) query keeps its record; the rewrite becomes an add.
-      extraDrafts.push({
-        board: q.board,
-        query,
-        fieldIds: q.fieldIds,
-        boardName: q.extra[BOARD_NAME_KEY] ?? null,
-        rationale: `Narrowed from ${q.id}`,
-      });
+      // A judged (or retired) query keeps its record; the rewrite becomes a
+      // LinkedIn add that keeps the fields and the role of the query it replaces.
+      extraDrafts.push({ query, fieldIds: q.fieldIds, roleId: q.roleId, rationale: `Narrowed from ${q.id}` });
       continue;
     }
     const key = queryKey(q.board, query);
@@ -703,12 +771,16 @@ export function applyRevision(
     narrowed.push(q.id);
   }
 
-  const drafts = validateDrafts([...extraDrafts, ...output.add], next, dropped);
+  // An added query that serves the judged query's field stands in for it, so it takes that query's role.
+  const judged = next.queries.find((q) => q.id === feedback.queryId);
+  const roleFor = (fieldIds: readonly string[]) =>
+    judged !== undefined && fieldIds.some((id) => judged.fieldIds.includes(id.trim())) ? judged.roleId : "";
+  const modelDrafts = output.add.map((d) => ({ ...d, roleId: roleFor(d.fieldIds) }));
+  const drafts = validateDrafts([...extraDrafts, ...modelDrafts], next, dropped);
   const applied = applyDrafts(next, drafts, dropped);
   next = applied.profile;
 
-  const feedbackQuery = next.queries.find((q) => q.id === feedback.queryId);
-  const served = new Set(feedbackQuery?.fieldIds ?? []);
+  const served = new Set(judged?.fieldIds ?? []);
   const fields = applyFieldChanges(next, output.fieldStatus, served, dropped);
   next = fields.profile;
 
@@ -750,14 +822,15 @@ export interface QueriesOptions {
   changedAt?: string;
 }
 
+/** No field: generation writes for every selected role in the profile (technical-plan.md D47). */
 export interface GenerateQueriesRequest {
   sessionId: string;
   profile: Profile;
-  /** The one field to write for; must be in play and have a ticked role. */
-  fieldId: string;
 }
 
-export interface GenerateQueriesResult extends ApplyFieldDraftsResult {
+export interface GenerateQueriesResult extends ApplyRoleDraftsResult {
+  /** The selected roles written for, in field order then role order. */
+  roles: Role[];
   dropped: QueriesDropped;
   metrics: CallMetrics;
 }
@@ -780,32 +853,30 @@ async function resolveLlm(options: QueriesOptions): Promise<Llm> {
   return options.llm ?? (await import("./llm")).llm();
 }
 
-/** One field, its ticked roles, skills and preferences → one query per board in the profile (technical-plan.md D40). */
+/**
+ * Every selected role, with its field, the person's expertise and interests →
+ * one LinkedIn query per role, written in one call (technical-plan.md D47).
+ */
 export async function generateQueries(
-  { sessionId, profile, fieldId }: GenerateQueriesRequest,
+  { sessionId, profile }: GenerateQueriesRequest,
   options: QueriesOptions = {},
 ): Promise<GenerateQueriesResult> {
-  const field = profile.fields.find((f) => f.id === fieldId);
-  if (field === undefined) throw new QueriesInputError(`No field with id ${fieldId} in the profile.`);
-  if (field.status === "rejected") {
-    throw new QueriesInputError(`${field.id} is marked "Not for me"; searches are written only for fields still in play.`);
-  }
-  const roles = rolesForField(profile, fieldId, true);
+  const roles = selectedRoles(profile);
   if (roles.length === 0) {
-    throw new QueriesInputError(`Tick at least one role under ${field.name} before writing searches for it.`);
+    throw new QueriesInputError("Select at least one role before writing searches.");
   }
   const llmClient = await resolveLlm(options);
   const result = await llmClient.structured({
     step: "queries",
     sessionId,
     system: QUERIES_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildGenerateMessage(profile, field, roles) }],
-    schema: GenerateOutputSchema,
+    messages: [{ role: "user", content: buildGenerateMessage(profile, roles) }],
+    schema: generateOutputSchema(roles.map((r) => r.id)),
   });
   const dropped = zeroDropped();
-  const drafts = validateFieldDrafts(result.value, profile, fieldId, dropped);
-  const applied = applyFieldDrafts(profile, fieldId, drafts);
-  return { ...applied, dropped, metrics: metricsOf(result) };
+  const drafts = validateRoleDrafts(result.value, profile, roles, dropped);
+  const applied = applyRoleDrafts(profile, drafts);
+  return { ...applied, roles, dropped, metrics: metricsOf(result) };
 }
 
 /**

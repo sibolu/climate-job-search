@@ -19,8 +19,8 @@ import {
   appendUserMessage,
   applyQueryFeedback,
   applyTurnResponse,
-  buildFieldTurnInput,
-  canWriteQueriesFor,
+  buildSelectedRolesTurnInput,
+  canWriteQueries,
   confirmProfileSkill,
   EXPORT_FILENAME,
   exploreChatText,
@@ -29,9 +29,10 @@ import {
   nextStep,
   normalizeFeedbackReason,
   profileView,
-  queriesChatText,
+  liveQueryForRole,
   rejectProfileSkill,
   rolesForField,
+  selectedRoles,
   setProfileFieldStatus,
   toggleCardExcluded,
   unassignedRoles,
@@ -225,6 +226,7 @@ function query(id: string, overrides: Partial<Query> = {}): Query {
     board: "linkedin",
     query: '"grid software" AND (engineer OR developer)',
     fieldIds: ["F1"],
+    roleId: "",
     status: "untried",
     reason: "",
     extra: {},
@@ -288,24 +290,55 @@ describe("fields tab helpers", () => {
     expect(exploreChatText(field("F1"))).toBe("Explore F1: Grid software");
   });
 
-  it("offers searches for a field only once it is in play and has a ticked role", () => {
+  it("offers searches once any role under a field is ticked", () => {
     const withStatus = (status: Field["status"], selected: boolean) => ({
       ...profile,
       fields: [{ ...field("F1"), status }],
       roles: profile.roles.map((r) => ({ ...r, selected })),
     });
-    expect(canWriteQueriesFor(profile, "F1")).toBe(false);
-    expect(canWriteQueriesFor(withStatus("accepted", false), "F1")).toBe(false);
-    expect(canWriteQueriesFor(withStatus("rejected", true), "F1")).toBe(false);
-    expect(canWriteQueriesFor(withStatus("candidate", true), "F1")).toBe(true);
-    expect(canWriteQueriesFor(withStatus("accepted", true), "F1")).toBe(true);
-    expect(canWriteQueriesFor(withStatus("accepted", true), "F9")).toBe(false);
+    expect(canWriteQueries(profile)).toBe(false);
+    expect(canWriteQueries(withStatus("accepted", false))).toBe(false);
+    // A field's status is not consulted; R2's field (F9) is not in the profile, so R2 does not count.
+    expect(canWriteQueries(withStatus("rejected", true))).toBe(true);
+    expect(canWriteQueries(withStatus("candidate", true))).toBe(true);
+    expect(canWriteQueries(withStatus("accepted", true))).toBe(true);
+    expect(selectedRoles(withStatus("accepted", true)).map((r) => r.id)).toEqual(["R1"]);
     expect(rolesForField(withStatus("accepted", true), "F1", true).map((r) => r.id)).toEqual(["R1"]);
   });
 
-  it("builds the per-field queries turn input and its chat bubble", () => {
-    expect(buildFieldTurnInput("F1")).toEqual({ kind: "field", fieldId: "F1" });
-    expect(queriesChatText(field("F1"))).toBe("Write searches for F1: Grid software");
+  it("lists selected roles in field order, then role order", () => {
+    const role = (id: string, fieldId: string, selected: boolean) => ({ ...profile.roles[0]!, id, fieldId, selected });
+    const p: Profile = {
+      ...profile,
+      roles: [role("R1", "F2", true), role("R2", "F1", true), role("R3", "F1", false), role("R4", "F1", true), role("R5", "F2", true)],
+    };
+    expect(selectedRoles(p).map((r) => r.id)).toEqual(["R2", "R4", "R1", "R5"]);
+    expect(selectedRoles(profile)).toEqual([]);
+  });
+
+  it("builds the selectedRoles turn input, which carries no payload", () => {
+    expect(buildSelectedRolesTurnInput()).toEqual({ kind: "selectedRoles" });
+  });
+
+  it("picks a role's live query: LinkedIn, not retired, untried or judged, newest wins", () => {
+    const p: Profile = {
+      ...profile,
+      queries: [
+        query("Q1", { roleId: "R1", status: "bad", reason: "agency jobs" }),
+        query("Q2", { roleId: "R2" }),
+        query("Q3", { roleId: "R1" }),
+        query("Q4", { roleId: "R1", extra: { Retired: "yes" } }),
+        query("Q5", { roleId: "R1", board: "indeed" }),
+        query("Q6"),
+      ],
+    };
+    expect(liveQueryForRole(p, "R1")?.id).toBe("Q3");
+    expect(liveQueryForRole(p, "R2")?.id).toBe("Q2");
+    // A judged query is still live when nothing newer replaced it.
+    expect(liveQueryForRole({ ...p, queries: p.queries.slice(0, 2) }, "R1")?.id).toBe("Q1");
+    expect(liveQueryForRole(p, "R9")).toBeUndefined();
+    // A query written before searches were per role has no role and belongs to none.
+    expect(liveQueryForRole(p, "")).toBeUndefined();
   });
 });
 

@@ -12,6 +12,7 @@ function query(board: Board, extra: Record<string, string> = {}): Query {
     board,
     query: "climate data engineer",
     fieldIds: ["F1"],
+    roleId: "",
     status: "untried",
     reason: "",
     extra,

@@ -145,6 +145,7 @@
 ### Q1: "data scientist" AND ("demand response" OR "energy efficiency" OR "measurement and verification")
 - **Board:** linkedin
 - **Fields:** F1
+- **Role:** R1
 - **Status:** good
 - **Reason:** three relevant senior roles, one at a platform vendor
 - **Changed:** 2026-09-07

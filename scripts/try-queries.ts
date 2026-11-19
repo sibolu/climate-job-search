@@ -1,20 +1,25 @@
 /**
- * `pnpm try:queries <profile.md> <fieldId> [profile.md-out]` — the 2b.3
- * acceptance check, live (technical-plan.md D40).
+ * `pnpm try:queries <profile.md> [profile.md-out] [--revise]` — the 2b.8
+ * acceptance check, live (technical-plan.md D47).
  *
- * It reads a `profile.md`, runs `generateQueries` for the one field (one
- * `queries` call through `src/lib/llm.ts`, no web tools) and exits non-zero
- * unless exactly three queries came back, one per board, each with
- * `Fields: <fieldId>` only. It ticks nothing itself: the field must already
- * have selected roles (the fixture has two on F1). Then it runs
- * `reviseQueries` with the scripted feedback "bad fit: all roles need PE
- * license" on the first untried query tied to a field whose text mentions a
- * license (else the first query), prints both summaries and the explanation
- * to stderr, writes the final `profile.md` to stdout (or the out file), and
- * exits non-zero if the revision neither retired, narrowed nor added a
- * query, or gave no explanation.
+ * It reads a `profile.md` and runs `generateQueries` once (one `queries` call
+ * through `src/lib/llm.ts`, no web tools) for every role with
+ * `Selected: yes` across all fields. It ticks nothing itself: the fixture has
+ * three selected roles in two fields. It prints one line per selected role
+ * to stderr with the role id, title, field and LinkedIn query, and exits
+ * non-zero unless the number of live LinkedIn queries carrying a `Role`
+ * equals the number of selected roles, one per role. A query containing a
+ * seniority word is reported as a warning, not a failure.
  *
- *   pnpm try:queries src/lib/__fixtures__/queries/engineer.md F1
+ * With `--revise` it then runs `reviseQueries` with the scripted feedback
+ * "bad fit: all roles need PE license" on the first query just written for a
+ * field whose text mentions a license (else the first one written), prints
+ * the summary and the explanation, and exits non-zero if the revision
+ * neither retired, narrowed nor added a query, or gave no explanation.
+ *
+ * The final `profile.md` goes to stdout, or to the out file when given.
+ *
+ *   pnpm try:queries src/lib/__fixtures__/queries/engineer.md
  *
  * It never echoes the profile except as the output the app would store in
  * the browser. Needs `ANTHROPIC_API_KEY`; the usage row insert needs the
@@ -24,19 +29,21 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
-import { parseProfile, serializeProfile } from "../src/lib/profile";
+import { type Profile, parseProfile, serializeProfile } from "../src/lib/profile";
 import {
-  QUERY_BOARDS,
   QueriesInputError,
   QueriesOutputError,
   RETIRED_KEY,
   droppedSummary,
   generateQueries,
+  levelWordsIn,
   reviseQueries,
 } from "../src/lib/queries";
 import { newSessionId } from "../src/lib/session";
+import { liveQueryForRole, selectedRoles } from "../src/lib/workspace";
 
-const USAGE = "usage: pnpm try:queries <profile.md> <fieldId> [profile.md-out]";
+const USAGE = "usage: pnpm try:queries <profile.md> [profile.md-out] [--revise]";
+const REVISE_FLAG = "--revise";
 const FEEDBACK_REASON = "bad fit: all roles need PE license";
 
 function fail(message: string): never {
@@ -48,14 +55,34 @@ function log(line: string): void {
   process.stderr.write(`${line}\n`);
 }
 
-function ids(list: readonly { id: string; board?: string }[]): string {
-  return list.map((q) => (q.board === undefined ? q.id : `${q.id}/${q.board}`)).join(", ") || "-";
+function ids(list: readonly { id: string; roleId?: string }[]): string {
+  return list.map((q) => (q.roleId === undefined || q.roleId === "" ? q.id : `${q.id}/${q.roleId}`)).join(", ") || "-";
+}
+
+/**
+ * Prints one line per selected role and returns how many selected roles have
+ * a live LinkedIn query that names them.
+ */
+function reportSelectedRoles(profile: Profile): { selected: number; live: number } {
+  const roles = selectedRoles(profile);
+  let live = 0;
+  for (const role of roles) {
+    const field = profile.fields.find((f) => f.id === role.fieldId);
+    const query = liveQueryForRole(profile, role.id);
+    if (query !== undefined) live += 1;
+    log(`${role.id} | ${role.title} | ${role.fieldId}: ${field?.name ?? "(no field)"} | ${query?.query ?? "(no query)"}`);
+    const levels = query === undefined ? [] : levelWordsIn(query.query);
+    if (levels.length > 0) log(`warning: ${query?.id ?? ""} for ${role.id} contains a level word: ${levels.join(", ")}`);
+  }
+  return { selected: roles.length, live };
 }
 
 async function main(): Promise<void> {
-  const [input, fieldId, output] = process.argv.slice(2);
-  if (input === undefined || input === "-h" || input === "--help") fail(USAGE);
-  if (fieldId === undefined || !/^F\d+$/.test(fieldId)) fail(`fieldId must look like F1\n${USAGE}`);
+  const args = process.argv.slice(2);
+  const flags = args.filter((a) => a.startsWith("-"));
+  const [input, output] = args.filter((a) => !a.startsWith("-"));
+  if (input === undefined || flags.some((f) => f !== REVISE_FLAG)) fail(USAGE);
+  const revise = flags.includes(REVISE_FLAG);
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -75,58 +102,71 @@ async function main(): Promise<void> {
     throw error;
   };
 
-  const generated = await generateQueries({ sessionId, profile: parsed.profile, fieldId }).catch(onInput);
-  const written = [...generated.updated, ...generated.added];
-  log(`generate: added ${ids(generated.added)}; updated ${ids(generated.updated)}; superseded ${generated.superseded.join(", ") || "-"}`);
+  const generated = await generateQueries({ sessionId, profile: parsed.profile }).catch(onInput);
+  log(
+    `generate: added ${ids(generated.added)}; updated ${ids(generated.updated)}; superseded ${generated.superseded.join(", ") || "-"}`,
+  );
   log(`generate: dropped ${droppedSummary(generated.dropped)}`);
-  for (const q of written) log(`generate: ${q.id} [${q.board}] fields ${q.fieldIds.join(", ")}\n  ${q.query}`);
-  const boards = written.map((q) => q.board);
-  if (written.length !== 3 || [...QUERY_BOARDS].some((b) => boards.filter((x) => x === b).length !== 1)) {
-    fail(`FAIL: expected exactly three queries, one per board; got ${boards.join(", ") || "none"}.`);
-  }
-  const offField = written.filter((q) => q.fieldIds.length !== 1 || q.fieldIds[0] !== fieldId);
-  if (offField.length > 0) fail(`FAIL: ${ids(offField)} do not serve ${fieldId} only.`);
-  log(`[DONE] three queries for ${fieldId}, one per board.`);
   log(
     `generate: ${JSON.stringify(generated.metrics.usage)} cost=$${generated.metrics.costUsd.toFixed(4)} ${generated.metrics.durationMs}ms`,
   );
-
-  const profile = generated.profile;
-  const licensed = new Set(
-    profile.fields
-      .filter((f) => /\b(PE|license|licence|licensed)\b/i.test(`${f.name} ${f.fit} ${f.uncertain}`))
-      .map((f) => f.id),
+  let profile = generated.profile;
+  const { selected, live } = reportSelectedRoles(profile);
+  const named = profile.queries.filter(
+    (q) => q.board === "linkedin" && q.roleId !== "" && q.status === "untried" && q.extra[RETIRED_KEY] !== "yes",
   );
-  const target =
-    profile.queries.find((q) => q.status === "untried" && q.fieldIds.some((id) => licensed.has(id))) ??
-    profile.queries[0];
-  if (target === undefined) fail("No query to give feedback on.");
-  log(`revise: feedback bad on ${target.id} [${target.board}] fields ${target.fieldIds.join(", ")}: ${FEEDBACK_REASON}`);
+  const offBoard = generated.written.filter((q) => q.board !== "linkedin" || q.roleId === "");
+  if (offBoard.length > 0) fail(`FAIL: ${ids(offBoard)} are not LinkedIn queries naming a role.`);
+  if (generated.written.length !== selected || live !== selected) {
+    fail(
+      `FAIL: ${String(selected)} selected roles, ${String(generated.written.length)} queries written, ${String(live)} roles with a live LinkedIn query.`,
+    );
+  }
+  const selectedIds = new Set(generated.roles.map((r) => r.id));
+  const untriedForSelected = named.filter((q) => selectedIds.has(q.roleId));
+  if (untriedForSelected.length !== selected) {
+    fail(
+      `FAIL: ${String(untriedForSelected.length)} untried LinkedIn queries name a selected role; expected ${String(selected)}, one each.`,
+    );
+  }
+  log(`[DONE] ${String(selected)} LinkedIn queries, one per selected role, each naming its role id.`);
 
-  const revised = await reviseQueries({
-    sessionId,
-    profile,
-    feedback: { queryId: target.id, verdict: "bad", reason: FEEDBACK_REASON },
-  }).catch(onInput);
-  log(`revise: retired ${revised.retired.join(", ") || "-"}; narrowed ${revised.narrowed.join(", ") || "-"}; added ${ids(revised.added)}`);
-  log(`revise: fields ${revised.fieldChanges.map((c) => `${c.id} ${c.from}->${c.to}`).join(", ") || "-"}`);
-  log(`revise: dropped ${droppedSummary(revised.dropped)}`);
-  log(
-    `revise: ${JSON.stringify(revised.metrics.usage)} cost=$${revised.metrics.costUsd.toFixed(4)} ${revised.metrics.durationMs}ms`,
-  );
-  log(`revise: explanation:\n${revised.explanation}`);
-  log(
-    `queries: ${revised.profile.queries.map((q) => `${q.id}:${q.status}${q.extra[RETIRED_KEY] === "yes" ? "(retired)" : ""}`).join(" ")}`,
-  );
+  if (revise) {
+    const licensed = new Set(
+      profile.fields
+        .filter((f) => /\b(PE|license|licence|licensed)\b/i.test(`${f.name} ${f.fit} ${f.uncertain}`))
+        .map((f) => f.id),
+    );
+    const target = generated.written.find((q) => q.fieldIds.some((id) => licensed.has(id))) ?? generated.written[0];
+    if (target === undefined) fail("No query to give feedback on.");
+    log(`revise: feedback bad on ${target.id} for ${target.roleId} fields ${target.fieldIds.join(", ")}: ${FEEDBACK_REASON}`);
 
-  const out = serializeProfile(revised.profile);
+    const revised = await reviseQueries({
+      sessionId,
+      profile,
+      feedback: { queryId: target.id, verdict: "bad", reason: FEEDBACK_REASON },
+    }).catch(onInput);
+    log(`revise: retired ${revised.retired.join(", ") || "-"}; narrowed ${revised.narrowed.join(", ") || "-"}; added ${ids(revised.added)}`);
+    log(`revise: fields ${revised.fieldChanges.map((c) => `${c.id} ${c.from}->${c.to}`).join(", ") || "-"}`);
+    log(`revise: dropped ${droppedSummary(revised.dropped)}`);
+    log(
+      `revise: ${JSON.stringify(revised.metrics.usage)} cost=$${revised.metrics.costUsd.toFixed(4)} ${revised.metrics.durationMs}ms`,
+    );
+    log(`revise: explanation:\n${revised.explanation}`);
+    log(
+      `queries: ${revised.profile.queries.map((q) => `${q.id}:${q.status}${q.extra[RETIRED_KEY] === "yes" ? "(retired)" : ""}`).join(" ")}`,
+    );
+    profile = revised.profile;
+    reportSelectedRoles(profile);
+    const changed = revised.retired.length + revised.narrowed.length + revised.added.length;
+    if (revised.explanation === "") fail("FAIL: the revision returned no explanation.");
+    if (changed === 0) fail("FAIL: the revision neither retired, narrowed nor added a query.");
+    log(`[DONE] revision changed ${String(changed)} queries and explained why.`);
+  }
+
+  const out = serializeProfile(profile);
   if (output === undefined) process.stdout.write(out);
   else writeFileSync(output, out);
-
-  const changed = revised.retired.length + revised.narrowed.length + revised.added.length;
-  if (revised.explanation === "") fail("FAIL: the revision returned no explanation.");
-  if (changed === 0) fail("FAIL: the revision neither retired, narrowed nor added a query.");
-  log(`[DONE] revision changed ${changed} queries and explained why.`);
 }
 
 main().catch((error: unknown) => {

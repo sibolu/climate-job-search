@@ -11,12 +11,14 @@
  */
 
 import { confirmSkill, rejectSkill } from "./cards";
+import { isRetiredQuery } from "./boards";
 import { isElicitationComplete } from "./elicit";
-import type { Card, Field, FieldStatus, Profile, Role } from "./profile";
+import type { Card, Field, FieldStatus, Profile, Query, Role } from "./profile";
 import {
   activeCards,
   parseProfile,
   rolesForField as profileRolesForField,
+  selectedRoles as profileSelectedRoles,
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
@@ -179,25 +181,38 @@ export function unassignedRoles(profile: Profile): Role[] {
 // ---------------------------------------------------------------------------
 
 /**
- * The turn input the expanded field card's CTA sends: one `queries` turn for
- * one field (technical-plan.md D40). Built here so the UI has one place for it.
+ * The turn input the "write searches" button sends: one `queries` turn for
+ * every selected role (technical-plan.md D47). It carries no payload; the
+ * server reads `Selected: yes` from the profile sent with the turn.
  */
-export function buildFieldTurnInput(fieldId: string): TurnInput {
-  return { kind: "field", fieldId };
-}
-
-/** The chat bubble shown for a per-field `queries` turn. */
-export function queriesChatText(field: Field): string {
-  return `Write searches for ${field.id}: ${field.name}`;
+export function buildSelectedRolesTurnInput(): TurnInput {
+  return { kind: "selectedRoles" };
 }
 
 /**
- * A field can have searches written once it is still in play and the person
- * has ticked at least one of its roles; `generateQueries` enforces the same.
+ * Every ticked role, in field order and then role order: the roles a
+ * `queries` turn writes for. `profile.ts` owns the rule (a field's status is
+ * not consulted; a ticked role under no field is left out).
  */
-export function canWriteQueriesFor(profile: Profile, fieldId: string): boolean {
-  const field = profile.fields.find((f) => f.id === fieldId);
-  return field !== undefined && field.status !== "rejected" && rolesForField(profile, fieldId, true).length > 0;
+export function selectedRoles(profile: Profile): Role[] {
+  return profileSelectedRoles(profile);
+}
+
+/** Searches can be written once at least one role is selected; `generateQueries` enforces the same. */
+export function canWriteQueries(profile: Profile): boolean {
+  return selectedRoles(profile).length > 0;
+}
+
+/**
+ * The one search to show for a role: its newest (last in file order)
+ * LinkedIn query that is not retired, whether still untried or already
+ * judged. Undefined when none has been written for the role yet.
+ */
+export function liveQueryForRole(profile: Profile, roleId: string): Query | undefined {
+  if (roleId === "") return undefined;
+  return profile.queries
+    .filter((q) => q.roleId === roleId && q.board === "linkedin" && !isRetiredQuery(q))
+    .at(-1);
 }
 
 /** The longest "why" the feedback box keeps (`QueryFeedbackSchema`'s cap). */

@@ -43,8 +43,8 @@ import { sendTurn } from "@/lib/turn-stream";
 import {
   applyQueryFeedback,
   applyTurnResponse,
-  buildFieldTurnInput,
-  canWriteQueriesFor,
+  buildSelectedRolesTurnInput,
+  canWriteQueries,
   nextStep,
 } from "@/lib/workspace";
 
@@ -240,8 +240,9 @@ export default function AppShell() {
     else goToBoard();
   }
 
-  async function writeSearchesFor(fieldId: string) {
-    const ok = await runTurn("queries", buildFieldTurnInput(fieldId));
+  // One turn writes a search for every selected role, whichever card's button is pressed (technical-plan.md D47).
+  async function writeSearches() {
+    const ok = await runTurn("queries", buildSelectedRolesTurnInput());
     if (ok) setView("searches");
   }
 
@@ -342,8 +343,8 @@ export default function AppShell() {
                 }
                 onAsk={setAskFieldId}
                 askStateFor={askStateFor}
-                canWriteSearches={(fieldId) => canWriteQueriesFor(profile, fieldId)}
-                onWriteSearches={(fieldId) => void writeSearchesFor(fieldId)}
+                canWriteSearches={() => canWriteQueries(profile)}
+                onWriteSearches={() => void writeSearches()}
                 onMatchFields={onMatchFields}
               />
             ) : null}
@@ -362,8 +363,8 @@ export default function AppShell() {
                   setRevisionState("proposed");
                   setView("feedback");
                 }}
-                canWriteSearches={(fieldId) => canWriteQueriesFor(profile, fieldId)}
-                onWriteSearches={(fieldId) => void writeSearchesFor(fieldId)}
+                canWriteSearches={() => canWriteQueries(profile)}
+                onWriteSearches={() => void writeSearches()}
                 onBackToFields={goToBoard}
               />
             ) : null}

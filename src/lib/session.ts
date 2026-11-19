@@ -89,12 +89,15 @@ export const QueryFeedbackSchema = z.object({
 });
 export type QueryFeedback = z.infer<typeof QueryFeedbackSchema>;
 
-/** The new thing the user did this turn: typed a message, or filed feedback. */
+/** The new thing the user did this turn: typed a message, filed feedback, or asked for searches. */
 export const TurnInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message"), content: z.string().min(1).max(MAX_MESSAGE_CHARS) }),
   z.object({ kind: z.literal("feedback"), feedback: QueryFeedbackSchema }),
-  /** The expanded field card's CTA: write searches for this one field (technical-plan.md D40). */
-  z.object({ kind: z.literal("field"), fieldId: z.string().regex(/^F\d+$/) }),
+  /**
+   * Write one LinkedIn search per selected role (technical-plan.md D47). No
+   * payload: the server reads `Selected: yes` from the profile it is sent.
+   */
+  z.object({ kind: z.literal("selectedRoles") }),
 ]);
 export type TurnInput = z.infer<typeof TurnInputSchema>;
 

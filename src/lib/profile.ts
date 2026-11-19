@@ -81,6 +81,7 @@
  * ### Q1: "video producer" AND (solar OR renewable)
  * - **Board:** linkedin
  * - **Fields:** F1
+ * - **Role:** R1
  * - **Status:** bad
  * - **Reason:** every result was an agency job, not in-house
  * - **Changed:** 2026-09-10
@@ -109,6 +110,9 @@
  *   `Key` is the preference label the answer is filed under (D43).
  *   Query `Board`: `linkedin | indeed | climatebase | other`.
  *   Query `Status`: `untried | good | bad`.
+ * - Query `Role` is the id of the one role the search was written for, and
+ *   `Fields` then holds that role's field (technical-plan.md D47). A query
+ *   written before searches were per role has no `Role` line.
  * - Fit reasoning cites cards by ID in the text, e.g. `(C1, C3)`;
  *   `citedCardIds()` extracts them.
  *
@@ -126,7 +130,8 @@
  * ## Serialization rules
  *
  * Output is canonical: fixed section order, fixed key order, every known key
- * always present, extra keys sorted, unknown sections last. So
+ * always present (a query's `Role` is the one exception: the line is omitted
+ * when the role is unknown), extra keys sorted, unknown sections last. So
  * `parse(serialize(p))` deep-equals `p` for any normalized profile and
  * `serialize(parse(md))` is idempotent, which keeps per-turn diffs small.
  */
@@ -267,7 +272,7 @@ export const RoleSchema = z.object({
   fieldId: z.string(),
   companies: z.array(z.string()),
   why: z.string(),
-  /** Ticked on the expanded field card; selected roles drive query writing (technical-plan.md D40). */
+  /** Ticked by the person; every selected role gets one LinkedIn query (technical-plan.md D47). */
   selected: z.boolean(),
   sources: z.array(z.string()),
   extra: ExtraSchema,
@@ -285,6 +290,11 @@ export const QuerySchema = z.object({
   board: BoardSchema,
   query: z.string(),
   fieldIds: z.array(z.string()),
+  /**
+   * ID of the role this query was written for, e.g. `R3`; empty when unknown
+   * (a query written before one-query-per-role, technical-plan.md D47).
+   */
+  roleId: z.string(),
   status: QueryStatusSchema,
   /** The user's own words from the "Tried it" feedback. */
   reason: z.string(),
@@ -426,6 +436,7 @@ const LABELS = {
   why: "Why",
   board: "Board",
   fields: "Fields",
+  role: "Role",
   reason: "Reason",
   changed: "Changed",
   query: "Query",
@@ -557,7 +568,7 @@ const ROLE_ALIASES: Record<string, RoleKey> = {
   links: "sources",
 };
 
-type QueryKey = "board" | "fields" | "status" | "reason" | "changed" | "query";
+type QueryKey = "board" | "fields" | "role" | "status" | "reason" | "changed" | "query";
 const QUERY_ALIASES: Record<string, QueryKey> = {
   board: "board",
   site: "board",
@@ -565,6 +576,8 @@ const QUERY_ALIASES: Record<string, QueryKey> = {
   field: "fields",
   fieldids: "fields",
   targets: "fields",
+  role: "role",
+  roleid: "role",
   status: "status",
   reason: "reason",
   feedback: "reason",
@@ -1249,6 +1262,7 @@ function parseQueries(section: RawSection | undefined, warnings: string[]): Quer
       board: "other",
       query: it.title,
       fieldIds: [],
+      roleId: "",
       status: "untried",
       reason: "",
       extra: {},
@@ -1262,6 +1276,9 @@ function parseQueries(section: RawSection | undefined, warnings: string[]): Quer
           break;
         case "fields":
           query.fieldIds.push(...listValue(lines).map((f) => f.toUpperCase()));
+          break;
+        case "role":
+          query.roleId = textValue(lines).toUpperCase();
           break;
         case "status":
           query.status = enumValue(lines, QUERY_STATUS_ALIASES, where, warnings) ?? "untried";
@@ -1478,6 +1495,7 @@ function serializeQuery(q: Query): string[] {
     itemHeading(q.id, q.query),
     keyLine(LABELS.board, q.board),
     inlineListLine(LABELS.fields, q.fieldIds),
+    ...(q.roleId === "" ? [] : [keyLine(LABELS.role, q.roleId)]),
     keyLine(LABELS.status, q.status),
     keyLine(LABELS.reason, q.reason),
     keyLine(LABELS.changed, q.changedAt ?? ""),
@@ -1604,7 +1622,7 @@ export function setFieldExplored(p: Profile, id: string, explored = true): Profi
   return { ...p, fields: p.fields.map((f) => (f.id === id ? { ...f, explored } : f)) };
 }
 
-/** Ticks or unticks a role on the expanded field card (technical-plan.md D40). */
+/** Ticks or unticks a role; every ticked role gets one LinkedIn query (technical-plan.md D47). */
 export function setRoleSelected(p: Profile, id: string, selected: boolean): Profile {
   return { ...p, roles: p.roles.map((r) => (r.id === id ? { ...r, selected } : r)) };
 }
@@ -1612,6 +1630,18 @@ export function setRoleSelected(p: Profile, id: string, selected: boolean): Prof
 /** Roles that belong to a field, in file order; `selectedOnly` keeps the ticked ones. */
 export function rolesForField(p: Profile, fieldId: string, selectedOnly = false): Role[] {
   return p.roles.filter((r) => r.fieldId === fieldId && (!selectedOnly || r.selected));
+}
+
+/**
+ * Every role the person has ticked, in field order and then role order
+ * (technical-plan.md D47). This is the one definition of "selected" that query
+ * writing and the UI share. A field's status is not consulted: the Roles
+ * screen shows every discovered field as a heading with no marking, so a tick
+ * always means a search. A ticked role whose `Field` names no field in the
+ * profile is left out, because no screen shows it.
+ */
+export function selectedRoles(p: Profile): Role[] {
+  return p.fields.flatMap((f) => rolesForField(p, f.id, true));
 }
 
 /**

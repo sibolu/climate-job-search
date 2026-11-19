@@ -249,7 +249,7 @@ function role(id: string, fieldId: string, selected: boolean): Role {
 }
 
 function query(id: string, board: Query["board"], fieldIds: string[], patch: Partial<Query> = {}): Query {
-  return { id, board, query: `q-${id}`, fieldIds, status: "untried", reason: "", extra: {}, ...patch };
+  return { id, board, query: `q-${id}`, fieldIds, roleId: "", status: "untried", reason: "", extra: {}, ...patch };
 }
 
 function withFields(fields: Field[], roles: Role[] = [], queries: Query[] = []): Profile {

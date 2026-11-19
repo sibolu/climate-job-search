@@ -15,8 +15,8 @@
  * - `discover` ranked fields and roles from cards + reference data (no web; D44).
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
  *              with no field id is answered with a list of fields to pick;
- * - `queries`  three searches (one per board) for the one field named by a
- *              `field` input, from the roles ticked on it (technical-plan.md D40).
+ * - `queries`  one LinkedIn search per selected role, for every role with
+ *              `Selected: yes`; a `selectedRoles` input (technical-plan.md D47).
  * - `revise`   one piece of "Tried it" feedback → revised queries and an
  *              explanation.
  *
@@ -40,7 +40,7 @@ import {
 } from "./elicit";
 import { exploreField } from "./explore";
 import type { Llm, StructuredRequest, StreamTextRequest } from "./llm";
-import { activeCards, type Field, type MoveType, parseProfile, type Profile, serializeProfile } from "./profile";
+import { activeCards, type Field, type MoveType, parseProfile, type Profile, type Query, serializeProfile } from "./profile";
 import { generateQueries, type GenerateQueriesResult, reviseQueries, type ReviseQueriesResult } from "./queries";
 import type { AnswerPill, TurnRequest, TurnResponse } from "./session";
 import { exploreChatText } from "./workspace";
@@ -170,17 +170,20 @@ export function discoverMessage(result: DiscoverResult): string {
   return parts.join("\n\n");
 }
 
-/** The chat message after query generation: the field and its three searches, one per board. */
-export function queriesMessage(result: GenerateQueriesResult, fieldId: string): string {
-  const written = [...result.updated, ...result.added];
-  const field = result.profile.fields.find((f) => f.id === fieldId);
-  const name = field === undefined ? fieldId : `${field.id}: ${field.name}`;
-  if (written.length === 0) return `I could not write any searches for ${name} this time. Try again.`;
+/** The chat message after query generation: one LinkedIn search per selected role (technical-plan.md D47). */
+export function queriesMessage(result: GenerateQueriesResult): string {
+  const { written } = result;
+  if (written.length === 0) return "I could not write any searches this time. Try again.";
+  const title = (q: Query) => result.roles.find((r) => r.id === q.roleId)?.title ?? q.roleId;
+  const intro =
+    written.length === 1
+      ? "Here is a LinkedIn search for the role you selected"
+      : `Here are ${String(written.length)} LinkedIn searches, one for each role you selected`;
   const refreshed = result.updated.length === 0 ? "" : ` (${String(result.updated.length)} replaced an earlier untried search)`;
   const lines = [
-    `Here are ${String(written.length)} searches for **${name}**, one per board${refreshed}:`,
-    ...written.map((q) => `- **${q.id}** (${q.board}): ${q.query}`),
-    "Open Searches to copy each one, set an email alert, and say how it went — that feedback is what improves the next round.",
+    `${intro}${refreshed}:`,
+    ...written.map((q) => `- **${title(q)}** (${q.id}): ${q.query}`),
+    "Open Searches to copy each one into LinkedIn, set an email alert, and say how it went.",
   ];
   return lines.join("\n");
 }
@@ -320,14 +323,12 @@ export async function runTurn(
     }
 
     case "queries": {
-      if (request.input.kind !== "field") {
-        throw new TurnInputError("The queries step needs a field to write searches for.");
+      if (request.input.kind !== "selectedRoles") {
+        throw new TurnInputError("The queries step writes searches for the selected roles; it takes no message.");
       }
-      const { fieldId } = request.input;
-      const field = profile.fields.find((f) => f.id === fieldId);
-      onProgress(`Writing searches for ${field?.name ?? fieldId}…`);
-      const result = await d.generateQueries({ sessionId, profile, fieldId }, { llm: d.llm() });
-      return respond(result.profile, [queriesMessage(result, fieldId), ...note]);
+      onProgress("Writing a LinkedIn search for each role you selected…");
+      const result = await d.generateQueries({ sessionId, profile }, { llm: d.llm() });
+      return respond(result.profile, [queriesMessage(result), ...note]);
     }
 
     case "revise": {
@@ -374,7 +375,7 @@ export function turnErrorMessage(error: unknown): string {
     case "LlmOutputError":
       return "The model returned something I could not read. Try again.";
     case "QueriesOutputError":
-      return "The searches for that field did not come back complete. Try again.";
+      return "The searches did not come back complete for every selected role. Try again.";
     case "LlmConfigError":
     case "LlmToolPolicyError":
     case "LlmSessionIdError":

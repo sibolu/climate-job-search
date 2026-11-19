@@ -66,7 +66,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or a skill |
 | `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data, no web (D44) → ranked fields and roles; non-zero if any lacks a card citation or cites a URL the catalogue does not list |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
-| `pnpm try:queries <profile.md> <fieldId> [out.md]` | Stage 2b.3 live: three queries for one field from its selected roles (one per board), then revise from a scripted "bad fit" feedback |
+| `pnpm try:queries <profile.md> [out.md] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--revise` then revises from a scripted "bad fit" feedback |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -293,8 +293,10 @@ canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 `delta`s, a heartbeat every 15s, then one `final` or one `error`.
 
 - The browser names what it wants through `TurnInput`: `message` (paste,
-  pills), `field` (write searches for one field, technical-plan.md D40) and
-  `feedback` (revise). The one remaining text convention, `exploreChatText`
+  pills), `selectedRoles` (write one LinkedIn search per selected role; no
+  payload, the server reads `Selected: yes` from the profile it is sent,
+  technical-plan.md D47) and `feedback` (revise; still dispatched, but
+  nothing in the browser sends it). The one remaining text convention, `exploreChatText`
   in `workspace.ts`, serves the `explore` step that only scripts reach (D39);
   `GO_PILL` lives in `turn.ts`. Change text there, never inline.
 - User-facing error text comes only from `turnErrorMessage`; the route logs

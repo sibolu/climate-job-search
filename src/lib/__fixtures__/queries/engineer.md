@@ -123,7 +123,7 @@
 - **Field:** F2
 - **Companies:** Example Heat Pump Maker
 - **Why:** Refrigerant circuit design and certification testing from C2.
-- **Selected:** no
+- **Selected:** yes
 - **Sources:**
   - https://example.com/heat-pump-maker/jobs/senior-product-engineer
 
@@ -148,6 +148,7 @@
 ### Q1: "mechanical engineer" AND (electrification OR "heat pump") AND (decarbonization OR MEP)
 - **Board:** linkedin
 - **Fields:** F1
+- **Role:** R1
 - **Status:** untried
 - **Reason:**
 - **Changed:**

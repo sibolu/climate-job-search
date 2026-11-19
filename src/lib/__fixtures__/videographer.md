@@ -137,6 +137,7 @@
 ### Q1: "video producer" AND (agriculture OR farm OR "soil health")
 - **Board:** linkedin
 - **Fields:** F1
+- **Role:** R1
 - **Status:** good
 - **Reason:** two of the first ten results were in-house nonprofit roles at the right level
 - **Changed:** 2026-09-08

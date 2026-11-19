@@ -8,6 +8,7 @@ import {
   activeCards,
   addOtherPreference,
   rolesForField,
+  selectedRoles,
   setQueryText,
   setRoleSelected,
   citedCardIds,
@@ -467,6 +468,94 @@ describe("climate interests", () => {
   });
 });
 
+describe("a query's role (technical-plan.md D47)", () => {
+  const md = [
+    "## Queries",
+    "",
+    '### Q1: "video producer" AND (solar OR "energy storage")',
+    "- **Board:** linkedin",
+    "- **Fields:** F1",
+    "- **Role:** r3",
+    "- **Status:** untried",
+    "- **Rationale:** title plus field terms",
+    "",
+    "### Q2: videographer solar",
+    "- **Board:** indeed",
+    "- **Fields:** F1",
+    "- **Status:** untried",
+  ].join("\n");
+
+  it("parses Role as a known key, uppercased, and leaves it empty when absent", () => {
+    const { profile, warnings } = parseProfile(md);
+    expect(warnings).toEqual([]);
+    expect(profile.queries.map((q) => q.roleId)).toEqual(["R3", ""]);
+    // Role is no longer an unknown key; a real unknown key still survives beside it.
+    expect(profile.queries[0]?.extra).toEqual({ Rationale: "title plus field terms" });
+    expect(profile.queries[0]?.fieldIds).toEqual(["F1"]);
+  });
+
+  it("serializes Role right after Fields and omits the line when the role is unknown", () => {
+    const out = serializeProfile(parseProfile(md).profile);
+    expect(out).toContain("- **Fields:** F1\n- **Role:** R3\n- **Status:** untried");
+    expect(out.match(/\*\*Role:\*\*/g)).toHaveLength(1);
+    expect(out).toContain("- **Changed:**\n- **Rationale:** title plus field terms");
+  });
+
+  it("round-trips: parse → serialize is idempotent and ids are not renumbered", () => {
+    const first = parseProfile(md).profile;
+    const once = serializeProfile(first);
+    const second = parseProfile(once);
+    expect(second.warnings).toEqual([]);
+    expect(second.profile).toEqual(first);
+    expect(serializeProfile(second.profile)).toBe(once);
+    expect(second.profile.queries.map((q) => q.id)).toEqual(["Q1", "Q2"]);
+  });
+
+  it("accepts the `Role id` spelling and survives upsertQuery", () => {
+    const { profile } = parseProfile(md.replace("- **Role:** r3", "- **Role id:** R4"));
+    expect(profile.queries[0]?.roleId).toBe("R4");
+    const next = upsertQuery(profile, { board: "linkedin", query: "q", fieldIds: ["F2"], roleId: "R5", status: "untried", reason: "", extra: {} });
+    expect(next.queries.at(-1)).toMatchObject({ id: "Q3", roleId: "R5" });
+    expect(serializeProfile(next)).toContain("### Q3: q\n- **Board:** linkedin\n- **Fields:** F2\n- **Role:** R5");
+  });
+
+  it("every fixture carries a query with a Role and one without, each naming a real role", () => {
+    for (const name of FIXTURES) {
+      const p = parseProfile(fixture(name)).profile;
+      const withRole = p.queries.filter((q) => q.roleId !== "");
+      expect(withRole.length).toBeGreaterThanOrEqual(1);
+      expect(p.queries.some((q) => q.roleId === "")).toBe(true);
+      for (const q of withRole) {
+        const role = p.roles.find((r) => r.id === q.roleId);
+        expect(role).toBeDefined();
+        expect(q.fieldIds).toEqual([role?.fieldId]);
+      }
+    }
+  });
+});
+
+describe("selectedRoles", () => {
+  const base = parseProfile(fixture("data-scientist")).profile;
+
+  it("lists ticked roles in field order then role order, whatever the field's status, skipping unknown fields", () => {
+    const all = base.roles.reduce((p, r) => setRoleSelected(p, r.id, true), base);
+    const fieldOrder = all.fields.map((f) => f.id);
+    const got = selectedRoles(all);
+    expect(got.length).toBeGreaterThan(0);
+    expect(got.every((r) => r.selected && fieldOrder.includes(r.fieldId))).toBe(true);
+    expect(got.map((r) => fieldOrder.indexOf(r.fieldId))).toEqual([...got.map((r) => fieldOrder.indexOf(r.fieldId))].sort((a, b) => a - b));
+    // Reversing the role list does not change the field order of the result.
+    const reversed = selectedRoles({ ...all, roles: [...all.roles].reverse() });
+    expect(reversed.map((r) => r.fieldId)).toEqual(got.map((r) => r.fieldId));
+    // A field's status does not matter; a ticked role under a field that does not exist is left out.
+    const first = got[0];
+    expect(selectedRoles(setFieldStatus(all, first?.fieldId ?? "", "rejected")).some((r) => r.fieldId === first?.fieldId)).toBe(true);
+    const orphan = upsertRole(all, { title: "Orphan", fieldId: "F99", companies: [], why: "", selected: true, sources: [], extra: {} });
+    expect(selectedRoles(orphan).some((r) => r.title === "Orphan")).toBe(false);
+    expect(selectedRoles(emptyProfile())).toEqual([]);
+  });
+});
+
 describe("helpers", () => {
   const base = parseProfile(fixture("videographer")).profile;
 
@@ -488,7 +577,7 @@ describe("helpers", () => {
     expect(replaced.cards).toHaveLength(4);
     expect(upsertField(base, { name: "F", status: "candidate", explored: false, sector: "", summary: "", chips: [], evidence: [], fit: "", uncertain: "", sources: [], extra: {} }).fields.at(-1)?.id).toBe("F5");
     expect(upsertRole(base, { title: "R", fieldId: "F1", companies: [], why: "", selected: false, sources: [], extra: {} }).roles.at(-1)?.id).toBe("R3");
-    expect(upsertQuery(base, { board: "other", query: "q", fieldIds: [], status: "untried", reason: "", extra: {} }).queries.at(-1)?.id).toBe("Q4");
+    expect(upsertQuery(base, { board: "other", query: "q", fieldIds: [], roleId: "", status: "untried", reason: "", extra: {} }).queries.at(-1)?.id).toBe("Q4");
     expect(base.cards).toHaveLength(3); // pure: input untouched
   });
 

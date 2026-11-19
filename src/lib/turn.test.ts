@@ -101,11 +101,12 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         message: `Explored ${fieldId}`,
       } as never);
     },
-    generateQueries: ({ profile, fieldId }) => {
-      calls.push(`generateQueries:${fieldId}`);
-      const next = upsertQuery(profile, { board: "linkedin", query: "grid AND video", fieldIds: [fieldId], status: "untried", reason: "", extra: {} });
+    generateQueries: ({ profile }) => {
+      calls.push("generateQueries");
+      const roles = [{ id: "R1", title: "Grid video producer", fieldId: "F1", companies: [], why: "", selected: true, sources: [], extra: {} }];
+      const next = upsertQuery(profile, { board: "linkedin", query: "grid AND video", fieldIds: ["F1"], roleId: "R1", status: "untried", reason: "", extra: {} });
       const added = next.queries[next.queries.length - 1]!;
-      return Promise.resolve({ profile: next, added: [added], updated: [], superseded: [], dropped: {} as never, metrics: METRICS });
+      return Promise.resolve({ profile: next, roles, written: [added], added: [added], updated: [], superseded: [], dropped: {} as never, metrics: METRICS });
     },
     reviseQueries: ({ profile, feedback }) => {
       calls.push(`reviseQueries:${feedback.queryId}`);
@@ -193,14 +194,15 @@ describe("runTurn — discover / explore / queries / revise", () => {
     expect(res.pills?.every((p) => p.value.startsWith("Explore "))).toBe(true);
   });
 
-  it("queries needs a field input and writes for that field only", async () => {
+  it("queries needs a selectedRoles input and names each role's search", async () => {
     const deps = fakeDeps();
     await expect(runTurn(request("queries", fixture(), "write queries"), deps)).rejects.toBeInstanceOf(TurnInputError);
     expect(deps.calls).toEqual([]);
-    const req: TurnRequest = { ...request("queries", fixture()), input: { kind: "field", fieldId: "F1" } };
+    const req: TurnRequest = { ...request("queries", fixture()), input: { kind: "selectedRoles" } };
     const res = await runTurn(req, deps);
-    expect(deps.calls).toEqual(["generateQueries:F1"]);
-    expect(res.message).toContain("F1: ");
+    expect(deps.calls).toEqual(["generateQueries"]);
+    expect(res.message).toContain("LinkedIn search for the role you selected");
+    expect(res.message).toContain("**Grid video producer**");
     expect(res.message).toContain("grid AND video");
     expect(res.pills).toBeUndefined();
   });
@@ -235,7 +237,7 @@ describe("pure helpers", () => {
 
   it("messages render without throwing on empty results", () => {
     expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0 }, call: METRICS })).toContain("could not find");
-    expect(queriesMessage({ profile: emptyProfile(), added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS }, "F1")).toContain("could not write");
+    expect(queriesMessage({ profile: emptyProfile(), roles: [], written: [], added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS })).toContain("could not write");
     expect(reviseMessage({ profile: emptyProfile(), explanation: "Nothing.", retired: [], added: [], narrowed: [], fieldChanges: [], dropped: {} as never, metrics: METRICS })).toContain("No queries changed");
   });
 });

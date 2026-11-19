@@ -122,6 +122,7 @@
 ### Q1: "product designer" AND (utility OR "energy efficiency" OR rebate)
 - **Board:** linkedin
 - **Fields:** F1
+- **Role:** R1
 - **Status:** good
 - **Reason:** several vendor roles at senior level, remote
 - **Changed:** 2026-09-05
