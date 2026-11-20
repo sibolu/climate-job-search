@@ -6,8 +6,9 @@
  * effort) because what it proves is the wiring, not the model: the API key
  * works, `structured()` parses, and the anon key can insert a usage row that
  * the service role can read back. It runs as a `queries`-step call, so it
- * also proves the per-step model (technical-plan.md D46): the row's `model`
- * must be `MODEL_BY_STEP.queries` (`claude-sonnet-5-5`), or it exits non-zero.
+ * also proves the per-step model (technical-plan.md D46, D52): the row's
+ * `model` must be `MODEL_BY_STEP.queries` (`claude-opus-5-5`), or it exits
+ * non-zero.
  *
  * Without `ANTHROPIC_API_KEY` it prints a skip message and exits 0, so it is
  * safe to run on a machine that has no key. The key is the only credential

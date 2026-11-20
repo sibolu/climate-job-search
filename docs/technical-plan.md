@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D51, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D52, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -34,11 +34,11 @@ Defaults; a decision in §5 overrides a row here.
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
 | Hosting | Vercel for app and route handlers. Supabase Postgres for the reference collection only | Existing subscriptions |
 | Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
-| LLM | Anthropic TS SDK, model per step: `claude-sonnet-5-5` for `queries` and `revise`, `claude-opus-5-5` for every other step. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on both models. See D44, D45, D46 |
+| LLM | Anthropic TS SDK, model per step: `claude-opus-5-5` for every step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on both models. See D44, D45, D52 |
 | Grounding | Supabase reference collection, then the model's own knowledge. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Baseline before a larger roles-and-occupations catalogue; hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" in the header | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
-| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5). See D4 |
+| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
 | Tests | `vitest`; prompt behaviors covered by evals, not unit tests | Unit tests for parsers and pure logic only |
@@ -195,7 +195,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
    Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
    `claude-opus-5-5`: D44; `queries` and `revise` on `claude-sonnet-5-5`:
-   D46.)
+   D46. Superseded by D52: every step on `claude-opus-5-5` again.)
 3. All user state lives in the browser (`localStorage`) and is resent each
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
@@ -676,7 +676,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       before any response started writes no row.
 
 46. **Model per step: `queries` and `revise` on Sonnet 5.5 at `medium`
-    (2026-11-18).** Decided after the first browser run. Writing one search
+    (2026-11-18).** (Superseded by D52.) Decided after the first browser run. Writing one search
     string per role is short, constrained work, and Sonnet 5.5 is $2 / $10
     per MTok against Opus 5.5's $4 / $20. Narrows D44's "Opus 5.5 for every
     call"; discovery on Opus 5.5 at `medium` with no web tools stands.
@@ -812,6 +812,20 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     - The feedback loop (what is rated, where, what a rating may change,
       how a revision is shown) is its own later milestone,
       `docs/backlog.md` §4.
+
+52. **Searches (`queries`, `revise`) run on Opus 5.5 at `medium` again
+    (2026-11-20).** Reverses D46. In the 2026-11-19 browser run the
+    searches Sonnet 5.5 wrote paired a role's title with generic climate
+    terms ("green jobs", "climate careers") instead of the field's own
+    vocabulary, so they were too general to be worth the saving.
+    - `MODEL_BY_STEP.queries` and `.revise` → `claude-opus-5-5`; all six
+      steps now run on Opus 5.5. `EFFORT_BY_STEP` is unchanged: `explore`
+      `high`, every other step `medium`, always sent explicitly.
+    - The `ModelId` union and the Sonnet 5.5 row in `PRICE_PER_MTOK` are
+      kept, so a later switch is a one-line table change. `costUsd` still
+      prices each call by the model that ran.
+    - `pnpm smoke:llm` stays a `queries` call and now fails unless its row
+      says `claude-opus-5-5`.
 
 ---
 

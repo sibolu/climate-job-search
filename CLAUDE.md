@@ -12,6 +12,10 @@ environment, the hard constraints, and the rules each module enforces.
   comments cite them as `technical-plan.md D31`. Append a new decision there
   in the same commit as the change; never renumber. Do not rely on Claude's
   private memory for anything another contributor would need.
+- **Read `docs/design-language.md` before changing anything in
+  `src/components/shell/` or any user-facing string.** It holds the copy and
+  layout principles with the examples that produced them; add a principle in
+  the same commit as the decision that produced it.
 - **Keep `docs/data-flow.html` current.** Two flows (paste → fields and
   roles, ticked roles → LinkedIn searches): one box per Anthropic API call with links to its
   prompt, and which `profile.md` sections each call or click reads and
@@ -109,6 +113,10 @@ claude mcp add playwright --scope local -- \
   take a screenshot only to judge layout. Close the browser and stop
   `pnpm dev` afterwards. Any turn the browser triggers is a live, billed
   Claude call.
+- `/ux-review [resume]` (`.claude/skills/ux-review/`) runs the full visual
+  review: a test profile built from a gitignored resume in `userdata/`,
+  one screenshot per screen, and a dated `docs/ux-review-<date>.md`. It
+  only runs when a user types it.
 
 ## Environment variables
 
@@ -224,17 +232,18 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
 - **`createLlm({ client, usageSink, now, callTimeoutMs })`** is the injectable form used by
   tests; `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
-- **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D46):
-  `queries` and `revise` run on `claude-sonnet-5-5`; `cards`, `elicit`,
-  `discover` and `explore` on `claude-opus-5-5`. Adaptive thinking on every
-  call, both models (`budget_tokens` and disabled thinking are rejected by
-  Opus 5.5). `PRICE_PER_MTOK` is keyed by model id and `costUsd` prices each
+- **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D52):
+  all six steps (`cards`, `elicit`, `discover`, `explore`, `queries`,
+  `revise`) run on `claude-opus-5-5`. `ModelId` and `PRICE_PER_MTOK` still
+  carry `claude-sonnet-5-5`, so a later switch is a one-line table change.
+  Adaptive thinking on every call (`budget_tokens` and disabled thinking are
+  rejected by Opus 5.5). `PRICE_PER_MTOK` is keyed by model id and `costUsd` prices each
   call by the model that ran; an unpriced id throws `LlmConfigError`. The
   usage row's `model` column records which model ran.
-- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44, D46):
+- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44, D52):
   `explore` is `high`; every other step is `medium`. Effort is always sent
-  explicitly: Sonnet 5.5 defaults to `high` and Opus 5.5 to `medium`, so
-  neither default is relied on. Change the tables, not the call sites.
+  explicitly: defaults differ by model (Sonnet 5.5 `high`, Opus 5.5
+  `medium`), so no default is relied on. Change the tables, not the call sites.
 - **Every call streams** (`client.messages.stream()` + `finalMessage()`), both
   shapes, with a 32K output cap. **One deadline bounds a logical call**:
   `CALL_TIMEOUT_MS` (3 min, every retry and continuation included) aborts it

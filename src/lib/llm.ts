@@ -28,14 +28,15 @@
  * SDK notes (checked against the `claude-api` skill on 2026-09-24,
  * `@anthropic-ai/sdk` 0.125.0):
  *   * The model is chosen per step (see {@link MODEL_BY_STEP},
- *     technical-plan.md D46): Opus 5.5 or Sonnet 5.5. Everything below holds
- *     for both.
+ *     technical-plan.md D52): every step runs on Opus 5.5 today, and the
+ *     table can name any priced {@link ModelId}. Everything below holds for
+ *     every model in the union.
  *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, both
  *     models; `budget_tokens` and disabled thinking are rejected by
  *     `claude-opus-5-5`.
  *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
- *     Opus 5.5 defaults to `medium` and Sonnet 5.5 to `high`, so every call
- *     sets it explicitly; neither default is relied on.
+ *     Defaults differ by model (Opus 5.5 defaults to `medium`), so every
+ *     call sets it explicitly; no default is relied on.
  *   * Every call streams (`client.messages.stream()` + `finalMessage()`), so
  *     no HTTP timeout sits under a long answer, and one deadline
  *     ({@link CALL_TIMEOUT_MS}) plus the caller's abort signal bound it
@@ -69,29 +70,28 @@ import { anonClient } from "./supabase";
 export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5";
 
 /**
- * Model per call type (technical-plan.md D2, D44, D46). Writing one search
- * string per role (`queries`, `revise`) is short, constrained work, so it runs
- * on Sonnet 5.5; every other step stays on Opus 5.5. Change the table, not
- * the call sites.
+ * Model per call type (technical-plan.md D2, D44, D52). Every step runs on
+ * Opus 5.5: the cheaper model wrote searches that were too general (D52
+ * reverses D46). The table stays so a later switch is a one-line change
+ * here, not at the call sites.
  */
 export const MODEL_BY_STEP: Record<StepName, ModelId> = {
   cards: "claude-opus-5-5",
   elicit: "claude-opus-5-5",
   discover: "claude-opus-5-5",
   explore: "claude-opus-5-5",
-  queries: "claude-sonnet-5-5",
-  revise: "claude-sonnet-5-5",
+  queries: "claude-opus-5-5",
+  revise: "claude-opus-5-5",
 };
 
 /** Effort levels this app uses. The SDK also accepts `xhigh`; we do not. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /**
- * Depth per call type (technical-plan.md §1, D44, D46). Chat-like steps and
- * discovery run at `medium`: on Opus 5.5, `medium` discovery took half the
- * time of Opus 5 at `high` with output that looked about as good. The query
- * steps run on Sonnet 5.5 at `medium` (D46); `explore` (script-only) stays
- * `high`.
+ * Depth per call type (technical-plan.md §1, D44, D52). Chat-like steps,
+ * discovery and the query steps run at `medium`: on Opus 5.5, `medium`
+ * discovery took half the time of Opus 5 at `high` with output that looked
+ * about as good. `explore` (script-only) stays `high`.
  */
 export const EFFORT_BY_STEP: Record<StepName, Effort> = {
   cards: "medium",
@@ -243,11 +243,14 @@ export interface ModelPrice {
 }
 
 /**
- * USD per million tokens, keyed by the model that ran (technical-plan.md D46).
+ * USD per million tokens, keyed by the model that ran (technical-plan.md D46,
+ * D52).
  * Cache write is the 5-minute rate, 1.25× input.
  *   * `claude-opus-5-5`, from the `claude-api` skill's model table (checked
  *     2026-09-24): input $4, output $20, cache read $0.20.
- *   * `claude-sonnet-5-5` (2026-11-18): input $2, output $10, cache read $0.10.
+ *   * The second priced model (2026-11-18): input $2, output $10, cache read
+ *     $0.10. No step runs on it now (D52); its row stays so a later switch
+ *     is a one-line {@link MODEL_BY_STEP} change.
  * Update both the numbers and the date when the skill's numbers change.
  */
 export const PRICE_PER_MTOK: Readonly<Record<ModelId, Readonly<ModelPrice>>> = {

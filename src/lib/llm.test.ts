@@ -220,14 +220,14 @@ describe("blocked domains", () => {
 // Config
 // ---------------------------------------------------------------------------
 
-describe("model and effort per step (technical-plan.md D44, D46)", () => {
+describe("model and effort per step (technical-plan.md D44, D52)", () => {
   const EXPECTED = {
     cards: { model: "claude-opus-5-5", effort: "medium" },
     elicit: { model: "claude-opus-5-5", effort: "medium" },
     discover: { model: "claude-opus-5-5", effort: "medium" },
     explore: { model: "claude-opus-5-5", effort: "high" },
-    queries: { model: "claude-sonnet-5-5", effort: "medium" },
-    revise: { model: "claude-sonnet-5-5", effort: "medium" },
+    queries: { model: "claude-opus-5-5", effort: "medium" },
+    revise: { model: "claude-opus-5-5", effort: "medium" },
   } as const;
 
   it("covers every StepName, and prices every model it names", () => {
@@ -250,7 +250,11 @@ describe("model and effort per step (technical-plan.md D44, D46)", () => {
     expect(sink.rows[0]?.cost_usd).toBe(costUsd(EXPECTED[step].model, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }));
   });
 
-  it("prices a Sonnet step by Sonnet's rates", async () => {
+  it("runs every step on Opus 5.5 (D52)", () => {
+    for (const step of StepNameSchema.options) expect(MODEL_BY_STEP[step]).toBe("claude-opus-5-5");
+  });
+
+  it("prices a queries call by the rates of the model that ran", async () => {
     const { client, params } = fakeClient([
       {
         text: "{}",
@@ -264,11 +268,11 @@ describe("model and effort per step (technical-plan.md D44, D46)", () => {
       step: "queries",
       schema: z.object({}),
     });
-    expect((params[0] as Anthropic.MessageCreateParamsNonStreaming).model).toBe("claude-sonnet-5-5");
-    // Sonnet 5.5: (3000 × 2 + 700 × 10 + 12000 × 0.1 + 1000 × 2.5) / 1M
-    expect(result.costUsd).toBeCloseTo(0.0167, 6);
-    expect(sink.rows[0]?.model).toBe("claude-sonnet-5-5");
-    expect(sink.rows[0]?.cost_usd).toBeCloseTo(0.0167, 6);
+    expect((params[0] as Anthropic.MessageCreateParamsNonStreaming).model).toBe("claude-opus-5-5");
+    // Opus 5.5: (3000 × 4 + 700 × 20 + 12000 × 0.2 + 1000 × 5) / 1M
+    expect(result.costUsd).toBeCloseTo(0.0334, 6);
+    expect(sink.rows[0]?.model).toBe("claude-opus-5-5");
+    expect(sink.rows[0]?.cost_usd).toBeCloseTo(0.0334, 6);
   });
 });
 

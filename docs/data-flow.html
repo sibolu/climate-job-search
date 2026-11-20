@@ -158,7 +158,7 @@
 <ul class="note" style="margin-top:10px">
   <li>Clicks on expertise, cards, question pills and roles edit profile.md in the browser. No server call.</li>
   <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content.</li>
-  <li>Every call: adaptive thinking, structured JSON output, no web tools. <code>claude-opus-5-5</code> for cards, preferences and discovery; <code>claude-sonnet-5-5</code> for searches (<code>MODEL_BY_STEP</code>). All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
+  <li>Every call: adaptive thinking, structured JSON output, no web tools. <code>claude-opus-5-5</code> for every call: cards, preferences, discovery and searches (<code>MODEL_BY_STEP</code>). All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
 </ul>
 
 <!-- ───────────── flow 1 ───────────── -->
@@ -327,7 +327,7 @@
     <div class="row">
       <div class="cell"></div>
       <div class="cell"><div class="box api">
-        <div class="api-head"><span class="num">API 4</span><code>generateQueries</code><span class="tag">step queries</span><span class="tag">claude-sonnet-5-5</span><span class="tag">effort medium</span></div>
+        <div class="api-head"><span class="num">API 4</span><code>generateQueries</code><span class="tag">step queries</span><span class="tag">claude-opus-5-5</span><span class="tag">effort medium</span></div>
         <h3>Every ticked role, grouped by field → one LinkedIn query per role</h3>
         <ul class="io">
           <li><b>In:</b> confirmed expertise, climate interests; per field with a ticked role: sector, summary, fit, chips, your answer to its question, searches already judged in it; the ticked roles</li>
