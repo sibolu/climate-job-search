@@ -40,6 +40,7 @@ import {
   citedCardIds,
   upsertField,
   upsertRole,
+  activeSkills,
 } from "./profile";
 import { isBlockedSourceHost, sourceHost } from "./reference-schema";
 
@@ -375,8 +376,10 @@ export function renderPreferencesForDiscover(profile: Profile): string {
     );
   }
   for (const o of p.other) lines.push(`- ${o.key}: ${o.value} (${o.source})`);
-  const confirmed = profile.skills.confirmed;
-  if (confirmed.length > 0) lines.push(`- Confirmed skills: ${confirmed.join(", ")}`);
+  // Accepted unless removed (technical-plan.md D53): an inferred skill the
+  // person never touched is sent, a removed one is not.
+  const skills = activeSkills(profile);
+  if (skills.length > 0) lines.push(`- Skills: ${skills.join(", ")}`);
   return lines.length === 0 ? "(none stated yet)" : lines.join("\n");
 }
 

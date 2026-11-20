@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { AnswerPill } from "@/lib/session";
-import type { Card, PreferenceKey, Profile } from "@/lib/profile";
+import { activeSkills, type Card, type PreferenceKey, type Profile } from "@/lib/profile";
 import {
   FIND_ROLES_PILL,
   INFO_TIPS,
@@ -20,14 +20,15 @@ export interface HighlightsProps {
   sectorGroups: readonly string[];
   onExclude: (cardId: string, excluded: boolean) => void;
   onEditCard: (card: Card) => void;
-  onConfirmSkill: (skill: string) => void;
   onRemoveSkill: (skill: string) => void;
+  /** Puts a removed skill back, so a mis-click is not final (technical-plan.md D53). */
+  onRestoreSkill: (skill: string) => void;
   onAnswer: (key: PreferenceKey, pill: AnswerPill) => void;
   onFindRoles: () => void;
 }
 
 /**
- * The Highlights step, top to bottom: the person's expertise, the collapsed
+ * The Highlights step, top to bottom: the person's skills, the collapsed
  * highlight cards, the two preference questions, and one button. Corrections
  * happen here, through the UI — there is no free-text composer (D42) and no
  * rail (technical-plan.md D49). Discovery starts only when the person presses
@@ -38,66 +39,57 @@ export default function Highlights({
   sectorGroups,
   onExclude,
   onEditCard,
-  onConfirmSkill,
   onRemoveSkill,
+  onRestoreSkill,
   onAnswer,
   onFindRoles,
 }: HighlightsProps) {
   const [editing, setEditing] = useState<string | undefined>(undefined);
   const gate = findRolesGate(profile);
   const questions = questionViews(profile, { sectorGroups });
-  const { confirmed, inferred } = profile.skills;
+  // Skills are accepted unless removed: no confirm step (technical-plan.md D53).
+  const skills = activeSkills(profile);
+  const removed = profile.skills.excluded;
 
   return (
     <section>
       <h2 className="cc-h2">Your highlights</h2>
       <p className="cc-sub">Fix anything wrong. Exclude what you do not want to be matched on.</p>
 
-      {confirmed.length + inferred.length > 0 ? (
+      {skills.length + removed.length > 0 ? (
         <div className="cc-block">
-          <h3 className="cc-h3">Your expertise</h3>
-          {confirmed.length > 0 ? (
-            <div className="cc-chips">
-              {confirmed.map((skill) => (
-                <span key={skill} className="cc-chip cc-chip-green">
-                  {skill}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {inferred.length > 0 ? (
-            <>
-              <p className="cc-note cc-with-tip" style={{ marginTop: 12 }}>
-                Read from your resume. Keep or remove each one.
-                <InfoTip text={INFO_TIPS.removeSkill} label="What removing expertise changes" />
-              </p>
-              <div className="cc-chips">
-                {inferred.map((skill) => (
-                  <span key={skill} className="cc-skill">
-                    <span>{skill}</span>
-                    <button
-                      type="button"
-                      className="cc-skill-btn"
-                      aria-label={`Keep ${skill}`}
-                      title="Keep"
-                      onClick={() => onConfirmSkill(skill)}
-                    >
-                      ✓
-                    </button>
-                    <button
-                      type="button"
-                      className="cc-skill-btn"
-                      aria-label={`Remove ${skill}`}
-                      title="Remove"
-                      onClick={() => onRemoveSkill(skill)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </>
-          ) : null}
+          <h3 className="cc-h3">Skills</h3>
+          <p className="cc-note">Inferred from your resume.</p>
+          <div className="cc-chips" style={{ marginTop: 8 }}>
+            {skills.map((skill) => (
+              <span key={skill} className="cc-skill">
+                <span>{skill}</span>
+                <button
+                  type="button"
+                  className="cc-skill-btn"
+                  aria-label={`Remove ${skill}`}
+                  title="Remove"
+                  onClick={() => onRemoveSkill(skill)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {removed.map((skill) => (
+              <span key={`removed-${skill}`} className="cc-skill cc-skill-removed">
+                <s>{skill}</s>
+                <button
+                  type="button"
+                  className="cc-skill-btn"
+                  aria-label={`Add ${skill} back`}
+                  title="Add back"
+                  onClick={() => onRestoreSkill(skill)}
+                >
+                  +
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       ) : null}
 

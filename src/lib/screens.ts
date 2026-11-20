@@ -103,7 +103,6 @@ export function showNav(screen: Screen): boolean {
 
 export const INFO_TIPS = {
   excludeCard: "Excluded highlights are not used to match roles.",
-  removeSkill: "Removed expertise is not used to match roles.",
   answer: "Your answer is used to rank roles.",
   writeSearches: "Each ticked role becomes one LinkedIn search.",
   fieldAsk: "Your answer is saved to your profile. It does not change the order of these roles.",

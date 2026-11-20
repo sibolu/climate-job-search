@@ -1571,6 +1571,26 @@ export function activeCards(p: Profile): Card[] {
   return p.cards.filter((c) => !c.excluded);
 }
 
+/**
+ * The skills every prompt and screen reads (technical-plan.md D53): a skill
+ * is accepted unless the person removed it. `Confirmed` first, then
+ * `Inferred`, deduplicated case-insensitively (the first spelling wins),
+ * minus anything in `Excluded` (case-insensitive). The three buckets stay in
+ * the file format; this is the one reader that turns them into a list.
+ */
+export function activeSkills(p: Profile): string[] {
+  const keyOf = (skill: string) => skill.trim().toLowerCase();
+  const taken = new Set(p.skills.excluded.map(keyOf));
+  const active: string[] = [];
+  for (const skill of [...p.skills.confirmed, ...p.skills.inferred]) {
+    const key = keyOf(skill);
+    if (key === "" || taken.has(key)) continue;
+    taken.add(key);
+    active.push(skill.trim());
+  }
+  return active;
+}
+
 /** Typed preferences that are not yet set (for elicitation). */
 export function missingPreferences(p: Profile): PreferenceKey[] {
   return KNOWN_PREFERENCE_KEYS.filter((k) => {

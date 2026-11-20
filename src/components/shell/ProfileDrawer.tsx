@@ -99,11 +99,11 @@ export default function ProfileDrawer({ state, profileMd, onImport, onClose }: P
           )}
         </Section>
 
-        <Section section={summary.expertise}>
+        <Section section={summary.skills}>
           {(skill) => (
-            <li key={skill.name}>
-              {skill.name}
-              {skill.inferred ? <span className="cc-drawer-note"> (inferred)</span> : null}
+            <li key={`${skill.name}-${skill.excluded}`}>
+              {skill.excluded ? <s>{skill.name}</s> : skill.name}
+              {skill.excluded ? <span className="cc-drawer-note"> (removed)</span> : null}
             </li>
           )}
         </Section>

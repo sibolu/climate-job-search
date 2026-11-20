@@ -136,7 +136,13 @@ describe("generation prompt", () => {
       extra: {},
     });
     const message = buildGenerateMessage(withUntried, selectedRoles(withUntried));
-    expect(message).toContain("- Areas of expertise: HVAC design, energy modeling");
+    // Every skill not removed (D53): the untouched inferred ones are sent, the removed one is not.
+    expect(message).toContain(
+      "- Areas of expertise: HVAC design, energy modeling, controls commissioning, refrigerant systems, thermal testing, DFMEA, test planning\n",
+    );
+    expect(message).not.toContain("stamping drawings");
+    const allRemoved = { ...withUntried, skills: { confirmed: [], inferred: ["x"], excluded: ["X"], extra: {} } };
+    expect(buildGenerateMessage(allRemoved, selectedRoles(allRemoved))).toContain("- Areas of expertise: (none stated)\n");
     expect(message).toContain("- Climate interests: building electrification, heat pumps, grid flexibility");
     expect(message).toContain("## F1: Building electrification consulting and MEP design");
     expect(message).toContain("## F2: Heat pump manufacturer product engineering");
@@ -419,6 +425,20 @@ describe("reviseQueries", () => {
     expect(before.queries[0]?.status).toBe("untried");
     expect(after.queries[0]).toMatchObject({ status: "good", reason: feedback.reason, changedAt: "2026-09-12" });
     expect(buildReviseMessage(after, feedback)).toContain("Verdict: bad");
+  });
+
+  it("the revise message lists every skill not removed, under a plain heading (D53)", () => {
+    // engineer.md: DFMEA and test planning are inferred and untouched; stamping drawings was removed.
+    const message = buildReviseMessage(engineer(), feedback);
+    expect(message).toContain(
+      "# Skills\nHVAC design, energy modeling, controls commissioning, refrigerant systems, thermal testing, DFMEA, test planning\n",
+    );
+    expect(message).not.toContain("stamping drawings");
+    expect(message).not.toMatch(/# Confirmed/);
+    expect(REVISE_SYSTEM_PROMPT).not.toMatch(/confirmed skills/i);
+
+    const none = { ...engineer(), skills: { confirmed: [], inferred: ["x"], excluded: ["X"], extra: {} } };
+    expect(buildReviseMessage(none, feedback)).toContain("# Skills\n(none)\n");
   });
 
   it("queryKey ignores case and whitespace but not the board", () => {

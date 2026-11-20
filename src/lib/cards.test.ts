@@ -17,18 +17,18 @@ import {
   buildExtractMessage,
   buildReviseMessage,
   cardsSummary,
-  confirmSkill,
   editCard,
   extractCards,
   mergeInferredSkills,
   normalizeDrafts,
   normalizeSkills,
   rejectSkill,
+  restoreSkill,
   renderCardsForPrompt,
   reviseCards,
 } from "./cards";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, emptyProfile, setCardExcluded, setPreference, upsertCard } from "./profile";
+import { type Profile, emptyProfile, setCardExcluded, setPreference, upsertCard, activeSkills, moveSkill } from "./profile";
 import { MAX_MESSAGE_CHARS } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -167,8 +167,8 @@ describe("mergeInferredSkills", () => {
     expect(p.skills.confirmed).toEqual([]);
   });
 
-  it("never re-adds a skill the user confirmed or rejected", () => {
-    let p = confirmSkill(emptyProfile(), "Editing");
+  it("never re-adds a skill already in Confirmed or one the user removed", () => {
+    let p = moveSkill(emptyProfile(), "Editing", "confirmed");
     p = rejectSkill(p, "Networking");
     p = mergeInferredSkills(p, ["editing", "networking", "colour grading"]);
     expect(p.skills.confirmed).toEqual(["Editing"]);
@@ -493,8 +493,8 @@ describe("reviseCards", () => {
     expect(profile).toBe(before);
   });
 
-  it("never moves a user-confirmed skill back to inferred", async () => {
-    const before = confirmSkill(await seeded(), "editing");
+  it("never moves a skill in Confirmed back to inferred", async () => {
+    const before = moveSkill(await seeded(), "editing", "confirmed");
     const { profile } = await reviseCards(
       fakeLlm([
         {
@@ -513,23 +513,31 @@ describe("reviseCards", () => {
   });
 });
 
-describe("confirmSkill / rejectSkill", () => {
-  it("moves between buckets keeping the stored spelling, and ignores blanks", () => {
-    const base = mergeInferredSkills(emptyProfile(), ["Field Production"]);
-    const confirmed = confirmSkill(base, "field production");
-    expect(confirmed.skills.confirmed).toEqual(["Field Production"]);
-    expect(confirmed.skills.inferred).toEqual([]);
+describe("rejectSkill / restoreSkill", () => {
+  it("removes a skill and brings it back, keeping the stored spelling, and ignores blanks", () => {
+    const base = mergeInferredSkills(emptyProfile(), ["Field Production", "editing"]);
+    // Untouched inferred skills are in use (technical-plan.md D53).
+    expect(activeSkills(base)).toEqual(["Field Production", "editing"]);
 
-    const rejected = rejectSkill(confirmed, "FIELD PRODUCTION");
-    expect(rejected.skills.excluded).toEqual(["Field Production"]);
-    expect(rejected.skills.confirmed).toEqual([]);
+    const removed = rejectSkill(base, "FIELD PRODUCTION");
+    expect(removed.skills.excluded).toEqual(["Field Production"]);
+    expect(removed.skills.inferred).toEqual(["editing"]);
+    expect(activeSkills(removed)).toEqual(["editing"]);
 
-    expect(confirmSkill(base, "   ")).toBe(base);
+    const restored = restoreSkill(removed, "field production");
+    expect(restored.skills.excluded).toEqual([]);
+    expect(restored.skills.confirmed).toEqual([]);
+    expect(activeSkills(restored)).toEqual(["editing", "Field Production"]);
+
     expect(rejectSkill(base, "")).toBe(base);
+    expect(restoreSkill(base, "   ")).toBe(base);
   });
 
-  it("adds a skill the user typed that was never inferred", () => {
-    expect(confirmSkill(emptyProfile(), "grant writing").skills.confirmed).toEqual(["grant writing"]);
+  it("removes a skill that sits in Confirmed too", () => {
+    const p = rejectSkill(moveSkill(emptyProfile(), "grant writing", "confirmed"), "Grant Writing");
+    expect(p.skills.confirmed).toEqual([]);
+    expect(p.skills.excluded).toEqual(["grant writing"]);
+    expect(activeSkills(p)).toEqual([]);
   });
 });
 
@@ -572,6 +580,11 @@ describe("cardsSummary", () => {
     expect(summary).not.toContain("C3:");
     expect(summary).toContain("2 experience cards");
     expect(summary).toContain("storytelling");
+    // No confirm step (technical-plan.md D53): skills in use are listed, a removed one is not.
+    expect(summary).not.toMatch(/confirm/i);
+    const withExtra = mergeInferredSkills(profile, ["zebra husbandry"]);
+    expect(cardsSummary(withExtra)).toContain("zebra husbandry");
+    expect(cardsSummary(rejectSkill(withExtra, "Zebra Husbandry"))).not.toContain("zebra husbandry");
   });
 
   it("asks for more text when there is nothing to show", () => {

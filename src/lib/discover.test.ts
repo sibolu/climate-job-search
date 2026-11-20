@@ -591,6 +591,28 @@ describe("level words (technical-plan.md D48)", () => {
     expect(buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES)).not.toContain("director or above");
   });
 
+  it("sends every skill the person has not removed, untouched inferred ones included (D53)", () => {
+    const profile = {
+      ...fixture("videographer"),
+      skills: {
+        confirmed: ["Video editing"],
+        inferred: ["field production", "video editing", "tax accounting"],
+        excluded: ["Tax Accounting"],
+        extra: {},
+      },
+    };
+    const prefs = renderPreferencesForDiscover(profile);
+    expect(prefs.split("\n")).toContain("- Skills: Video editing, field production");
+    expect(prefs).not.toMatch(/tax accounting/i);
+    expect(prefs).not.toMatch(/confirmed/i);
+    const message = buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES);
+    expect(message).toContain("- Skills: Video editing, field production\n");
+    expect(message).not.toMatch(/tax accounting/i);
+
+    const allRemoved = { ...profile, skills: { confirmed: [], inferred: ["x"], excluded: ["X"], extra: {} } };
+    expect(renderPreferencesForDiscover(allRemoved)).not.toContain("- Skills:");
+  });
+
   it("shows the catalogue's roles without their level modifiers", () => {
     const roles: CatalogueRole[] = CAT_ROLES.map((r, i) => (i === 0 ? { ...r, title: `Senior ${r.title} II` } : r));
     expect(renderCatalogue(CAT_FIELDS, roles)).toBe(renderCatalogue(CAT_FIELDS, CAT_ROLES));

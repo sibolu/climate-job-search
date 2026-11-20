@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Card, Field, Profile, Query } from "./profile";
-import { activeCards, emptyProfile, parseProfile, serializeProfile } from "./profile";
+import { activeCards, emptyProfile, parseProfile, serializeProfile, activeSkills } from "./profile";
 import type { QueryFeedback } from "./session";
 import {
   buildTurnRequest,
@@ -21,7 +21,6 @@ import {
   applyTurnResponse,
   buildSelectedRolesTurnInput,
   canWriteQueries,
-  confirmProfileSkill,
   EXPORT_FILENAME,
   exploreChatText,
   feedbackChatText,
@@ -31,6 +30,7 @@ import {
   profileView,
   liveQueryForRole,
   rejectProfileSkill,
+  restoreProfileSkill,
   rolesForField,
   selectedRoles,
   setProfileFieldStatus,
@@ -130,14 +130,19 @@ describe("profile edits through session state", () => {
     expect(activeCards(profileView(restored).profile)).toHaveLength(2);
   });
 
-  it("confirms and rejects inferred skills", () => {
-    const confirmed = profileView(confirmProfileSkill(base, "Python")).profile.skills;
-    expect(confirmed.confirmed).toContain("Python");
-    expect(confirmed.inferred).not.toContain("Python");
+  it("removes an inferred skill and restores it", () => {
+    // Untouched inferred skills are in use (technical-plan.md D53).
+    expect(activeSkills(profileView(base).profile)).toEqual(["Python", "stakeholder comms"]);
 
-    const rejected = profileView(rejectProfileSkill(base, "stakeholder comms")).profile.skills;
-    expect(rejected.excluded).toContain("stakeholder comms");
-    expect(rejected.inferred).not.toContain("stakeholder comms");
+    const removedState = rejectProfileSkill(base, "stakeholder comms");
+    const removed = profileView(removedState).profile;
+    expect(removed.skills.excluded).toContain("stakeholder comms");
+    expect(removed.skills.inferred).not.toContain("stakeholder comms");
+    expect(activeSkills(removed)).toEqual(["Python"]);
+
+    const restored = profileView(restoreProfileSkill(removedState, "Stakeholder Comms")).profile;
+    expect(restored.skills.excluded).toEqual([]);
+    expect(activeSkills(restored)).toEqual(["Python", "stakeholder comms"]);
   });
 
   it("keeps the stored markdown canonical after an edit", () => {

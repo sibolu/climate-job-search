@@ -10,7 +10,7 @@
  * markdown.
  */
 
-import { confirmSkill, rejectSkill } from "./cards";
+import { rejectSkill, restoreSkill } from "./cards";
 import { isRetiredQuery } from "./boards";
 import { isElicitationComplete } from "./elicit";
 import type { Card, Field, FieldStatus, Profile, Query, Role } from "./profile";
@@ -94,12 +94,14 @@ export function toggleCardExcluded(state: SessionState, cardId: string, excluded
   return updateProfile(state, (p) => setCardExcluded(p, cardId, excluded));
 }
 
-export function confirmProfileSkill(state: SessionState, skill: string): SessionState {
-  return updateProfile(state, (p) => confirmSkill(p, skill));
-}
-
+/** Removes a skill: it stops reaching every prompt (technical-plan.md D53). */
 export function rejectProfileSkill(state: SessionState, skill: string): SessionState {
   return updateProfile(state, (p) => rejectSkill(p, skill));
+}
+
+/** Brings a removed skill back into use (technical-plan.md D53). */
+export function restoreProfileSkill(state: SessionState, skill: string): SessionState {
+  return updateProfile(state, (p) => restoreSkill(p, skill));
 }
 
 /** Cards in file order, excluded ones included — Highlights lists them all. */

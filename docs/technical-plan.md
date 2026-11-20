@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D52, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D53, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -58,8 +58,9 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
   which asks for confirmation, clears this browser's copy and returns to
   first run. No rail, no tabs, no composer (D42, D49).
 - **First run:** paste a resume or bio, optional notes, Start. Runs `cards`.
-- **Highlights:** "Your expertise" first (the Skills section; inferred
-  entries can be confirmed or removed). Then the experience cards,
+- **Highlights:** "Skills" first: one row of tiles, accepted unless
+  removed, each with a single remove control; removed skills stay visible,
+  struck, with a control to add them back (D53). Then the experience cards,
   collapsed to title, years, one-line result and skills, with Situation /
   Action / Result behind "Details" and Edit / Exclude per card. Then the
   two preference questions inline, answered by pills with no model call
@@ -85,7 +86,7 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
 - **Errors and parser warnings** render as a banner at the top of the main
   column. The assistant message a turn returns is not shown.
 - **Profile drawer:** a read-only summary in plain language (preferences,
-  expertise, highlight titles with excluded ones struck through, selected
+  skills and highlight titles with removed or excluded ones struck through, selected
   roles, searches). Behind an "Export" disclosure: download `profile.md`,
   download the session JSON, import, and the raw file (D49).
 - **Info tips:** every input carries an `InfoTip` that says what the input
@@ -748,7 +749,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       filter does that job.
     - Card skills are areas of expertise: short domain-level phrases, at
       most six words, never tool names or STAR verbs. Highlights shows
-      them first, as "Your expertise".
+      them first, as "Your expertise". (Superseded by D53: headed
+      "Skills", accepted unless removed.)
     - Seniority as an explicit choice on the Roles screen is in
       `docs/backlog.md` §1.
 
@@ -826,6 +828,31 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       prices each call by the model that ran.
     - `pnpm smoke:llm` stays a `queries` call and now fails unless its row
       says `claude-opus-5-5`.
+
+53. **Skills are accepted unless removed (2026-11-20).** Decided after the
+    2026-11-19 browser walkthrough: asking the person to keep or remove
+    each inferred skill read as doubt about their own experience, and an
+    untouched skill was silently dropped. Before this, an inferred skill
+    the person never confirmed reached neither discovery nor the search
+    prompts, so this changes what both see.
+    - `activeSkills(p)` in `profile.ts` (`confirmed` then `inferred`,
+      deduplicated case-insensitively, minus `excluded`) is the one list
+      prompts and screens read: `renderPreferencesForDiscover`, the
+      `# Skills` block and `Areas of expertise` line in `queries.ts`, the
+      Highlights screen and the drawer summary.
+    - The three buckets stay in `profile.md`; no format change and no
+      fixture regeneration.
+    - `confirmSkill` (`cards.ts`) and `confirmProfileSkill` (`workspace.ts`)
+      are deleted; `restoreSkill` / `restoreProfileSkill` are added so a
+      removal can be undone.
+    - Highlights shows one "Skills" row under the note "Inferred from your
+      resume.", each tile with a single ×; removed skills follow as muted,
+      struck tiles with a + to add them back. No ✓ and no info icon;
+      `INFO_TIPS.removeSkill` is deleted. The drawer lists one skills
+      section with removed ones struck.
+    - The copy follows `docs/design-language.md` principle 6 (trust the
+      inference; the reader removes, never confirms) and principle 7
+      ("Skills", not "Your expertise").
 
 ---
 

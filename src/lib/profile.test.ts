@@ -33,6 +33,7 @@ import {
   upsertQuery,
   upsertRole,
   type Profile,
+  activeSkills,
 } from "./profile";
 
 const FIXTURES = ["videographer", "web-designer", "data-scientist"] as const;
@@ -599,6 +600,39 @@ describe("helpers", () => {
     expect(p.skills.inferred).not.toContain("client management");
     expect(p.skills.confirmed).toContain("Client Management");
     expect(moveSkill(p, "Client Management", "excluded").skills.confirmed).not.toContain("Client Management");
+  });
+
+  describe("activeSkills (technical-plan.md D53)", () => {
+    const active = (confirmed: string[], inferred: string[], excluded: string[]) =>
+      activeSkills({ ...emptyProfile(), skills: { confirmed, inferred, excluded, extra: {} } });
+
+    it("lists confirmed then inferred, each in file order", () => {
+      expect(active(["b", "a"], ["d", "c"], [])).toEqual(["b", "a", "d", "c"]);
+      expect(active([], ["only inferred"], [])).toEqual(["only inferred"]);
+      expect(active([], [], [])).toEqual([]);
+    });
+
+    it("dedupes case-insensitively and the first spelling wins", () => {
+      expect(active(["Energy Modeling"], ["energy modeling ", "HVAC design", "hvac DESIGN"], [])).toEqual([
+        "Energy Modeling",
+        "HVAC design",
+      ]);
+      expect(active([" ", "x"], ["", "X"], [])).toEqual(["x"]);
+    });
+
+    it("drops removed skills from both buckets, case-insensitively", () => {
+      expect(active(["Python"], ["MLOps", "policy analysis"], ["python", " MLOPS "])).toEqual(["policy analysis"]);
+      expect(active([], [], ["x"])).toEqual([]);
+    });
+
+    it("follows a removal and its reversal without changing the profile it is given", () => {
+      const start = { ...emptyProfile(), skills: { confirmed: ["a"], inferred: ["b"], excluded: [], extra: {} } };
+      const removed = moveSkill(start, "B", "excluded");
+      expect(activeSkills(removed)).toEqual(["a"]);
+      expect(activeSkills(moveSkill(removed, "b", "inferred"))).toEqual(["a", "b"]);
+      expect(activeSkills(start)).toEqual(["a", "b"]);
+      expect(start.skills).toEqual({ confirmed: ["a"], inferred: ["b"], excluded: [], extra: {} });
+    });
   });
 
   it("citedCardIds extracts and dedupes", () => {

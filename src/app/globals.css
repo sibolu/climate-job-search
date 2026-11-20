@@ -385,6 +385,14 @@ input {
   color: var(--ink);
 }
 
+/* A removed skill stays visible, muted and struck, with a + to add it back
+   (technical-plan.md D53). */
+.cc-skill-removed {
+  color: var(--muted);
+  border-style: dotted;
+  opacity: 0.75;
+}
+
 .cc-card-result {
   font-size: 13.5px;
   line-height: 1.5;
@@ -970,11 +978,6 @@ input {
   padding: 12px 0 14px;
   background: var(--panel-bg);
   border-top: 1px solid var(--border-soft);
-}
-
-.cc-chip-green {
-  background: var(--green-tint);
-  color: var(--green);
 }
 
 .cc-cta-row {

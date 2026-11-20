@@ -1,19 +1,20 @@
 /**
  * `cards.ts` — PRD stage 1.1: pasted resume or profile text becomes 3–6
- * experience cards in the `profile.md` contract, plus the confirm/correct
+ * experience cards in the `profile.md` contract, plus the remove/correct
  * flow that keeps the user in charge of what the assistant believes.
  *
  * Two model calls live here and nothing else does:
  *
  * - {@link extractCards} turns pasted plain text into cards
  *   (situation / actions / results / skills) and merges the candidate skills
- *   into `Skills → Inferred`. Nothing lands in `Confirmed`: only the user
- *   promotes a skill, via {@link confirmSkill}.
+ *   into `Skills → Inferred`. A skill is used unless the user removes it
+ *   (technical-plan.md D53): there is no confirm step, and nothing here
+ *   writes to `Confirmed`.
  * - {@link reviseCards} takes the user's free-text correction ("C2 was a
  *   contract, not in-house; drop the wedding one") and rewrites the card list.
  *
- * Everything else in the module is pure: {@link confirmSkill},
- * {@link rejectSkill}, {@link editCard} and {@link cardsSummary} are the
+ * Everything else in the module is pure: {@link rejectSkill},
+ * {@link restoreSkill}, {@link editCard} and {@link cardsSummary} are the
  * click-level half of the same flow and never call the model.
  *
  * Rules this module lives by:
@@ -43,6 +44,7 @@ import {
   setClimateInterests,
   setPreference,
   upsertCard,
+  activeSkills,
 } from "./profile";
 import { MAX_MESSAGE_CHARS } from "./session";
 
@@ -338,9 +340,9 @@ function skillKeys(list: readonly string[]): Set<string> {
 }
 
 /**
- * Adds candidate skills to `Skills → Inferred`. Anything the user has already
- * confirmed or excluded is left exactly where it is — an extraction must never
- * un-reject a skill the user rejected, and never promote itself to confirmed.
+ * Adds candidate skills to `Skills → Inferred`. Anything already in
+ * `Confirmed` or `Excluded` is left exactly where it is — an extraction must
+ * never bring back a skill the user removed, and never writes to `Confirmed`.
  */
 export function mergeInferredSkills(p: Profile, candidates: readonly string[]): Profile {
   const taken = skillKeys([...p.skills.confirmed, ...p.skills.excluded, ...p.skills.inferred]);
@@ -574,7 +576,7 @@ export async function reviseCards(
 }
 
 // ---------------------------------------------------------------------------
-// The confirm / correct flow (pure)
+// The remove / correct flow (pure)
 // ---------------------------------------------------------------------------
 
 /** The spelling already stored for this skill, in any bucket, or the input. */
@@ -585,19 +587,22 @@ function canonicalSkill(p: Profile, skill: string): string {
 }
 
 /**
- * The user confirms an inferred skill: it moves to `Confirmed`, keeping the
- * spelling already in the profile. A skill that is not in the profile at all
- * (typed by the user) is added as confirmed.
+ * The user removes a skill: it moves to `Excluded` from whichever bucket it
+ * is in, so `activeSkills` stops listing it (technical-plan.md D53).
  */
-export function confirmSkill(p: Profile, skill: string): Profile {
-  if (skill.trim() === "") return p;
-  return moveSkill(p, canonicalSkill(p, skill), "confirmed");
-}
-
-/** The user rejects a skill: it moves to `Excluded` from whichever bucket it is in. */
 export function rejectSkill(p: Profile, skill: string): Profile {
   if (skill.trim() === "") return p;
   return moveSkill(p, canonicalSkill(p, skill), "excluded");
+}
+
+/**
+ * The user brings back a skill they removed: it moves to `Inferred`, keeping
+ * the spelling already in the profile, so `activeSkills` lists it again
+ * (technical-plan.md D53).
+ */
+export function restoreSkill(p: Profile, skill: string): Profile {
+  if (skill.trim() === "") return p;
+  return moveSkill(p, canonicalSkill(p, skill), "inferred");
 }
 
 export type CardPatch = Partial<Pick<Card, "title" | "years" | "situation" | "actions" | "results" | "skills">>;
@@ -636,7 +641,8 @@ export function editCard(p: Profile, id: string, patch: CardPatch): Profile {
 
 /**
  * The markdown the chat shows after an extraction or a revision: the cards,
- * the skills awaiting a decision, and what the user can do about either.
+ * the skills in use (accepted unless removed, technical-plan.md D53), and
+ * what the user can do about either.
  * Pure and deterministic, so the UI and the evals render the same thing.
  */
 export function cardsSummary(p: Profile): string {
@@ -664,17 +670,13 @@ export function cardsSummary(p: Profile): string {
     );
   }
 
-  if (p.skills.inferred.length > 0) {
-    lines.push(
-      `Skills I inferred but you have not confirmed: ${p.skills.inferred.join(", ")}.`,
-      "",
-    );
-  }
+  const skills = activeSkills(p);
+  if (skills.length > 0) lines.push(`Skills: ${skills.join(", ")}.`, "");
 
   lines.push(
     "Two things before we go on:",
     "",
-    "1. Confirm or reject the inferred skills — I only use confirmed ones as evidence.",
+    "1. Remove any skill that is not yours. You can bring it back later.",
     "2. Tell me what is wrong with the cards, in your own words (\"C2 was a contract, not in-house\", \"drop the wedding one\"), and I will redo them. You can also edit a card directly or exclude one you would rather I ignore.",
   );
   return lines.join("\n");

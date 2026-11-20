@@ -30,7 +30,7 @@ describe("profileSummary", () => {
     const summary = profileSummary(emptyProfile());
     expect(Object.keys(summary)).toEqual([
       "preferences",
-      "expertise",
+      "skills",
       "highlights",
       "selectedRoles",
       "searches",
@@ -61,10 +61,19 @@ describe("profileSummary", () => {
     expect(location).toMatchObject({ value: "San Francisco Bay Area", source: "stated" });
     expect(location?.sourceText).toBe("You said this");
 
-    const skills = summary.expertise.items;
-    expect(skills.find((s) => s.name === "causal inference")?.inferred).toBe(false);
-    expect(skills.find((s) => s.name === "MLOps")?.inferred).toBe(true);
-    expect(skills.some((s) => s.name === "deep learning research")).toBe(false);
+    // One list, no mark for inferred skills; the removed one is last and flagged (D53).
+    expect(summary.skills.heading).toBe("Skills");
+    expect(summary.skills.items).toEqual([
+      { name: "causal inference", excluded: false },
+      { name: "experiment design", excluded: false },
+      { name: "Python", excluded: false },
+      { name: "time-series forecasting", excluded: false },
+      { name: "econometrics", excluded: false },
+      { name: "MLOps", excluded: false },
+      { name: "technical leadership", excluded: false },
+      { name: "policy analysis", excluded: false },
+      { name: "deep learning research", excluded: true },
+    ]);
 
     expect(summary.highlights.items[0]).toEqual({
       title: "Causal measurement platform for marketplace pricing",

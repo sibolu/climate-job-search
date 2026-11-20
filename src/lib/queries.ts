@@ -72,6 +72,7 @@ import {
   setSessionNotes,
   upsertField,
   upsertQuery,
+  activeSkills,
 } from "./profile";
 import type { QueryFeedback } from "./session";
 import { ALERT_STEPS, BOARD_LABELS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY } from "./boards";
@@ -200,7 +201,7 @@ Rules for every query:
 - rationale is one plain sentence saying which titles and field terms the search combines and why those were chosen.
 - Use nothing about the person beyond what the message states; invent no personal detail.`;
 
-export const REVISE_SYSTEM_PROMPT = `You revise LinkedIn job searches for one career switcher moving into climate work. You get their preferences, confirmed skills, the fields they have accepted or are unsure about, the example roles, every query with its status and the role it was written for, and one piece of feedback the person just gave on one query: a verdict (good or bad) and a reason in their own words. The verdict is already recorded on that query; never change that query and never rewrite any query the person has judged. Every query you write is a LinkedIn search. Return JSON:
+export const REVISE_SYSTEM_PROMPT = `You revise LinkedIn job searches for one career switcher moving into climate work. You get their preferences, skills, the fields they have accepted or are unsure about, the example roles, every query with its status and the role it was written for, and one piece of feedback the person just gave on one query: a verdict (good or bad) and a reason in their own words. The verdict is already recorded on that query; never change that query and never rewrite any query the person has judged. Every query you write is a LinkedIn search. Return JSON:
 - explanation: one paragraph for the chat. Quote or closely paraphrase the person's reason, name exactly which query ids you retired or narrowed and why, describe each added query by its terms (added queries get their ids later; never invent ids), and mention any field status change or note.
 - retire: untried query ids the reason also invalidates (same field, same problem), each with a reason.
 - narrow: untried LinkedIn query ids rewritten in place to sidestep the problem, with the full new query text. To replace the judged query itself, name its id here with the new text; it is saved as a new query for the same role and the judged one keeps its record.
@@ -278,12 +279,14 @@ function renderQueries(p: Profile): string {
 }
 
 function renderProfileContext(p: Profile): string {
+  // Accepted unless removed (technical-plan.md D53).
+  const skills = activeSkills(p);
   return [
     "# Preferences",
     renderPreferences(p),
     "",
-    "# Confirmed skills",
-    p.skills.confirmed.length === 0 ? "(none confirmed)" : p.skills.confirmed.join(", "),
+    "# Skills",
+    skills.length === 0 ? "(none)" : skills.join(", "),
     "",
     "# Fields (accepted or unsure) and their roles",
     renderFields(p),
@@ -350,9 +353,11 @@ function renderFieldForQueries(p: Profile, field: Field, roles: readonly Role[])
 export function buildGenerateMessage(p: Profile, roles: readonly Role[]): string {
   const fields = p.fields.filter((f) => roles.some((r) => r.fieldId === f.id));
   const interests = p.preferences.climateInterests?.values ?? [];
+  // Accepted unless removed (technical-plan.md D53).
+  const skills = activeSkills(p);
   return [
     "# The person",
-    `- Areas of expertise: ${p.skills.confirmed.length === 0 ? "(none stated)" : p.skills.confirmed.join(", ")}`,
+    `- Areas of expertise: ${skills.length === 0 ? "(none stated)" : skills.join(", ")}`,
     `- Climate interests: ${interests.length === 0 ? "(none stated)" : interests.join(", ")}`,
     "",
     "# Ticked roles, grouped by field",

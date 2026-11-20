@@ -37,9 +37,9 @@ import { sendTurn } from "@/lib/turn-stream";
 import {
   applyTurnResponse,
   buildSelectedRolesTurnInput,
-  confirmProfileSkill,
   nextStep,
   rejectProfileSkill,
+  restoreProfileSkill,
 } from "@/lib/workspace";
 
 import FirstRun from "./FirstRun";
@@ -272,8 +272,8 @@ export default function AppShell() {
                   writeProfile((p) => setCardExcluded(p, cardId, excluded))
                 }
                 onEditCard={(card: Card) => writeProfile((p) => upsertCard(p, card))}
-                onConfirmSkill={(skill) => writeSession((s) => confirmProfileSkill(s, skill))}
                 onRemoveSkill={(skill) => writeSession((s) => rejectProfileSkill(s, skill))}
+                onRestoreSkill={(skill) => writeSession((s) => restoreProfileSkill(s, skill))}
                 onAnswer={(key, pill) => writeProfile((p) => applyPillAnswer(p, key, pill))}
                 onFindRoles={onFindRoles}
               />

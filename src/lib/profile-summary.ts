@@ -9,12 +9,11 @@
  * renders. Nothing returned carries a raw id (`C1`, `F2`, `R3`, `Q4`) or a
  * schema key name.
  *
- * Browser-safe: imports only `profile.ts` types, `workspace.ts` and
- * `elicit.ts`.
+ * Browser-safe: imports only `profile.ts`, `workspace.ts` and `elicit.ts`.
  */
 
 import { isOpenToSuggestions, PREFERENCE_LABELS } from "./elicit";
-import type { PreferenceSource, Profile } from "./profile";
+import { activeSkills, type PreferenceSource, type Profile } from "./profile";
 import { liveQueryForRole, selectedRoles } from "./workspace";
 
 /** The filename for the raw `profile.md` download. */
@@ -31,7 +30,8 @@ export interface PreferenceLine {
 
 export interface SkillLine {
   name: string;
-  inferred: boolean;
+  /** Removed skills stay listed so the drawer can strike them through. */
+  excluded: boolean;
 }
 
 export interface HighlightLine {
@@ -62,7 +62,7 @@ export interface SummarySection<T> {
 
 export interface ProfileSummary {
   preferences: SummarySection<PreferenceLine>;
-  expertise: SummarySection<SkillLine>;
+  skills: SummarySection<SkillLine>;
   highlights: SummarySection<HighlightLine>;
   selectedRoles: SummarySection<SelectedRoleLine>;
   searches: SummarySection<SearchLine>;
@@ -112,19 +112,20 @@ function preferenceLines(profile: Profile): PreferenceLine[] {
   return lines;
 }
 
+/**
+ * One list (technical-plan.md D53): the skills in use, in `activeSkills`
+ * order with no mark for how each got there, then the removed ones.
+ */
 function skillLines(profile: Profile): SkillLine[] {
-  const excluded = new Set(profile.skills.excluded.map((s) => s.trim().toLowerCase()));
+  const lines: SkillLine[] = activeSkills(profile).map((name) => ({ name, excluded: false }));
   const seen = new Set<string>();
-  const lines: SkillLine[] = [];
-  const add = (name: string, inferred: boolean) => {
-    const trimmed = name.trim();
-    const norm = trimmed.toLowerCase();
-    if (trimmed === "" || excluded.has(norm) || seen.has(norm)) return;
-    seen.add(norm);
-    lines.push({ name: trimmed, inferred });
-  };
-  for (const s of profile.skills.confirmed) add(s, false);
-  for (const s of profile.skills.inferred) add(s, true);
+  for (const skill of profile.skills.excluded) {
+    const name = skill.trim();
+    const key = name.toLowerCase();
+    if (name === "" || seen.has(key)) continue;
+    seen.add(key);
+    lines.push({ name, excluded: true });
+  }
   return lines;
 }
 
@@ -159,8 +160,8 @@ export function profileSummary(profile: Profile): ProfileSummary {
       emptyText: "No preferences recorded yet.",
       items: preferenceLines(profile),
     },
-    expertise: {
-      heading: "Expertise",
+    skills: {
+      heading: "Skills",
       emptyText: "No skills recorded yet.",
       items: skillLines(profile),
     },
