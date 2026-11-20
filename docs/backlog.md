@@ -7,8 +7,9 @@ into a phase in [PLAN.md](../PLAN.md), and record the design decision in
 Items are written at the granularity of a planning session, not a worker
 brief: what and why, the module or decision it touches, and where it came
 from. `(2026-11-17 run)` marks items from the first browser walkthrough and
-`docs/ux-review-2026-11-17.md`; `(pre-2b)` marks items carried over from the
-old PLAN.md backlog.
+`docs/ux-review-2026-11-17.md`; `(2026-11-19 walkthrough)` marks items from
+the second one, whose change list became PLAN.md steps 2b.14–2b.19;
+`(pre-2b)` marks items carried over from the old PLAN.md backlog.
 
 ## 1. Resume input and the profile
 
@@ -16,12 +17,32 @@ old PLAN.md backlog.
   must be in-browser or a stateless pass-through, and must land in the same
   paste → cards path (`cards.ts`). Google Docs needs an auth flow, so it is
   the last of the three. *(pre-2b; 2026-11-17 run)*
-- **Edit every prior input and show how the profile changes.** Today the
-  only way back is "Start over" (2b.11). Wanted: change an answer, a card,
-  a skill or a ticked role from anywhere, and show a before/after of the
-  profile entries that changed. Builds on the readable profile summary
-  (2b.11); the pre-turn snapshot `screens.ts` kept for accept-or-keep was
-  deleted with the feedback screen in 2b.12 (D51). *(2026-11-17 run)*
+- **Edit every prior input and show how the profile changes.** Every
+  top-bar item is a link back to its screen (2b.17), and re-running
+  discovery from Highlights updates the roles, but nothing shows what
+  changed. Wanted: change an answer, a card, a skill or a ticked role from
+  anywhere, and show a before/after of the profile entries that changed.
+  Builds on the readable profile summary (2b.11); the pre-turn snapshot
+  `screens.ts` kept for accept-or-keep was deleted with the feedback screen
+  in 2b.12 (D51). *(2026-11-17 run)*
+- **Re-read an edited resume.** The Resume page shows the stored resume
+  and notes read-only (2b.17, D56); the only way to use a different one is
+  "Start over". Letting the person edit it and read it again needs a rule
+  for what a re-read does to edited highlights, ticked roles and searches.
+  *(2026-11-19 walkthrough)*
+- **Rethink how a highlight is shown.** Cards are laid out as Situation /
+  Action / Result behind "Details" (`Highlights.tsx`), which is the cards
+  prompt's schema shown raw. Reconsider whether STAR is the right frame for
+  the reader, or only for the model. Touches the card layout and editor,
+  and `cards.ts` only if the stored shape changes (then `profile.ts`, the
+  fixtures and the round-trip tests too). *(2026-11-19 walkthrough)*
+- **Retraining as a consideration.** The retraining question is gone
+  (2b.16, D54); `retrainingAppetite` stays a preference key, filled only
+  from the notes box, and discovery still labels each field's move
+  (`sector`, `adjacent`, `retraining`) and ranks retraining last. Decide
+  whether and where the person says how far they would retrain: a filter
+  on the Roles screen next to seniority (below), a later question, or
+  nothing beyond the "Needs retraining" label. *(2026-11-19 walkthrough)*
 - **Seniority as a choice.** The seniority question and seniority in role
   titles are out (2b.9). Bring seniority back as an explicit option on the
   Roles screen: titles on par with the resume, one level below, or any.
@@ -39,6 +60,22 @@ old PLAN.md backlog.
   implicit signal from which roles they tick, or nothing. Field `Status`
   and its `accepted | rejected | unsure` values are still on the profile
   waiting for it. *(decided 2026-11-18)*
+- **What a field heading says.** The Roles screen shows a field's name, its
+  overlap label, its move label, "Based on" and the two-sentence summary
+  (2b.18, D57). Discovery still writes a `Sector` line per field that no
+  screen shows. Either cut it from the discovery schema (less output, a
+  faster turn) or bring it back with a job the title does not already do.
+  *(2026-11-19 walkthrough)*
+- **Interest areas and the catalogue do not line up.** The six areas the
+  person picks from (`CLIMATE_AREAS` in `elicit.ts`, D54) are matched to
+  fields by the model alone: the catalogue's `sector_group` has three
+  coarse values, and about a quarter of its fields sit in none of the six
+  (climate finance, policy, communications, carbon accounting software,
+  risk analytics, adaptation, environmental justice). Options: tag each
+  field in `data/climate_fields.yaml` with an area (a schema change and a
+  migration) so ranking by interest can be checked in the evals; add areas
+  for what the six leave out; or leave it to the prompt. Ask first whether
+  fellows miss an area. *(2026-11-19 walkthrough)*
 - **"Get more fields" / "get more roles".** A second discovery pass that
   excludes what is already on the profile and returns the next tranche.
   Needs a rule for ranking old and new together (order is resolved on
@@ -67,11 +104,8 @@ old PLAN.md backlog.
   BLS employment-by-region evidence shows the number of jobs for some
   roles or industries varies enough to change which fields are suggested,
   not just filter them. *(pre-2b; 2026-11-17 run)*
-- **Re-rank on a per-field answer.** Answering a field's question saves a
-  preference and changes nothing on screen (D43, D50). Wanted: the answer
-  re-orders that field's roles, or the fields, without a full discovery
-  re-run. Needs a cheap call or a rule, and copy that says what changed.
-  *(pre-2b)*
+- **Re-rank on a per-field answer.** Moved to §4 with the follow-up
+  question it depends on, which left the Roles screen in 2b.18. *(pre-2b)*
 - **"Dig deeper" on a role group.** Re-attach `explore.ts` as an optional
   block: day-to-day, titles, example posts, keywords (D39). *(pre-2b)*
 
@@ -93,6 +127,19 @@ old PLAN.md backlog.
   query (synonymous titles, or one title with OR terms). A rule for when
   to merge and when to keep separate; today it is strictly one per role.
   *(2026-11-17 run)*
+- **Search specificity.** Searches written by Sonnet 5.5 paired a role's
+  title with generic climate terms ("green jobs", "climate careers") and
+  not the field's own vocabulary. 2b.14 moves `queries` back to Opus 5.5
+  and 2b.15 puts the person's skills into the prompt for the first time. If
+  2b.19 or the pilot still shows general searches, the fix is the
+  `queries.ts` prompt (field-specific terms required, generic ones banned)
+  and a check for it in the Phase 3 eval rubric. Related:
+  product-review.md B6. *(2026-11-19 walkthrough)*
+- **Job alerts.** The "Get new matches by email" steps left the search card
+  in 2b.18; `ALERT_STEPS` in `boards.ts` keeps the text. The PRD has the
+  person set up alerts by hand, so the guidance should return once it has a
+  place that does not crowd each card: once per board on the Searches
+  screen, or in the pilot kit (3.4). *(2026-11-19 walkthrough)*
 - **Networking searches.** Queries that find people, not jobs: LinkedIn
   people search and Careerbase for someone who made the same switch.
   Different syntax, different alert story, and a privacy question (the
@@ -108,6 +155,20 @@ old PLAN.md backlog.
   as D32 allowed), and how the change is shown (old query struck through,
   one-line reason). product-review.md B6 and B7 (queries written blind;
   revision learns from one bit) belong to this milestone. *(2026-11-17 run)*
+- **Follow-up questions on a field.** Discovery writes one question per
+  field (`Ask`: "the one question whose answer would most change the fit").
+  It was shown under the field on the Roles screen and removed in 2b.18
+  (D57): a screen for choosing should not open a conversation
+  (design-language.md, principle 11). The question is still generated and
+  stored, and `addOtherPreference` still saves an answer; nothing shows
+  either. Decide with the rest of this milestone: whether the question
+  comes back, at which stage (after the searches have been run is the
+  likely place), and what an answer changes. An answer that changes nothing
+  on screen was the earlier complaint (D43, D50): it should re-order that
+  field's roles or the fields without a full discovery re-run, by a cheap
+  call or a rule, with copy that says what changed. If it does not come
+  back, cut `ask` from the discovery schema. *(2026-11-19 walkthrough;
+  pre-2b)*
 
 ## 5. UI and platform
 
@@ -123,6 +184,13 @@ old PLAN.md backlog.
   reference row, no tools, no profile writes; (C) the same over the whole
   profile, capped per session. Both need a new `StepName`, the `llm_usage`
   CHECK migration and a prompt module (D42). *(pre-2b)*
+
+- **Is the preference-inference call still earning its cost?** The paste
+  turn makes a second Opus call (`inferPreferences` in `elicit.ts`) that
+  now fills only location, work mode, seniority and retraining appetite,
+  none of which is asked and one of which (seniority) nothing reads. Check
+  its share of `llm_usage` cost and whether discovery does any worse
+  without it. *(2026-11-19 walkthrough, found while planning)*
 
 ## 6. Process
 
