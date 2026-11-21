@@ -10,7 +10,7 @@
 
 import type { AnswerPill } from "./session";
 import { pillsFor } from "./elicit";
-import type { Ask, Board, Field, Profile, Query, Role } from "./profile";
+import type { Board, Field, Profile, Query, Role } from "./profile";
 import { activeCards, citedCardIds, rolesForField } from "./profile";
 import { liveQueryForRole, selectedRoles } from "./workspace";
 
@@ -84,23 +84,6 @@ export function navStepEnabled(step: NavStep, input: ScreenInput): boolean {
   if (step === "highlights") return input.hasCards;
   if (step === "roles") return input.hasFields;
   return input.hasQueries === true;
-}
-
-// ---------------------------------------------------------------------------
-// Info tips: what each input changes (step 2b.11)
-// ---------------------------------------------------------------------------
-
-export const INFO_TIPS = {
-  excludeCard: "Excluded highlights are not used to match roles.",
-  writeSearches: "Each ticked role becomes one LinkedIn search.",
-  fieldAsk: "Your answer is saved to your profile. It does not change the order of these roles.",
-} as const;
-
-/** "3 of 4 highlights used to match roles." */
-export function highlightsCountNote(p: Profile): string {
-  const total = p.cards.length;
-  const used = activeCards(p).length;
-  return `${used} of ${total} highlight${total === 1 ? "" : "s"} used to match roles.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +257,7 @@ export const MOVE_LABELS: Record<string, string> = {
   retraining: "Needs retraining",
 };
 
-/** The id → title lookup `citationsToTitles` and the "Draws on" line use. */
+/** The id → title lookup `citationsToTitles` and the "Based on" lines use. */
 function cardTitles(p: Profile): Map<string, string> {
   return new Map(p.cards.map((card) => [card.id, card.title.trim() || "one of your highlights"]));
 }
@@ -291,14 +274,18 @@ export function citationsToTitles(p: Profile, text: string): string {
   });
 }
 
-/** The Roles and Searches footer button label:"Write LinkedIn searches for 1 role" / "… for 3 roles". */
+/**
+ * The Roles and Searches footer button label: "Write LinkedIn searches" with
+ * nothing ticked, else "… for 1 role" / "… for 3 roles" (technical-plan.md D57).
+ */
 export function writeSearchesLabel(count: number): string {
+  if (count === 0) return "Write LinkedIn searches";
   return `Write LinkedIn searches for ${count} role${count === 1 ? "" : "s"}`;
 }
 
-/** The note under the footer button. */
+/** The note beside the footer button: only when nothing is ticked, empty otherwise (D57). */
 export function selectedRolesNote(count: number): string {
-  return count === 0 ? "Tick at least one role first." : `${count} role${count === 1 ? "" : "s"} ticked.`;
+  return count === 0 ? "Tick at least one role first." : "";
 }
 
 export interface RoleRow {
@@ -309,36 +296,31 @@ export interface RoleRow {
   companies: string;
 }
 
+/** One highlight a field is based on: its title and the field's evidence line for it. */
+export interface BasedOnLine {
+  title: string;
+  /** The field's evidence sentence for this card, card ids rendered as titles; "" when it has none. */
+  evidence: string;
+}
+
 export interface RoleGroupView {
   field: Field;
   fitLabel?: string;
   moveLabel?: string;
-  /** The field's one-line summary, with card ids rendered as card titles. */
+  /** The field's two-sentence summary, with card ids rendered as card titles. */
   summary: string;
-  /** Titles of the cards the field draws on, in citation order, deduplicated. */
-  drawsOn: string[];
+  /** The highlights the field cites, in citation order, one per card (technical-plan.md D57). */
+  basedOn: BasedOnLine[];
   /** The field's uncertainty, with card ids rendered as card titles. */
   uncertain: string;
-  ask?: Ask;
-  /** The answer already saved under the ask's key, if any. */
-  askAnswer?: string;
   roles: RoleRow[];
-}
-
-function normKey(key: string): string {
-  return key.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-/** The value saved under a field ask's key (`addOtherPreference`), if any. */
-export function askAnswer(p: Profile, ask: Ask): string | undefined {
-  const key = normKey(ask.key);
-  return p.preferences.other.find((entry) => normKey(entry.key) === key)?.value;
 }
 
 /**
  * One group per discovered field, in the rank order discovery wrote them.
  * A field's status is never read: every field is a heading with no marking
- * (technical-plan.md D50), and an answered ask does not re-rank (D43).
+ * (technical-plan.md D50). The sector line and the field's ask are written
+ * to the profile but not shown (D57).
  * Roles under no known field are left out, as `selectedRoles` leaves them out.
  */
 export function roleGroups(p: Profile): RoleGroupView[] {
@@ -348,18 +330,27 @@ export function roleGroups(p: Profile): RoleGroupView[] {
       ...field.evidence.map((line) => line.cardId),
       ...citedCardIds(field.fit),
     ];
-    const drawsOn = [
-      ...new Set(cited.map((id) => titles.get(id)).filter((t): t is string => t !== undefined)),
-    ];
+    const evidenceByCard = new Map<string, string>();
+    for (const line of field.evidence) {
+      if (!evidenceByCard.has(line.cardId) && line.why.trim() !== "") {
+        evidenceByCard.set(line.cardId, line.why.trim());
+      }
+    }
+    const seen = new Set<string>();
+    const basedOn: BasedOnLine[] = [];
+    for (const id of cited) {
+      const title = titles.get(id);
+      if (title === undefined || seen.has(id)) continue;
+      seen.add(id);
+      basedOn.push({ title, evidence: citationsToTitles(p, evidenceByCard.get(id) ?? "") });
+    }
     return {
       field,
       fitLabel: field.fitLevel === undefined ? undefined : FIT_LABELS[field.fitLevel],
       moveLabel: field.move === undefined ? undefined : MOVE_LABELS[field.move],
       summary: citationsToTitles(p, field.summary),
-      drawsOn,
+      basedOn,
       uncertain: citationsToTitles(p, field.uncertain),
-      ask: field.ask,
-      askAnswer: field.ask === undefined ? undefined : askAnswer(p, field.ask),
       roles: rolesForField(p, field.id).map((role) => ({
         role,
         why: citationsToTitles(p, role.why),

@@ -5,15 +5,11 @@ import { useState } from "react";
 import { activeSkills, type Card, type Profile } from "@/lib/profile";
 import {
   FIND_ROLES_PILL,
-  INFO_TIPS,
   INTEREST_NOTE,
   QUESTION_LABELS,
   findRolesGate,
-  highlightsCountNote,
   interestPills,
 } from "@/lib/screens";
-
-import InfoTip from "./InfoTip";
 
 export interface HighlightsProps {
   profile: Profile;
@@ -54,7 +50,10 @@ export default function Highlights({
   return (
     <section>
       <h2 className="cc-h2">Your highlights</h2>
-      <p className="cc-sub">Fix anything wrong. Exclude what you do not want to be matched on.</p>
+      <p className="cc-sub">
+        Every suggested field and role is tied to at least one highlight. Skills sum up what you
+        know across them and shape your searches.
+      </p>
 
       {skills.length + removed.length > 0 ? (
         <div className="cc-block">
@@ -95,10 +94,6 @@ export default function Highlights({
 
       <div className="cc-block">
         <h3 className="cc-h3">Highlights</h3>
-        <p className="cc-note cc-with-tip">
-          {highlightsCountNote(profile)}
-          <InfoTip text={INFO_TIPS.excludeCard} label="What excluding a highlight changes" />
-        </p>
         <div className="cc-grid">
           {profile.cards.map((card) =>
             editing === card.id ? (
@@ -115,7 +110,6 @@ export default function Highlights({
               <article key={card.id} className="cc-card" data-excluded={card.excluded}>
                 <div className="cc-card-head">
                   <span className="cc-card-title">{card.title}</span>
-                  {card.years ? <span className="cc-years">{card.years}</span> : null}
                 </div>
                 {card.results ? (
                   <p className="cc-card-result" title={card.results}>
@@ -200,7 +194,6 @@ interface CardEditorProps {
 function CardEditor({ card, onSave, onCancel }: CardEditorProps) {
   const [draft, setDraft] = useState({
     title: card.title,
-    years: card.years ?? "",
     situation: card.situation,
     actions: card.actions,
     results: card.results,
@@ -213,7 +206,6 @@ function CardEditor({ card, onSave, onCancel }: CardEditorProps) {
   return (
     <article className="cc-card">
       <Labelled label="Title" value={draft.title} onChange={set("title")} />
-      <Labelled label="Years" value={draft.years} onChange={set("years")} />
       <Labelled label="Situation" value={draft.situation} onChange={set("situation")} multiline />
       <Labelled label="Action" value={draft.actions} onChange={set("actions")} multiline />
       <Labelled label="Result" value={draft.results} onChange={set("results")} multiline />
@@ -226,7 +218,6 @@ function CardEditor({ card, onSave, onCancel }: CardEditorProps) {
             onSave({
               ...card,
               title: draft.title.trim(),
-              years: draft.years.trim() === "" ? undefined : draft.years.trim(),
               situation: draft.situation.trim(),
               actions: draft.actions.trim(),
               results: draft.results.trim(),

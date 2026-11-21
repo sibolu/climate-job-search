@@ -16,7 +16,6 @@ import { clearSession, buildTurnRequest, loadSession, saveSession, startOver } f
 import { toggleClimateInterest } from "@/lib/elicit";
 import type { Card, Profile } from "@/lib/profile";
 import {
-  addOtherPreference,
   parseProfile,
   serializeProfile,
   setCardExcluded,
@@ -310,10 +309,6 @@ export default function AppShell() {
                 profile={profile}
                 onRole={(roleId, selected) =>
                   writeProfile((p) => setRoleSelected(p, roleId, selected))
-                }
-                // Saved to the profile only; it does not re-rank (technical-plan.md D43).
-                onAnswerAsk={(key, answer) =>
-                  writeProfile((p) => addOtherPreference(p, key, answer, "stated"))
                 }
                 onWriteSearches={() => void writeSearches()}
               />

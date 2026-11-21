@@ -39,7 +39,7 @@ describe("profileSummary", () => {
       expect(section.items).toEqual([]);
       expect(section.emptyText.length).toBeGreaterThan(0);
     }
-    expect(summary.selectedRoles.emptyText).toBe("No roles ticked yet.");
+    expect(summary.selectedRoles.emptyText).toBe("No roles selected yet.");
     expectNoRawIds(summary);
   });
 
@@ -77,7 +77,6 @@ describe("profileSummary", () => {
 
     expect(summary.highlights.items[0]).toEqual({
       title: "Causal measurement platform for marketplace pricing",
-      years: "2022–2025",
       excluded: false,
     });
 
@@ -105,8 +104,8 @@ describe("profileSummary", () => {
       expect(summary.selectedRoles.items.map((r) => r.title)).toContain(search.roleTitle);
       expect(search.query.trim()).not.toBe("");
     }
-    // A card with an empty Years line has no years.
-    expect(summary.highlights.items[0].years).toBeUndefined();
+    // Years are never shown (technical-plan.md D57).
+    expect(summary.highlights.items.every((h) => !("years" in h))).toBe(true);
     expectNoRawIds(summary);
   });
 

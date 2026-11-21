@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D56, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D57, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -64,7 +64,8 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
 - **Highlights:** "Skills" first: one row of tiles, accepted unless
   removed, each with a single remove control; removed skills stay visible,
   struck, with a control to add them back (D53). Then the experience cards,
-  collapsed to title, years, one-line result and skills, with Situation /
+  collapsed to title, one-line result and skills (years stay in
+  `profile.md`, not on screen: D57), with Situation /
   Action / Result behind "Details" and Edit / Exclude per card. Then one
   optional question, "Which area of climate work interests you most?",
   answered by toggling any of six area pills with no model call; the picks
@@ -74,16 +75,18 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
 - **Pending:** the status line, elapsed time and the live log in the main
   column while a turn runs. Real phases, no estimates.
 - **Roles:** one group per discovered field, in rank order. The field is a
-  heading, not a choice: name, sector, fit label, move type, one-line
-  summary, "Draws on:" with the titles of the cards it cites, the uncertainty, and
-  the optional per-field question as a short text box (D43). Under it, one
+  heading, not a choice: name; one row with the fit label, the move type
+  and a "Based on" disclosure listing each cited highlight's title with
+  its evidence line; the two-sentence summary; the uncertainty (D57). The
+  sector line and the per-field question are not shown. Under it, one
   row per role: checkbox, title, the one-line why with card ids rendered as
   card titles, example companies and source links. No field marks, no rank
-  numbers (D50). One sticky button, "Write LinkedIn searches for N roles",
-  runs `queries` for every ticked role (D47).
+  numbers (D50). One sticky button, "Write LinkedIn searches" ("… for N
+  roles" once any is ticked, with "Tick at least one role first." beside
+  it at zero), runs `queries` for every ticked role (D47).
 - **Searches:** one card per ticked role: role title, field name, the
   query, "Open on LinkedIn" (a link the person clicks; the app never
-  fetches LinkedIn), "Copy", LinkedIn's alert steps in a disclosure, and
+  fetches LinkedIn), "Copy", and
   "Change roles" back to the Roles screen. No verdicts and no feedback
   screen (D51). A role ticked after the last write shows a note and the
   write button instead of a card.
@@ -93,8 +96,6 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
   skills and highlight titles with removed or excluded ones struck through, selected
   roles, searches). Behind an "Export" disclosure: download `profile.md`,
   download the session JSON, import, and the raw file (D49).
-- **Info tips:** every input carries an `InfoTip` that says what the input
-  changes (`INFO_TIPS` in `screens.ts`).
 
 Policy lives in pure, unit-tested modules, and the components in
 `src/components/shell/` only render: `screens.ts` decides which screen
@@ -133,7 +134,7 @@ src/
     profile-summary.ts # readable profile summary for the drawer (2b.11; D49)
     turn-stream.ts  # NDJSON wire codec + sendTurn (2.1)
     turn.ts         # server dispatcher: TurnRequest → TurnResponse (2.5; D31)
-  components/shell/ # AppShell, Header, ProfileDrawer, InfoTip, FirstRun, Highlights,
+  components/shell/ # AppShell, Header, ProfileDrawer, FirstRun, Highlights,
                     # Pending, RoleBoard, RoleGroup, Searches, QueryCard (2b.4/2b.11/2b.12)
   app/
     api/turn/       # the one turn endpoint (NDJSON stream; 2.5)
@@ -623,7 +624,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     button to "Noted". No model call; the next discovery or revision reads
     it. The handoff's "it sharpens the ranking" is not promised in copy.
     (The ask is now a text box under the field heading on the Roles screen,
-    with "Save answer"; the no-re-rank rule stands: D50.)
+    with "Save answer"; the no-re-rank rule stands: D50.) (Superseded by
+    D57: the ask is no longer shown; discovery still writes it.)
 
 44. **Opus 5.5 at `medium`, and discovery recalls rather than searches
     (2026-09-24).** Discovery took 157–252s on Opus 5 at `high` with up to
@@ -779,7 +781,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       `turn.ts` re-exports as `GO_PILL`.
     - Pending, errors and parser warnings render in the main column. The
       assistant message a turn returns is no longer shown.
-    - Every input has an `InfoTip` saying what it changes.
+    - Every input has an `InfoTip` saying what it changes. (Superseded by
+      D57: the info icons are deleted.)
     - The drawer renders `profileSummary()` from `profile-summary.ts`:
       plain labels, no ids or schema keys. Export (raw `profile.md` and the
       session JSON), import and the raw file sit behind an "Export"
@@ -797,7 +800,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       `FieldCard.tsx`. Each field is a heading (name, sector, fit, summary,
       "Draws on: <card titles>", uncertainty, and the optional ask as a
       short text box saved with `addOtherPreference`, no re-rank) with its
-      roles beneath as rows with a checkbox.
+      roles beneath as rows with a checkbox. (Superseded by D57:
+      no sector line and no ask; "Based on" replaces "Draws on".)
     - Card ids in a role's why are rendered as card titles
       (`citationsToTitles` in `screens.ts`); prompts still cite by id.
     - No marks, no rank numbers, no per-field write button. One sticky
@@ -956,6 +960,45 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     - It stays in `localStorage` with the rest of the profile and travels in
       each turn's request body; the server remains stateless and logs no
       bodies.
+
+57. **Highlights, Roles and Searches say each thing once (2026-11-20).**
+    From the 2026-11-19 walkthrough, and the user's answer that the field
+    summary stays. Applies `docs/design-language.md` principles 3 ("say a
+    thing once per screen"), 10 ("evidence behind a click"), 11 ("do not
+    interrupt a choice with a question") and 12 ("simplify first"); mostly
+    deletions. Supersedes the inline ask of D43 and D50, D50's "Draws on",
+    and D49's info tips.
+    - **Roles:** under a field title only the fit label, the move label,
+      "Based on" and the two-sentence summary remain, then "Not sure yet:".
+      The sector line restated the title and went. The follow-up question
+      (question, textarea, "Save answer", "Change") interrupted a
+      selection screen and went; discovery still writes `Sector` and `Ask`
+      to the profile and `addOtherPreference` stays in `profile.ts`, with
+      their fate in `docs/backlog.md` §2, §4. The summary stays because it
+      says what the work is and why the person fits, which the title does
+      not (discovery is told not to restate the name, D54).
+    - **"Based on" replaces "Draws on":** a disclosure button
+      (`aria-expanded`) on the fit row; expanded, one line per cited
+      highlight, in citation order and deduplicated by card: its title and,
+      where the field has an evidence line for that card, that sentence
+      with card ids rendered as titles. `RoleGroupView.basedOn` in
+      `screens.ts`; `ask`, `askAnswer` and the `onAnswerAsk` prop chain
+      are deleted.
+    - **Footer button:** "Write LinkedIn searches" at zero, with "Tick at
+      least one role first." beside it; "… for N roles" otherwise, with no
+      note, so "N roles ticked" no longer repeats the button's count. Same
+      in the Searches screen's "no search yet" block.
+    - **Highlights:** the lead says what highlights are for ("Every
+      suggested field and role is tied to at least one highlight. Skills
+      sum up what you know across them and shape your searches."); the
+      "N of M highlights used to match roles" note is gone. Years are off
+      the cards, the editor and the drawer summary; `Years` stays on the
+      card in `profile.md`, the cards prompt still fills it and an edit
+      keeps it.
+    - **Searches:** the "Get new matches by email" disclosure is off the
+      search card; `ALERT_STEPS` stays in `boards.ts` as data.
+    - **Info icons** are deleted outright (`InfoTip.tsx`, `INFO_TIPS` and
+      their CSS): each one repeated the page or the button it sat on.
 
 ---
 

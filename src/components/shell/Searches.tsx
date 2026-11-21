@@ -8,10 +8,9 @@
  */
 
 import type { Profile } from "@/lib/profile";
-import { INFO_TIPS, searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
+import { searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
 import { canWriteQueries } from "@/lib/workspace";
 
-import InfoTip from "./InfoTip";
 import QueryCard from "./QueryCard";
 
 export interface SearchesProps {
@@ -52,7 +51,7 @@ export default function Searches({
 
       {cards.length === 0 ? (
         <div className="cc-empty">
-          <div style={{ fontWeight: 600, fontSize: 15 }}>No roles ticked yet</div>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>No searches yet</div>
           <p className="cc-note">Tick the roles you want on the Roles screen.</p>
           <button type="button" className="cc-btn" onClick={onChangeRoles}>
             Change roles
@@ -77,8 +76,9 @@ export default function Searches({
             >
               {writeSearchesLabel(cards.length)}
             </button>
-            <InfoTip text={INFO_TIPS.writeSearches} label="What this button does" />
-            <span className="cc-note">{selectedRolesNote(cards.length)}</span>
+            {selectedRolesNote(cards.length) ? (
+              <span className="cc-note">{selectedRolesNote(cards.length)}</span>
+            ) : null}
           </div>
         </div>
       ) : null}

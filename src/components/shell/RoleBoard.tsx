@@ -8,27 +8,21 @@
  */
 
 import type { Profile } from "@/lib/profile";
-import {
-  INFO_TIPS,
-  roleGroups,
-  selectedRolesNote,
-  writeSearchesLabel,
-} from "@/lib/screens";
+import { roleGroups, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
 import { canWriteQueries, selectedRoles } from "@/lib/workspace";
 
-import InfoTip from "./InfoTip";
 import RoleGroup from "./RoleGroup";
 
 export interface RoleBoardProps {
   profile: Profile;
   onRole: (roleId: string, selected: boolean) => void;
-  onAnswerAsk: (key: string, answer: string) => void;
   onWriteSearches: () => void;
 }
 
-export default function RoleBoard({ profile, onRole, onAnswerAsk, onWriteSearches }: RoleBoardProps) {
+export default function RoleBoard({ profile, onRole, onWriteSearches }: RoleBoardProps) {
   const groups = roleGroups(profile);
   const count = selectedRoles(profile).length;
+  const note = selectedRolesNote(count);
 
   return (
     <section className="cc-roles-screen">
@@ -38,7 +32,7 @@ export default function RoleBoard({ profile, onRole, onAnswerAsk, onWriteSearche
       </p>
 
       {groups.map((group) => (
-        <RoleGroup key={group.field.id} group={group} onRole={onRole} onAnswerAsk={onAnswerAsk} />
+        <RoleGroup key={group.field.id} group={group} onRole={onRole} />
       ))}
 
       <div className="cc-roles-footer">
@@ -50,8 +44,7 @@ export default function RoleBoard({ profile, onRole, onAnswerAsk, onWriteSearche
         >
           {writeSearchesLabel(count)}
         </button>
-        <InfoTip text={INFO_TIPS.writeSearches} label="What this button does" />
-        <span className="cc-note">{selectedRolesNote(count)}</span>
+        {note ? <span className="cc-note">{note}</span> : null}
       </div>
     </section>
   );

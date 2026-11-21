@@ -36,8 +36,6 @@ export interface SkillLine {
 
 export interface HighlightLine {
   title: string;
-  /** Absent when the resume gave no period. */
-  years?: string;
   /** Excluded highlights stay listed so the drawer can strike them through. */
   excluded: boolean;
 }
@@ -130,14 +128,8 @@ function skillLines(profile: Profile): SkillLine[] {
 }
 
 function highlightLines(profile: Profile): HighlightLine[] {
-  return profile.cards.map((card) => {
-    const years = card.years?.trim();
-    return {
-      title: card.title.trim(),
-      ...(years ? { years } : {}),
-      excluded: card.excluded,
-    };
-  });
+  // Years stay in profile.md but are not shown (technical-plan.md D57).
+  return profile.cards.map((card) => ({ title: card.title.trim(), excluded: card.excluded }));
 }
 
 function fieldNameOf(profile: Profile, fieldId: string): string {
@@ -172,7 +164,7 @@ export function profileSummary(profile: Profile): ProfileSummary {
     },
     selectedRoles: {
       heading: "Selected roles",
-      emptyText: "No roles ticked yet.",
+      emptyText: "No roles selected yet.",
       items: roles.map((role) => ({
         title: role.title.trim(),
         fieldName: fieldNameOf(profile, role.fieldId),

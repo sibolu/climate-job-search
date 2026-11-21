@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   findRolesGate,
-  highlightsCountNote,
   interestPills,
   pendingStatusLine,
   INTEREST_NOTE,
@@ -16,7 +15,6 @@ import {
   NAV_STEPS,
   navStepEnabled,
   navStepFor,
-  askAnswer,
   boardSearchUrl,
   citationsToTitles,
   hasLiveQueries,
@@ -30,7 +28,6 @@ import {
 } from "./screens";
 import { CLIMATE_AREAS } from "./elicit";
 import {
-  addOtherPreference,
   emptyProfile,
   setClimateInterests,
   setInputs,
@@ -225,11 +222,6 @@ describe("findRolesGate", () => {
     expect(FIND_ROLES_PILL).toEqual({ label: "Find climate roles", value: "go" });
   });
 
-  it("counts the highlights used to match", () => {
-    const p = upsertCard(answered(), card({ excluded: true }));
-    expect(highlightsCountNote(p)).toBe("1 of 2 highlights used to match roles.");
-  });
-
   it("stays shut when every card is excluded", () => {
     const p = upsertCard(answered(), { ...card({ excluded: true }), id: "C1" });
     expect(findRolesGate(p).enabled).toBe(false);
@@ -326,7 +318,7 @@ describe("citationsToTitles", () => {
     expect(citationsToTitles(p, "C1's ranking work and C3's rollout")).toBe(
       "Grid analyst's ranking work and Ops lead's rollout",
     );
-    expect(citationsToTitles(p, "Draws on (C1, C03).")).toBe("Draws on (Grid analyst, Ops lead).");
+    expect(citationsToTitles(p, "Based on (C1, C03).")).toBe("Based on (Grid analyst, Ops lead).");
   });
 
   it("never leaves a raw id for an unknown card and leaves other text alone", () => {
@@ -364,9 +356,36 @@ describe("roleGroups", () => {
     expect(group.fitLabel).toBe("Strong overlap");
     expect(group.moveLabel).toBe("Same work, new sector");
     expect(group.summary).toBe("");
-    expect(group.drawsOn).toEqual(["Grid analyst", "Ops lead"]);
     expect(group.uncertain).toBe("Unclear whether Ops lead counts.");
-    expect(group.askAnswer).toBeUndefined();
+  });
+
+  it("lists what a field is based on: titles in citation order, with evidence", () => {
+    // C1 has an evidence line; C9 is no card; C3 is cited in the fit only.
+    expect(roleGroups(p)[0].basedOn).toEqual([
+      { title: "Grid analyst", evidence: "x" },
+      { title: "Ops lead", evidence: "" },
+    ]);
+    expect(roleGroups(p)[1].basedOn).toEqual([]);
+  });
+
+  it("renders card ids in the evidence as titles and lists each card once", () => {
+    const q: Profile = {
+      ...p,
+      fields: [
+        field("F1", {
+          evidence: [
+            { cardId: "C3", why: "C3's rollout and C1's model" },
+            { cardId: "C3", why: "a second line" },
+            { cardId: "C1", why: "" },
+          ],
+          fit: "C1 and C3",
+        }),
+      ],
+    };
+    expect(roleGroups(q)[0].basedOn).toEqual([
+      { title: "Ops lead", evidence: "Ops lead's rollout and Grid analyst's model" },
+      { title: "Grid analyst", evidence: "" },
+    ]);
   });
 
   it("lists each field's roles and leaves out roles under no field", () => {
@@ -386,11 +405,6 @@ describe("roleGroups", () => {
     expect(roleGroups(p)[1].roles[0].companies).toBe("");
   });
 
-  it("reads a saved ask answer by key, whatever its spacing or case", () => {
-    const answeredP = addOtherPreference(p, "pe  LICENCE", "Yes, since 2019");
-    expect(roleGroups(answeredP)[0].askAnswer).toBe("Yes, since 2019");
-    expect(askAnswer(answeredP, { question: "", key: "other", placeholder: "" })).toBeUndefined();
-  });
 });
 
 describe("sourceLabel", () => {
@@ -401,11 +415,16 @@ describe("sourceLabel", () => {
 });
 
 describe("the write-searches label", () => {
-  it("is singular for one role", () => {
+  it("has no count and a note when nothing is ticked", () => {
+    expect(writeSearchesLabel(0)).toBe("Write LinkedIn searches");
+    expect(selectedRolesNote(0)).toBe("Tick at least one role first.");
+  });
+
+  it("counts the ticked roles, singular for one, with no note", () => {
     expect(writeSearchesLabel(1)).toBe("Write LinkedIn searches for 1 role");
     expect(writeSearchesLabel(3)).toBe("Write LinkedIn searches for 3 roles");
-    expect(selectedRolesNote(0)).toBe("Tick at least one role first.");
-    expect(selectedRolesNote(2)).toBe("2 roles ticked.");
+    expect(selectedRolesNote(1)).toBe("");
+    expect(selectedRolesNote(2)).toBe("");
   });
 });
 

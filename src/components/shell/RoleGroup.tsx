@@ -1,32 +1,28 @@
 "use client";
 
 /**
- * One field on the Roles screen (technical-plan.md D50): the field is a
- * heading with no marking, and its roles are the rows the person ticks. The
- * field's optional ask sits inline under its uncertainty; the answer is saved
- * to the profile and does not re-rank anything (technical-plan.md D43).
+ * One field on the Roles screen (technical-plan.md D50, D57): the field name,
+ * one row with the fit label, the move label and a "Based on" disclosure (the
+ * highlights the field cites, each with its evidence line), then the
+ * two-sentence summary and any "Not sure yet" line. The roles are the rows
+ * the person ticks.
  */
 
 import { useState } from "react";
 
 import type { RoleGroupView } from "@/lib/screens";
-import { INFO_TIPS, sourceLabel } from "@/lib/screens";
-
-import InfoTip from "./InfoTip";
+import { sourceLabel } from "@/lib/screens";
 
 export interface RoleGroupProps {
   group: RoleGroupView;
   onRole: (roleId: string, selected: boolean) => void;
-  /** Saves the answer under the ask's preference key (`addOtherPreference`). */
-  onAnswerAsk: (key: string, answer: string) => void;
 }
 
-export default function RoleGroup({ group, onRole, onAnswerAsk }: RoleGroupProps) {
-  const { field, ask, askAnswer } = group;
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+export default function RoleGroup({ group, onRole }: RoleGroupProps) {
+  const { field, basedOn } = group;
+  const [open, setOpen] = useState(false);
   const headingId = `role-group-${field.id}`;
-  const showForm = ask !== undefined && (askAnswer === undefined || editing);
+  const basedOnId = `based-on-${field.id}`;
 
   return (
     <section className="cc-role-group" aria-labelledby={headingId}>
@@ -35,81 +31,35 @@ export default function RoleGroup({ group, onRole, onAnswerAsk }: RoleGroupProps
           {field.name}
         </h3>
         <div className="cc-role-group-meta">
-          {field.sector ? <span>{field.sector}</span> : null}
           {group.fitLabel ? <span className="cc-fit-label">{group.fitLabel}</span> : null}
           {group.moveLabel ? <span>{group.moveLabel}</span> : null}
+          {basedOn.length > 0 ? (
+            <button
+              type="button"
+              className="cc-linkish cc-based-on-btn"
+              aria-expanded={open}
+              aria-controls={basedOnId}
+              onClick={() => setOpen((current) => !current)}
+            >
+              Based on
+            </button>
+          ) : null}
         </div>
-        {group.summary ? <p className="cc-role-group-summary">{group.summary}</p> : null}
-        {group.drawsOn.length > 0 ? (
-          <p className="cc-note">Draws on: {group.drawsOn.join(", ")}</p>
+        {open && basedOn.length > 0 ? (
+          <ul id={basedOnId} className="cc-based-on-list">
+            {basedOn.map(({ title, evidence }) => (
+              <li key={title}>
+                <strong>{title}</strong>
+                {evidence ? `: ${evidence}` : null}
+              </li>
+            ))}
+          </ul>
         ) : null}
+        {group.summary ? <p className="cc-role-group-summary">{group.summary}</p> : null}
         {group.uncertain ? (
           <p className="cc-role-uncertain">
             <strong>Not sure yet:</strong> {group.uncertain}
           </p>
-        ) : null}
-
-        {ask !== undefined ? (
-          <div className="cc-role-ask">
-            <div className="cc-with-tip">
-              <span className="cc-role-ask-question">{ask.question}</span>
-              <InfoTip text={INFO_TIPS.fieldAsk} label="What this answer changes" />
-            </div>
-            {showForm ? (
-              <div className="cc-role-ask-form">
-                <textarea
-                  className="cc-field-input"
-                  rows={2}
-                  placeholder={ask.placeholder}
-                  aria-label={ask.question}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                />
-                <div className="cc-cta-row">
-                  <button
-                    type="button"
-                    className="cc-btn-outline"
-                    disabled={draft.trim() === ""}
-                    onClick={() => {
-                      onAnswerAsk(ask.key, draft.trim());
-                      setDraft("");
-                      setEditing(false);
-                    }}
-                  >
-                    Save answer
-                  </button>
-                  {editing ? (
-                    <button
-                      type="button"
-                      className="cc-linkish"
-                      onClick={() => {
-                        setDraft("");
-                        setEditing(false);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  ) : (
-                    <span className="cc-note">Optional.</span>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="cc-note">
-                Your answer: {askAnswer}{" "}
-                <button
-                  type="button"
-                  className="cc-linkish"
-                  onClick={() => {
-                    setDraft(askAnswer ?? "");
-                    setEditing(true);
-                  }}
-                >
-                  Change
-                </button>
-              </p>
-            )}
-          </div>
         ) : null}
       </header>
 

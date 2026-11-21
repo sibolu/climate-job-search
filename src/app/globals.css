@@ -510,13 +510,6 @@ input {
   font-weight: 700;
 }
 
-.cc-years {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  margin-left: auto;
-}
-
 .cc-dl {
   display: grid;
   grid-template-columns: 62px minmax(0, 1fr);
@@ -613,63 +606,6 @@ input {
 
 .cc-banner p + p {
   margin-top: 6px;
-}
-
-.cc-infotip {
-  position: relative;
-  display: inline-flex;
-  vertical-align: middle;
-  margin-left: 6px;
-}
-
-.cc-infotip-btn {
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--muted);
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: help;
-}
-
-.cc-infotip-btn:focus-visible {
-  outline: 2px solid var(--green);
-  outline-offset: 2px;
-}
-
-.cc-infotip-text {
-  display: none;
-  position: absolute;
-  z-index: 20;
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: 260px;
-  background: var(--ink);
-  color: var(--surface);
-  border-radius: var(--radius-btn);
-  padding: 7px 9px;
-  font-size: 12.5px;
-  font-weight: 400;
-  line-height: 1.45;
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: normal;
-}
-
-.cc-infotip-text[data-open="true"] {
-  display: block;
-}
-
-.cc-with-tip {
-  display: flex;
-  align-items: center;
 }
 
 .cc-log {
@@ -914,6 +850,23 @@ input {
   margin: 2px 0 0;
 }
 
+.cc-based-on-btn[aria-expanded="true"] {
+  text-decoration: none;
+}
+
+.cc-based-on-list {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.cc-based-on-list strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .cc-role-uncertain {
   font-size: 13px;
   line-height: 1.55;
@@ -927,22 +880,6 @@ input {
 
 .cc-role-uncertain strong {
   color: var(--amber-text);
-}
-
-.cc-role-ask {
-  display: grid;
-  gap: 6px;
-  font-size: 13.5px;
-  min-width: 0;
-}
-
-.cc-role-ask-question {
-  font-weight: 600;
-}
-
-.cc-role-ask-form {
-  display: grid;
-  gap: 8px;
 }
 
 .cc-role-list {
@@ -1110,20 +1047,3 @@ input {
   text-decoration: none;
 }
 
-.cc-alert {
-  margin-top: 12px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.cc-alert summary {
-  cursor: pointer;
-  color: var(--green);
-  font-weight: 600;
-}
-
-.cc-alert ol {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  color: var(--ink-2);
-}

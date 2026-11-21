@@ -69,8 +69,10 @@ remove the icon.
   comes next.
 - Rejected: *5 roles ticked* above a button reading *Write … for 5 roles*,
   plus an info icon explaining the same thing.
-- Rejected: a field's one-line description that restates its title. Keep
-  the overlap indicator; drop the sentence.
+- Rejected: the one-line sector under a field title; it restated the
+  title and went.
+  Accepted: the two-sentence summary under it stays, because it says what
+  the work is and why the person fits, which the title does not.
 - Rejected: a *Notes* label plus a separate *Notes: constraints…* helper.
   One prompt per field, marked *Optional*.
 
@@ -158,7 +160,7 @@ When an element mostly repeats another or has no clear job, remove it now and
 note it for later rather than keeping it to be safe.
 
 - Examples from the walkthrough: the decorative green box in the top bar,
-  the field descriptions, the retraining question (moved to the backlog),
+  the sector line under a field, the retraining question (moved to the backlog),
   the follow-up questions on roles.
 
 ## Voice

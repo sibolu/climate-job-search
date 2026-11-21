@@ -101,9 +101,8 @@ export default function ProfileDrawer({ state, profileMd, onImport, onClose }: P
 
         <Section section={summary.highlights}>
           {(card) => (
-            <li key={`${card.title}-${card.years ?? ""}`}>
+            <li key={card.title}>
               {card.excluded ? <s>{card.title}</s> : card.title}
-              {card.years ? <span className="cc-drawer-note"> · {card.years}</span> : null}
               {card.excluded ? <span className="cc-drawer-note"> (left out)</span> : null}
             </li>
           )}

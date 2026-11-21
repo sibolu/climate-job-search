@@ -3,7 +3,8 @@
 /**
  * One ticked role's LinkedIn search (technical-plan.md D47): the role, its
  * field, the query, "Open on LinkedIn" (a plain link the person clicks; the
- * app never fetches LinkedIn — PRD: no scraping), Copy, and the alert steps.
+ * app never fetches LinkedIn — PRD: no scraping) and Copy. The email-alert
+ * steps stay in `boards.ts` as data and are not shown (technical-plan.md D57).
  * Location and work mode are LinkedIn filters, not part of the query (D36).
  * There are no verdict buttons: query feedback has no UI path in the alpha
  * (D51).
@@ -11,7 +12,6 @@
 
 import { useState } from "react";
 
-import { ALERT_STEPS } from "@/lib/boards";
 import type { Query } from "@/lib/profile";
 import { boardSearchUrl } from "@/lib/screens";
 
@@ -70,14 +70,6 @@ export default function QueryCard({
         ) : null}
       </div>
 
-      <details className="cc-alert">
-        <summary>Get new matches by email</summary>
-        <ol>
-          {ALERT_STEPS.linkedin.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-      </details>
     </article>
   );
 }
