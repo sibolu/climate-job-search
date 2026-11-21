@@ -19,31 +19,26 @@ import { liveQueryForRole, selectedRoles } from "./workspace";
 // ---------------------------------------------------------------------------
 
 /** Every main panel the beta shell can render. */
-export type Screen = "firstRun" | "highlights" | "pending" | "roles" | "searches";
+export type Screen = "resume" | "highlights" | "pending" | "roles" | "searches";
 
-/** The three header steps. */
-export type NavStep = "highlights" | "roles" | "searches";
+/** The four header steps, in flow order (technical-plan.md D55). */
+export type NavStep = "resume" | "highlights" | "roles" | "searches";
 
 /**
- * Which of the post-discovery panels the person navigated to. The screen is
- * otherwise derived, so this is the only piece of navigation the shell keeps.
- * There is no feedback panel: query feedback has no UI path in the alpha
- * (technical-plan.md D51).
+ * Which panel the person navigated to. The screen is otherwise derived, so
+ * this is the only piece of navigation the shell keeps. There is no feedback
+ * panel: query feedback has no UI path in the alpha (technical-plan.md D51).
  */
-export type View = "roles" | "searches";
+export type View = NavStep;
 
-export const NAV_STEPS: readonly NavStep[] = ["highlights", "roles", "searches"];
+export const NAV_STEPS: readonly NavStep[] = ["resume", "highlights", "roles", "searches"];
 
 export const NAV_LABELS: Record<NavStep, string> = {
-  highlights: "1 Highlights",
-  roles: "2 Roles",
-  searches: "3 Searches",
+  resume: "Resume",
+  highlights: "Highlights",
+  roles: "Roles",
+  searches: "Searches",
 };
-
-/** The header's "Start over" confirm text; everything lives in this browser only. */
-export const START_OVER_CONFIRM =
-  "Start over? This removes your highlights, answers, roles and searches from this browser. " +
-  "Save a copy from Your profile first if you want to keep them.";
 
 export interface ScreenInput {
   /** Any card at all on the profile, excluded ones included. */
@@ -54,42 +49,41 @@ export interface ScreenInput {
   busy: boolean;
   /** Some selected role has a live search (`hasLiveQueries`). */
   hasQueries?: boolean;
-  /** The panel the person navigated to; `roles` when they have not moved. */
+  /**
+   * The panel the person navigated to. Unset, or a step not reached yet,
+   * falls back to Highlights before discovery and Roles after.
+   */
   view?: View;
 }
 
 /**
  * Which main panel renders. One turn is in flight at a time (D38), so a busy
- * shell always shows the pending screen — except on the very first run, where
- * there is nothing behind it yet and the paste screen keeps its own spinner.
+ * shell always shows the pending screen — except before any card exists,
+ * where there is nothing behind it yet and the Resume page keeps its own
+ * spinner. Every reached step is a link back (technical-plan.md D55).
  */
-export function currentScreen({ hasCards, hasFields, busy, view }: ScreenInput): Screen {
-  if (busy) return hasCards ? "pending" : "firstRun";
-  if (!hasCards) return "firstRun";
-  if (!hasFields) return "highlights";
-  return view ?? "roles";
+export function currentScreen(input: ScreenInput): Screen {
+  const { hasCards, hasFields, busy, view } = input;
+  if (busy) return hasCards ? "pending" : "resume";
+  if (!hasCards) return "resume";
+  if (view !== undefined && navStepEnabled(view, input)) return view;
+  return hasFields ? "roles" : "highlights";
 }
 
 /** The header step highlighted for a screen. */
 export function navStepFor(screen: Screen): NavStep {
-  if (screen === "searches") return "searches";
-  return screen === "roles" || screen === "pending" ? "roles" : "highlights";
-}
-
-/** Steps ahead of what the person has reached are disabled. */
-export function navStepEnabled(step: NavStep, input: ScreenInput): boolean {
-  if (step === "highlights") return input.hasCards;
-  if (step === "roles") return input.hasFields;
-  return input.hasQueries === true;
+  return screen === "pending" ? "roles" : screen;
 }
 
 /**
- * The nav, "Your profile" and "Start over" are hidden entirely on first run
- * (handoff, Shell). There is no rail: the flow is one centred column
- * (technical-plan.md D49).
+ * Steps ahead of what the person has reached are disabled; the Resume page
+ * is always reachable (technical-plan.md D55).
  */
-export function showNav(screen: Screen): boolean {
-  return screen !== "firstRun";
+export function navStepEnabled(step: NavStep, input: ScreenInput): boolean {
+  if (step === "resume") return true;
+  if (step === "highlights") return input.hasCards;
+  if (step === "roles") return input.hasFields;
+  return input.hasQueries === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +119,25 @@ export function composeStartText(pasted: string, notes: string): string {
   const extra = notes.trim();
   if (extra === "") return body;
   return `${body}\n\n${NOTES_LABEL}\n${extra}`;
+}
+
+/**
+ * What the Resume page shows (technical-plan.md D55, D56). Before any card
+ * exists it is the entry form, both boxes starting from what was typed last
+ * (non-empty only when an earlier Start failed). Once the resume has been
+ * read it shows the stored text read-only; a profile saved before inputs
+ * were kept has no stored resume, and says so instead.
+ */
+export type ResumeView =
+  | { kind: "entry"; resume: string; notes: string }
+  | { kind: "stored"; resume: string; notes?: string }
+  | { kind: "notStored" };
+
+export function resumeView(p: Profile): ResumeView {
+  const { resume, notes } = p.inputs;
+  if (p.cards.length === 0) return { kind: "entry", resume, notes };
+  if (resume.trim() === "") return { kind: "notStored" };
+  return notes.trim() === "" ? { kind: "stored", resume } : { kind: "stored", resume, notes };
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +205,9 @@ export interface FindRolesGate {
 export function findRolesGate(p: Profile): FindRolesGate {
   if (activeCards(p).length === 0) {
     return { enabled: false, note: "Include at least one highlight above first." };
+  }
+  if (p.fields.length > 0) {
+    return { enabled: true, note: "Running this again updates your roles." };
   }
   return { enabled: true, note: "You can come back and change any of this." };
 }

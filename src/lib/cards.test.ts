@@ -28,7 +28,7 @@ import {
   reviseCards,
 } from "./cards";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, emptyProfile, setCardExcluded, setPreference, upsertCard, activeSkills, moveSkill } from "./profile";
+import { type Profile, emptyProfile, setCardExcluded, setInputs, setPreference, upsertCard, activeSkills, moveSkill } from "./profile";
 import { MAX_MESSAGE_CHARS } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -589,5 +589,20 @@ describe("cardsSummary", () => {
 
   it("asks for more text when there is nothing to show", () => {
     expect(cardsSummary(emptyProfile())).toContain("could not pull any experience cards");
+  });
+});
+
+describe("what the person typed (technical-plan.md D56)", () => {
+  it("the cards step reads the message text, not the stored inputs, and returns them unchanged", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const typed = setInputs(emptyProfile(), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+    const llm = fakeLlm([threeCards()]);
+    const result = await extractCards(llm, { sessionId: SESSION_ID, text: "the text in the message", profile: typed });
+
+    const prompt = JSON.stringify([llm.requests[0]?.system, llm.requests[0]?.messages]);
+    expect(prompt).toContain("the text in the message");
+    expect(prompt).not.toContain(MARKER);
+    expect(result.cards.length).toBeGreaterThan(0);
+    expect(result.profile.inputs).toEqual(typed.inputs);
   });
 });

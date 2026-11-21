@@ -12,9 +12,11 @@
  *   pnpm try:cards src/lib/__fixtures__/resumes/videographer.txt
  *   pnpm try:cards ~/resume.txt out/profile.md
  *
- * It prints no credentials and never echoes the pasted text back: the resume
- * appears only inside the request, and what comes out is the profile the app
- * would store in the browser. Needs `ANTHROPIC_API_KEY`; the anonymous
+ * It prints no credentials. What comes out is the profile the app would store
+ * in the browser, and that now includes the pasted text itself under
+ * `## Inputs` (technical-plan.md D56): the whole file is recorded as the
+ * resume, the way Start records it, so treat the output like the resume it
+ * was made from. Needs `ANTHROPIC_API_KEY`; the anonymous
  * `llm_usage` row needs the local Supabase stack, and a failed insert is a
  * warning, not an error, so the script still works without it.
  */
@@ -24,8 +26,9 @@ import process from "node:process";
 
 import { CardsInputError, MAX_SKILL_WORDS, extractCards } from "../src/lib/cards";
 import { llm } from "../src/lib/llm";
-import { serializeProfile } from "../src/lib/profile";
-import { newSessionId } from "../src/lib/session";
+import { parseProfile, serializeProfile } from "../src/lib/profile";
+import { newSessionId, newSessionState } from "../src/lib/session";
+import { recordStartInputs } from "../src/lib/workspace";
 
 const USAGE = "usage: pnpm try:cards <path-to-resume.txt> [profile.md-out]";
 
@@ -50,7 +53,9 @@ async function main(): Promise<void> {
   }
 
   const started = Date.now();
-  const result = await extractCards(llm(), { sessionId: newSessionId(), text }).catch(
+  // The browser records what was typed when Start is pressed, before the turn.
+  const { profile } = parseProfile(recordStartInputs(newSessionState(), text, "").profileMd);
+  const result = await extractCards(llm(), { sessionId: newSessionId(), text, profile }).catch(
     (error: unknown) => {
       if (error instanceof CardsInputError) fail(error.message);
       throw error;

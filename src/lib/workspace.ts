@@ -16,12 +16,14 @@ import { isElicitationComplete } from "./elicit";
 import type { Card, Field, FieldStatus, Profile, Query, Role } from "./profile";
 import {
   activeCards,
+  normalizeInputText,
   parseProfile,
   rolesForField as profileRolesForField,
   selectedRoles as profileSelectedRoles,
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
+  setInputs,
   setQueryStatus,
 } from "./profile";
 import type {
@@ -32,7 +34,7 @@ import type {
   TurnInput,
   TurnResponse,
 } from "./session";
-import { appendMessage } from "./session";
+import { MAX_MESSAGE_CHARS, MAX_PROFILE_MD_CHARS, appendMessage } from "./session";
 
 // ---------------------------------------------------------------------------
 // Which step a turn belongs to
@@ -88,6 +90,24 @@ export function updateProfile(
 ): SessionState {
   const { profile } = parseProfile(state.profileMd);
   return { ...state, profileMd: serializeProfile(edit(profile)) };
+}
+
+/**
+ * Keeps what the person typed on the first screen in the profile
+ * (technical-plan.md D56). Called when Start is pressed, before the turn is
+ * sent, so a read that fails still leaves the text to come back to.
+ *
+ * Nothing is recorded, and the same `state` object is returned, when the two
+ * inputs together are longer than `MAX_MESSAGE_CHARS` (the turn cannot carry
+ * that paste either) or when recording them would take the profile past
+ * `MAX_PROFILE_MD_CHARS`. So the stored inputs are never what makes a session
+ * too large to send or to load again.
+ */
+export function recordStartInputs(state: SessionState, resume: string, notes: string): SessionState {
+  const typed = { resume: normalizeInputText(resume), notes: normalizeInputText(notes) };
+  if (typed.resume.length + typed.notes.length > MAX_MESSAGE_CHARS) return state;
+  const next = updateProfile(state, (p) => setInputs(p, typed));
+  return next.profileMd.length > MAX_PROFILE_MD_CHARS ? state : next;
 }
 
 export function toggleCardExcluded(state: SessionState, cardId: string, excluded: boolean): SessionState {

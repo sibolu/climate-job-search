@@ -43,6 +43,7 @@ import {
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
+  setInputs,
   setPreference,
 } from "./profile";
 
@@ -629,5 +630,20 @@ describe("level words (technical-plan.md D48)", () => {
   it("shows the catalogue's roles without their level modifiers", () => {
     const roles: CatalogueRole[] = CAT_ROLES.map((r, i) => (i === 0 ? { ...r, title: `Senior ${r.title} II` } : r));
     expect(renderCatalogue(CAT_FIELDS, roles)).toBe(renderCatalogue(CAT_FIELDS, CAT_ROLES));
+  });
+});
+
+describe("what the person typed (technical-plan.md D56)", () => {
+  it("is not in the discovery prompt, and comes back in the profile", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const typed = setInputs(fixture("videographer"), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+    const llm = fakeLlm([output()]);
+    const result = await discoverFields({ sessionId: SESSION_ID, profile: typed }, { llm, reference });
+
+    expect(llm.requests.length).toBeGreaterThan(0);
+    for (const request of llm.requests) {
+      expect(JSON.stringify([request.system, request.messages])).not.toContain(MARKER);
+    }
+    expect(result.profile.inputs).toEqual(typed.inputs);
   });
 });

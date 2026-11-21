@@ -12,9 +12,10 @@ import {
   composeStartText,
   currentScreen,
   formatElapsed,
+  NAV_LABELS,
+  NAV_STEPS,
   navStepEnabled,
   navStepFor,
-  showNav,
   askAnswer,
   boardSearchUrl,
   citationsToTitles,
@@ -25,12 +26,14 @@ import {
   sourceLabel,
   writeSearchesLabel,
   MAX_LOG_LINES,
+  resumeView,
 } from "./screens";
 import { CLIMATE_AREAS } from "./elicit";
 import {
   addOtherPreference,
   emptyProfile,
   setClimateInterests,
+  setInputs,
   upsertCard,
   type Card,
   type Field,
@@ -58,9 +61,12 @@ function answered(): Profile {
 }
 
 describe("currentScreen", () => {
-  it("is firstRun with no cards, even while busy", () => {
-    expect(currentScreen({ hasCards: false, hasFields: false, busy: false })).toBe("firstRun");
-    expect(currentScreen({ hasCards: false, hasFields: false, busy: true })).toBe("firstRun");
+  it("is resume with no cards, even while busy", () => {
+    expect(currentScreen({ hasCards: false, hasFields: false, busy: false })).toBe("resume");
+    expect(currentScreen({ hasCards: false, hasFields: false, busy: true })).toBe("resume");
+    expect(
+      currentScreen({ hasCards: false, hasFields: false, busy: false, view: "highlights" }),
+    ).toBe("resume");
   });
 
   it("is highlights once cards exist and no fields do", () => {
@@ -70,32 +76,69 @@ describe("currentScreen", () => {
   it("is pending whenever a turn is in flight behind existing cards", () => {
     expect(currentScreen({ hasCards: true, hasFields: false, busy: true })).toBe("pending");
     expect(currentScreen({ hasCards: true, hasFields: true, busy: true })).toBe("pending");
+    expect(
+      currentScreen({ hasCards: true, hasFields: true, busy: true, view: "resume" }),
+    ).toBe("pending");
   });
 
   it("is the Roles screen once discovery has landed", () => {
     expect(currentScreen({ hasCards: true, hasFields: true, busy: false })).toBe("roles");
   });
+
+  it("resolves each navigated view once it is reached", () => {
+    const all = { hasCards: true, hasFields: true, busy: false, hasQueries: true };
+    expect(currentScreen({ ...all, view: "resume" })).toBe("resume");
+    expect(currentScreen({ ...all, view: "highlights" })).toBe("highlights");
+    expect(currentScreen({ ...all, view: "roles" })).toBe("roles");
+    expect(currentScreen({ ...all, view: "searches" })).toBe("searches");
+  });
+
+  it("keeps Highlights reachable after fields exist", () => {
+    const input = { hasCards: true, hasFields: true, busy: false, view: "highlights" as const };
+    expect(currentScreen(input)).toBe("highlights");
+  });
+
+  it("falls back when the navigated view is not reached yet", () => {
+    const early = { hasCards: true, hasFields: false, busy: false };
+    expect(currentScreen({ ...early, view: "roles" })).toBe("highlights");
+    expect(currentScreen({ ...early, view: "searches" })).toBe("highlights");
+    expect(currentScreen({ ...early, hasFields: true, view: "searches" })).toBe("roles");
+  });
 });
 
 describe("nav", () => {
-  it("maps roles and pending onto the Roles step", () => {
+  it("lists four steps without numbers", () => {
+    expect(NAV_STEPS).toEqual(["resume", "highlights", "roles", "searches"]);
+    expect(NAV_STEPS.map((step) => NAV_LABELS[step])).toEqual([
+      "Resume",
+      "Highlights",
+      "Roles",
+      "Searches",
+    ]);
+  });
+
+  it("maps each screen onto its step, pending onto Roles", () => {
+    expect(navStepFor("resume")).toBe("resume");
+    expect(navStepFor("highlights")).toBe("highlights");
     expect(navStepFor("roles")).toBe("roles");
     expect(navStepFor("pending")).toBe("roles");
-    expect(navStepFor("highlights")).toBe("highlights");
+  });
+
+  it("always enables Resume", () => {
+    const none = { hasCards: false, hasFields: false, busy: false };
+    expect(navStepEnabled("resume", none)).toBe(true);
+    expect(navStepEnabled("resume", { ...none, hasCards: true, hasFields: true })).toBe(true);
   });
 
   it("disables steps the person has not reached", () => {
+    const none = { hasCards: false, hasFields: false, busy: false };
+    expect(navStepEnabled("highlights", none)).toBe(false);
     const early = { hasCards: true, hasFields: false, busy: false };
     expect(navStepEnabled("highlights", early)).toBe(true);
     expect(navStepEnabled("roles", early)).toBe(false);
     expect(navStepEnabled("searches", early)).toBe(false);
     expect(navStepEnabled("roles", { ...early, hasFields: true })).toBe(true);
-  });
-
-  it("hides the nav on first run only", () => {
-    expect(showNav("firstRun")).toBe(false);
-    expect(showNav("highlights")).toBe(true);
-    expect(showNav("pending")).toBe(true);
+    expect(navStepEnabled("highlights", { ...early, hasFields: true })).toBe(true);
   });
 });
 
@@ -108,6 +151,25 @@ describe("composeStartText", () => {
 
   it("omits the block when notes are empty", () => {
     expect(composeStartText("resume text", "   ")).toBe("resume text");
+  });
+});
+
+describe("resumeView", () => {
+  it("is the entry form before any card, prefilled from the stored inputs", () => {
+    expect(resumeView(emptyProfile())).toEqual({ kind: "entry", resume: "", notes: "" });
+    const typed = setInputs(emptyProfile(), { resume: "Grid analyst", notes: "Remote" });
+    expect(resumeView(typed)).toEqual({ kind: "entry", resume: "Grid analyst", notes: "Remote" });
+  });
+
+  it("shows the stored resume once cards exist, and the notes only when there are any", () => {
+    const read = setInputs(upsertCard(emptyProfile(), card()), { resume: "Grid analyst", notes: "" });
+    expect(resumeView(read)).toEqual({ kind: "stored", resume: "Grid analyst" });
+    const withNotes = setInputs(read, { resume: "Grid analyst", notes: "Remote" });
+    expect(resumeView(withNotes)).toEqual({ kind: "stored", resume: "Grid analyst", notes: "Remote" });
+  });
+
+  it("says the resume was not stored for a profile saved before inputs were kept", () => {
+    expect(resumeView(upsertCard(emptyProfile(), card()))).toEqual({ kind: "notStored" });
   });
 });
 
@@ -149,6 +211,14 @@ describe("findRolesGate", () => {
 
   it("opens with a highlight and an answer", () => {
     expect(findRolesGate(answered()).enabled).toBe(true);
+  });
+
+  it("says a rerun updates the roles once fields exist", () => {
+    const p = { ...answered(), fields: [field("F1")] };
+    expect(findRolesGate(p)).toEqual({
+      enabled: true,
+      note: "Running this again updates your roles.",
+    });
   });
 
   it("labels the button with the pill the server offers", () => {
@@ -391,7 +461,8 @@ describe("currentScreen and the nav with searches", () => {
   const base = { hasCards: true, hasFields: true, busy: false };
 
   it("renders the view the person navigated to", () => {
-    expect(currentScreen({ ...base, view: "searches" })).toBe("searches");
+    expect(currentScreen({ ...base, hasQueries: true, view: "searches" })).toBe("searches");
+    expect(currentScreen({ ...base, view: "searches" })).toBe("roles");
     expect(currentScreen({ ...base, view: "roles" })).toBe("roles");
     expect(currentScreen(base)).toBe("roles");
     expect(currentScreen({ ...base, view: "searches", busy: true })).toBe("pending");

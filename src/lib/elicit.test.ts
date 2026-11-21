@@ -32,6 +32,7 @@ import {
   missingPreferences,
   parseProfile,
   setClimateInterests,
+  setInputs,
   setPreference,
   type Profile,
 } from "./profile";
@@ -433,5 +434,32 @@ describe("interpretAnswer", () => {
     expect(r.updatedKeys).toEqual(["climateInterests"]);
     expect(isOpenToSuggestions(r.profile)).toBe(true);
     expect(r.profile.preferences.retrainingAppetite).toBeUndefined();
+  });
+});
+
+describe("what the person typed (technical-plan.md D56)", () => {
+  it("is in neither elicit prompt, and comes back in the profile", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const typed = setInputs(cardsOnly(), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+
+    const infer = fakeLlm(inference());
+    const inferred = await inferPreferences(infer, { sessionId: SESSION_ID, profile: typed });
+    const interpret = fakeLlm(interpretation());
+    const interpreted = await interpretAnswer(interpret, {
+      sessionId: SESSION_ID,
+      profile: typed,
+      key: "retrainingAppetite",
+      answer: "a short course",
+    });
+
+    const prompts = [...infer.requests, ...interpret.requests].map((r) => JSON.stringify([r.system, r.messages]));
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) {
+      expect(prompt).toContain("## Preferences");
+      expect(prompt).not.toContain(MARKER);
+      expect(prompt).not.toContain("## Inputs");
+    }
+    expect(inferred.profile.inputs).toEqual(typed.inputs);
+    expect(interpreted.profile.inputs).toEqual(typed.inputs);
   });
 });

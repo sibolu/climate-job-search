@@ -156,6 +156,8 @@
 - **Reason:**
 - **Changed:**
 
+## Inputs
+
 ## Session Notes
 
 Cards confirmed on turn 3; user excluded C3 (wedding work) as not relevant.

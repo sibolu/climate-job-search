@@ -10,7 +10,7 @@
  *
  * ## The format ("labeled-bullet markdown")
  *
- * Seven `##` sections in a fixed order. Items (cards, fields, roles, queries)
+ * Eight `##` sections in a fixed order. Items (cards, fields, roles, queries)
  * are `### <ID>: <title>` headings followed by `- **Key:** value` lines.
  * IDs are stable: `C1`, `F1`, `R1`, `Q1`… are never renumbered; a new item
  * takes the highest existing number plus one. Minimal complete example:
@@ -86,6 +86,17 @@
  * - **Reason:** every result was an agency job, not in-house
  * - **Changed:** 2026-09-10
  *
+ * ## Inputs
+ *
+ * ### Resume
+ * > Video producer, Small Studio (2019–2022)
+ * >
+ * > ## Skills
+ * > - **Editing:** eight episodes a season
+ *
+ * ### Notes
+ * > Remote only. Open to a short course.
+ *
  * ## Session Notes
  *
  * Discussed C1 and F1. Next: ask about willingness to relocate.
@@ -115,8 +126,25 @@
  *   written before searches were per role has no `Role` line.
  * - Fit reasoning cites cards by ID in the text, e.g. `(C1, C3)`;
  *   `citedCardIds()` extracts them.
+ * - `Inputs` holds what the person typed, as typed (technical-plan.md D56):
+ *   `### Resume` and `### Notes`, every line written as a `> ` quote and a
+ *   blank line as a bare `>`, so pasted markdown (`## Skills`, `### C1: x`,
+ *   `- **Key:** value`) is never read as profile structure. To edit one by
+ *   hand, keep the `> ` in front of each line. A block with nothing typed in
+ *   it is left out. Any other `###` block under `Inputs` is kept as it is, so
+ *   a later input has a place without a format change. No prompt reads this
+ *   section: `serializeProfileForPrompt` leaves it out.
  *
  * ## Tolerance rules
+ *
+ * Inside `## Inputs` only two unquoted lines are structure: a `##` heading
+ * ends the section and a `###` heading names a block. Every other unquoted
+ * line (`- **Key:** value`, `#### x`, plain text) is kept as a line of the
+ * block it sits in, with a warning, and is written back quoted; it never
+ * becomes a card, a key or a note. Text before the first `###` heading is
+ * kept as the resume, and a repeated block is joined to the first, both with
+ * a warning. Because an unquoted `##` line does end the section, text pasted
+ * in by hand must keep its `> ` prefixes.
  *
  * `parseProfile` never throws on a string. Whitespace, blank lines, CRLF,
  * sections in any order, a missing section, an unknown `##` section, an
@@ -134,6 +162,15 @@
  * when the role is unknown), extra keys sorted, unknown sections last. So
  * `parse(serialize(p))` deep-equals `p` for any normalized profile and
  * `serialize(parse(md))` is idempotent, which keeps per-turn diffs small.
+ *
+ * `Inputs` follows the item convention: the `## Inputs` heading is always
+ * written, `### Resume` and `### Notes` only when they hold text, other
+ * blocks after them sorted by title. The text is stored as typed with three
+ * normalizations (`normalizeInputText`): CRLF and lone CR become LF, trailing
+ * whitespace on a line is dropped, and blank lines before the first and after
+ * the last line of text are dropped. Indentation, blank lines inside the text
+ * and a line's own leading `>` are kept: reading a line back removes exactly
+ * one `>` and the one space after it.
  */
 
 import { z } from "zod";
@@ -310,6 +347,18 @@ export const ExtraSectionSchema = z.object({
 });
 export type ExtraSection = z.infer<typeof ExtraSectionSchema>;
 
+/**
+ * What the person typed, as typed (technical-plan.md D56). Kept so they can
+ * see and revisit it; no prompt reads it. `extra` holds any other `###` block
+ * found under `## Inputs`, keyed by its title.
+ */
+export const InputsSchema = z.object({
+  resume: z.string(),
+  notes: z.string(),
+  extra: ExtraSchema,
+});
+export type Inputs = z.infer<typeof InputsSchema>;
+
 export const ProfileSchema = z.object({
   preferences: PreferencesSchema,
   cards: z.array(CardSchema),
@@ -317,6 +366,7 @@ export const ProfileSchema = z.object({
   fields: z.array(FieldSchema),
   roles: z.array(RoleSchema),
   queries: z.array(QuerySchema),
+  inputs: InputsSchema,
   sessionNotes: z.string(),
   /** Unknown `##` sections, preserved verbatim and emitted last. */
   extraSections: z.array(ExtraSectionSchema),
@@ -328,6 +378,10 @@ export interface ParseResult {
   warnings: string[];
 }
 
+export function emptyInputs(): Inputs {
+  return { resume: "", notes: "", extra: {} };
+}
+
 export function emptyProfile(): Profile {
   return {
     preferences: { other: [] },
@@ -336,6 +390,7 @@ export function emptyProfile(): Profile {
     fields: [],
     roles: [],
     queries: [],
+    inputs: emptyInputs(),
     sessionNotes: "",
     extraSections: [],
   };
@@ -345,7 +400,15 @@ export function emptyProfile(): Profile {
 // Label tables (shared by parser and serializer)
 // ---------------------------------------------------------------------------
 
-type SectionKind = "preferences" | "cards" | "skills" | "fields" | "roles" | "queries" | "notes";
+type SectionKind =
+  | "preferences"
+  | "cards"
+  | "skills"
+  | "fields"
+  | "roles"
+  | "queries"
+  | "inputs"
+  | "notes";
 
 const SECTION_TITLES: Record<SectionKind, string> = {
   preferences: "Preferences",
@@ -354,6 +417,7 @@ const SECTION_TITLES: Record<SectionKind, string> = {
   fields: "Fields",
   roles: "Role Shortlist",
   queries: "Queries",
+  inputs: "Inputs",
   notes: "Session Notes",
 };
 
@@ -364,8 +428,20 @@ const SECTION_ORDER: SectionKind[] = [
   "fields",
   "roles",
   "queries",
+  "inputs",
   "notes",
 ];
+
+type InputKey = "resume" | "notes";
+
+/** The two inputs the first screen collects, by their `###` block title. */
+const INPUT_TITLES: Record<InputKey, string> = { resume: "Resume", notes: "Notes" };
+
+const INPUT_ALIASES: Record<string, InputKey> = {
+  resume: "resume",
+  notes: "notes",
+  note: "notes",
+};
 
 const SECTION_ALIASES: Record<string, SectionKind> = {
   preferences: "preferences",
@@ -387,12 +463,14 @@ const SECTION_ALIASES: Record<string, SectionKind> = {
   queries: "queries",
   query: "queries",
   searchqueries: "queries",
+  inputs: "inputs",
+  input: "inputs",
   sessionnotes: "notes",
   notes: "notes",
   session: "notes",
 };
 
-const ID_PREFIX: Record<Exclude<SectionKind, "preferences" | "skills" | "notes">, string> = {
+const ID_PREFIX: Record<Exclude<SectionKind, "preferences" | "skills" | "inputs" | "notes">, string> = {
   cards: "C",
   fields: "F",
   roles: "R",
@@ -715,9 +793,21 @@ type RawSection = {
   items: RawItem[];
   /** Verbatim body lines (Session Notes, unknown sections). */
   body: string[];
+  /** `###` blocks under Inputs, in file order, each line already unquoted. */
+  blocks: RawInputBlock[];
   /** Lines that fit nowhere. */
   stray: string[];
 };
+
+type RawInputBlock = {
+  title: string;
+  lines: string[];
+  /** Whether the unquoted-text warning has been given for this block. */
+  warned: boolean;
+};
+
+/** One quoted Inputs line: up to three spaces, `>`, and the one space after it. */
+const INPUT_QUOTE_RE = /^ {0,3}> ?/;
 
 function normalizeNewlines(md: string): string {
   return md.replace(/\r\n?/g, "\n");
@@ -737,6 +827,7 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
   let section: RawSection | null = null;
   let item: RawItem | null = null;
   let entry: { label: string; lines: string[] } | null = null;
+  let inputBlock: RawInputBlock | null = null;
   const preamble: string[] = [];
 
   const isItemSection = (s: RawSection | null): boolean =>
@@ -761,17 +852,50 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
         warnings.push(`Line ${i + 1}: duplicate section "## ${title}" merged into the first one.`);
         section = existing;
       } else {
-        section = { kind, heading: title, entries: [], items: [], body: [], stray: [] };
+        section = { kind, heading: title, entries: [], items: [], body: [], blocks: [], stray: [] };
         sections.push(section);
         if (!kind) warnings.push(`Line ${i + 1}: unknown section "## ${title}" preserved as-is.`);
       }
       item = null;
       entry = null;
+      inputBlock = null;
       continue;
     }
 
     if (section === null) {
       if (!isBlank(line)) preamble.push(line.trim());
+      continue;
+    }
+
+    if (section.kind === "inputs") {
+      // Everything under Inputs is the person's own text (technical-plan.md
+      // D56). Only a `###` heading is structure here, and all it does is name
+      // a block: no line in this section becomes a card, a key or a note.
+      const blockTitle =
+        heading && heading[1].length === 3 ? heading[2].trim().replace(/:+$/, "").trim() : "";
+      if (blockTitle !== "") {
+        inputBlock = { title: blockTitle, lines: [], warned: false };
+        section.blocks.push(inputBlock);
+        continue;
+      }
+      const quote = INPUT_QUOTE_RE.exec(line);
+      const text = quote ? line.slice(quote[0].length) : line;
+      if (inputBlock === null) {
+        if (isBlank(text)) continue;
+        // This warning covers the line itself; a later unquoted one gets its own.
+        inputBlock = { title: INPUT_TITLES.resume, lines: [], warned: !quote };
+        section.blocks.push(inputBlock);
+        warnings.push(
+          `Line ${i + 1}: text under "## ${section.heading}" before a "###" heading was kept as the resume.`,
+        );
+      }
+      if (!quote && !isBlank(line) && !inputBlock.warned) {
+        inputBlock.warned = true;
+        warnings.push(
+          `Line ${i + 1}: unquoted text under "${section.heading} → ${inputBlock.title}" was kept as part of it.`,
+        );
+      }
+      inputBlock.lines.push(text);
       continue;
     }
 
@@ -869,7 +993,7 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
 function ensureSection(sections: RawSection[], kind: SectionKind): RawSection {
   let s = sections.find((x) => x.kind === kind);
   if (!s) {
-    s = { kind, heading: SECTION_TITLES[kind], entries: [], items: [], body: [], stray: [] };
+    s = { kind, heading: SECTION_TITLES[kind], entries: [], items: [], body: [], blocks: [], stray: [] };
     sections.push(s);
   }
   return s;
@@ -1308,6 +1432,46 @@ function bodyText(lines: string[]): string {
 }
 
 /**
+ * What the person typed, the way the profile stores it: LF newlines, no
+ * trailing whitespace on a line, no blank lines before or after the text.
+ * Everything else is kept as typed.
+ */
+export function normalizeInputText(text: string): string {
+  return bodyText(
+    normalizeNewlines(text)
+      .split("\n")
+      .map((l) => l.trimEnd()),
+  );
+}
+
+function parseInputs(section: RawSection | undefined, warnings: string[]): Inputs {
+  const inputs = emptyInputs();
+  const seen = new Set<string>();
+  const join = (current: string, text: string): string =>
+    current === "" ? text : text === "" ? current : `${current}\n${text}`;
+
+  for (const block of section?.blocks ?? []) {
+    const text = bodyText(block.lines);
+    const alias = norm(block.title);
+    const known = Object.hasOwn(INPUT_ALIASES, alias) ? INPUT_ALIASES[alias] : null;
+    const id = known ?? `extra:${block.title}`;
+    if (seen.has(id)) {
+      warnings.push(`Duplicate "### ${block.title}" under "## Inputs" was joined to the first one.`);
+    }
+    seen.add(id);
+    if (known !== null) {
+      inputs[known] = join(inputs[known], text);
+    } else {
+      inputs.extra[block.title] = join(
+        Object.hasOwn(inputs.extra, block.title) ? inputs.extra[block.title] : "",
+        text,
+      );
+    }
+  }
+  return inputs;
+}
+
+/**
  * Parses `profile.md`. Never throws on a string; problems are reported in
  * `warnings` and the closest sensible value is used instead.
  */
@@ -1323,6 +1487,7 @@ export function parseProfile(md: string): ParseResult {
     fields: parseFields(byKind("fields"), warnings),
     roles: parseRoles(byKind("roles"), warnings),
     queries: parseQueries(byKind("queries"), warnings),
+    inputs: parseInputs(byKind("inputs"), warnings),
     sessionNotes: bodyText(byKind("notes")?.body ?? []),
     extraSections: sections
       .filter((s) => s.kind === null)
@@ -1507,8 +1672,43 @@ function joinItems(blocks: string[][]): string[] {
   return blocks.flatMap((b, i) => (i === 0 ? b : ["", ...b]));
 }
 
+/** One Inputs block: its `###` title, then the text with every line quoted. */
+function serializeInputBlock(title: string, text: string): string[] {
+  const body = normalizeInputText(text);
+  const quoted = body === "" ? [] : body.split("\n").map((l) => (l === "" ? ">" : `> ${l}`));
+  return [`### ${title.trim()}`, ...quoted];
+}
+
+function serializeInputs(inputs: Inputs): string[] {
+  const blocks: string[][] = [];
+  for (const key of ["resume", "notes"] as const) {
+    if (normalizeInputText(inputs[key]) !== "") {
+      blocks.push(serializeInputBlock(INPUT_TITLES[key], inputs[key]));
+    }
+  }
+  for (const title of Object.keys(inputs.extra).sort()) {
+    blocks.push(serializeInputBlock(title, inputs.extra[title]));
+  }
+  return joinItems(blocks);
+}
+
 /** Writes the canonical `profile.md` text. Always ends with a single newline. */
 export function serializeProfile(profile: Profile): string {
+  return renderProfile(profile, { withInputs: true });
+}
+
+/**
+ * The profile text a prompt may read: the canonical text without the
+ * `## Inputs` section (technical-plan.md D56). What the person typed carries
+ * their contact details and the cards already say what every later step
+ * reasons from, so a model-facing rendering goes through this, never through
+ * `serializeProfile`.
+ */
+export function serializeProfileForPrompt(profile: Profile): string {
+  return renderProfile(profile, { withInputs: false });
+}
+
+function renderProfile(profile: Profile, { withInputs }: { withInputs: boolean }): string {
   const bodies: Record<SectionKind, string[]> = {
     preferences: serializePreferences(profile.preferences),
     cards: joinItems(profile.cards.map(serializeCard)),
@@ -1516,11 +1716,13 @@ export function serializeProfile(profile: Profile): string {
     fields: joinItems(profile.fields.map(serializeField)),
     roles: joinItems(profile.roles.map(serializeRole)),
     queries: joinItems(profile.queries.map(serializeQuery)),
+    inputs: serializeInputs(profile.inputs),
     notes: profile.sessionNotes.trim() === "" ? [] : [verbatimBody(profile.sessionNotes)],
   };
 
   const out: string[] = ["# Profile"];
   for (const kind of SECTION_ORDER) {
+    if (kind === "inputs" && !withInputs) continue;
     out.push("", `## ${SECTION_TITLES[kind]}`);
     if (bodies[kind].length > 0) out.push("", ...bodies[kind]);
   }
@@ -1761,4 +1963,19 @@ export function moveSkill(p: Profile, skill: string, to: SkillBucket): Profile {
 /** Replaces the session notes. */
 export function setSessionNotes(p: Profile, notes: string): Profile {
   return { ...p, sessionNotes: notes };
+}
+
+/**
+ * Records what the person typed on the first screen (technical-plan.md D56),
+ * normalized with `normalizeInputText`. Other Inputs blocks are left alone.
+ */
+export function setInputs(p: Profile, typed: { resume: string; notes: string }): Profile {
+  return {
+    ...p,
+    inputs: {
+      ...p.inputs,
+      resume: normalizeInputText(typed.resume),
+      notes: normalizeInputText(typed.notes),
+    },
+  };
 }

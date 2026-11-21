@@ -56,7 +56,7 @@ import {
   emptyProfile,
   KNOWN_PREFERENCE_KEYS,
   missingPreferences,
-  serializeProfile,
+  serializeProfileForPrompt,
   setClimateInterests,
   setPreference,
   type PreferenceKey,
@@ -477,7 +477,9 @@ export interface ElicitLlmResult {
 /**
  * The profile as the model sees it: preferences, active cards and skills.
  * Fields, roles and queries are noise for this job. Built with the contract's
- * own serializer, so the model reads the same format the user edits.
+ * own serializer, so the model reads the same format the user edits, minus
+ * the `## Inputs` section: what the person typed is never sent
+ * (technical-plan.md D56).
  */
 function profileForModel(p: Profile, { withCards }: { withCards: boolean }): string {
   const reduced: Profile = {
@@ -486,7 +488,7 @@ function profileForModel(p: Profile, { withCards }: { withCards: boolean }): str
     cards: withCards ? activeCards(p) : [],
     skills: withCards ? p.skills : emptyProfile().skills,
   };
-  return serializeProfile(reduced);
+  return serializeProfileForPrompt(reduced);
 }
 
 type TextKey = Exclude<PreferenceKey, "climateInterests">;

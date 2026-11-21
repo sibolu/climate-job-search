@@ -171,6 +171,8 @@
 - **Reason:**
 - **Changed:**
 
+## Inputs
+
 ## Session Notes
 
 Discovery ran on turn 4 with the reference collection plus web search; F1 and F2 accepted immediately.

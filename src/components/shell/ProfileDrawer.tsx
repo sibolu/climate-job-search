@@ -5,24 +5,15 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { parseProfile } from "@/lib/profile";
 import { PROFILE_MD_FILENAME, profileSummary, type SummarySection } from "@/lib/profile-summary";
 import type { SessionState } from "@/lib/session";
-import { exportSession, importSession } from "@/lib/session";
-import { EXPORT_FILENAME } from "@/lib/workspace";
+import { importSession } from "@/lib/session";
+
+import { saveFile, saveSessionExport } from "./save-file";
 
 export interface ProfileDrawerProps {
   state: SessionState;
   profileMd: string;
   onImport: (state: SessionState) => void;
   onClose: () => void;
-}
-
-function saveFile(text: string, type: string, filename: string) {
-  const blob = new Blob([text], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 /** One headed section; an empty one says so rather than disappearing. */
@@ -155,7 +146,7 @@ export default function ProfileDrawer({ state, profileMd, onImport, onClose }: P
           <button
             type="button"
             className="cc-drawer-btn"
-            onClick={() => saveFile(exportSession(state), "application/json", EXPORT_FILENAME)}
+            onClick={() => saveSessionExport(state)}
           >
             Download JSON
           </button>

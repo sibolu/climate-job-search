@@ -22,7 +22,7 @@ import {
   validateExploreOutput,
 } from "./explore";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, parseProfile, serializeProfile, upsertField } from "./profile";
+import { type Profile, parseProfile, serializeProfile, setInputs, upsertField } from "./profile";
 
 const METRICS: CallMetrics = {
   usage: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0 },
@@ -339,5 +339,20 @@ describe("exploreField", () => {
     const b = buildExploreMessage(p, p.fields[0]!, { field: null, roles: [], posts: [], related: [] });
     expect(a).toBe(b);
     expect(a).toContain("## Field to explore: F1:");
+  });
+});
+
+describe("what the person typed (technical-plan.md D56)", () => {
+  it("is not in the explore prompt, and comes back in the profile", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const typed = setInputs(profileWithField(), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+    const llm = fakeLlm([output()]);
+    const result = await exploreField({ sessionId: SESSION_ID, profile: typed, fieldId: "F1" }, { llm, reference, tools: [] });
+
+    expect(llm.requests.length).toBeGreaterThan(0);
+    for (const request of llm.requests) {
+      expect(JSON.stringify([request.system, request.messages])).not.toContain(MARKER);
+    }
+    expect(result.profile.inputs).toEqual(typed.inputs);
   });
 });

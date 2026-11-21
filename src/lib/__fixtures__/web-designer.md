@@ -141,6 +141,8 @@
 - **Reason:** too broad; mostly graphic design and brand roles
 - **Changed:** 2026-09-06
 
+## Inputs
+
 ## Session Notes
 
 User is firm on remote-only and no management track.

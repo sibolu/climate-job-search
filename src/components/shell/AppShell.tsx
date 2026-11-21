@@ -27,27 +27,30 @@ import type { LogLine, NavStep, View } from "@/lib/screens";
 import {
   FIND_ROLES_PILL,
   appendLogLines,
+  composeStartText,
   currentScreen,
   formatElapsed,
   hasLiveQueries,
   navStepFor,
-  showNav,
+  resumeView,
 } from "@/lib/screens";
 import { sendTurn } from "@/lib/turn-stream";
 import {
   applyTurnResponse,
   buildSelectedRolesTurnInput,
   nextStep,
+  recordStartInputs,
   rejectProfileSkill,
   restoreProfileSkill,
 } from "@/lib/workspace";
 
-import FirstRun from "./FirstRun";
 import Header from "./Header";
 import Highlights from "./Highlights";
 import Pending from "./Pending";
 import ProfileDrawer from "./ProfileDrawer";
+import ResumeScreen from "./ResumeScreen";
 import RoleBoard from "./RoleBoard";
+import { saveSessionExport } from "./save-file";
 import Searches from "./Searches";
 
 /**
@@ -68,7 +71,7 @@ export default function AppShell() {
   const [elapsed, setElapsed] = useState("0:00");
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [view, setView] = useState<View>("roles");
+  const [view, setView] = useState<View | undefined>(undefined);
   const [copiedAt, setCopiedAt] = useState<Record<string, number>>({});
   const [now, setNow] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -128,9 +131,16 @@ export default function AppShell() {
     });
   }
 
-  /** Sends one turn. Resolves true when the turn landed without an error. */
-  async function runTurn(step: StepName, input: TurnInput): Promise<boolean> {
-    if (state === null || busy) return false;
+  /**
+   * Sends one turn. Resolves true when the turn landed without an error.
+   * `from` is a session written just before the turn (the Start inputs,
+   * technical-plan.md D56): it is saved and sent instead of the React state,
+   * which has not caught up yet, so the response does not wipe it.
+   */
+  async function runTurn(step: StepName, input: TurnInput, from?: SessionState): Promise<boolean> {
+    const base = from ?? state;
+    if (base === null || busy) return false;
+    if (from !== undefined && from !== state) persist(from);
     const turnStartedAt = nowMs();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -139,7 +149,7 @@ export default function AppShell() {
     setLog([]);
     setStartedAt(turnStartedAt);
 
-    const request = buildTurnRequest(state, step, input);
+    const request = buildTurnRequest(base, step, input);
     const result = await sendTurn(request, { signal: controller.signal });
     if (!result.ok) {
       setBusy(false);
@@ -192,18 +202,27 @@ export default function AppShell() {
   // The post-turn assistant message is stored but never shown: there is no
   // rail to show it in, and the screens say what happened (technical-plan.md D49).
 
-  function onStart(text: string) {
-    void runTurn(nextStep(profile, { source: "paste" }), { kind: "message", content: text });
+  // What was typed is kept in the profile before the turn goes out, so a
+  // failed read keeps it (technical-plan.md D56); the cards step still reads
+  // the message.
+  async function onStart(resume: string, notes: string) {
+    if (state === null || busy) return;
+    const recorded = recordStartInputs(state, resume, notes);
+    const step = nextStep(profile, { source: "paste" });
+    const content = composeStartText(resume, notes);
+    const ok = await runTurn(step, { kind: "message", content }, recorded);
+    if (ok) setView("highlights");
   }
 
   // Discovery never auto-starts: the person presses "Find climate roles" (D38).
-  function onFindRoles() {
-    void runTurn("discover", { kind: "message", content: FIND_ROLES_PILL.value });
+  async function onFindRoles() {
+    const ok = await runTurn("discover", { kind: "message", content: FIND_ROLES_PILL.value });
+    if (ok) setView("roles");
   }
 
   function onNavigate(step: NavStep) {
     if (busy) return;
-    setView(step === "searches" ? "searches" : "roles");
+    setView(step);
   }
 
   // One turn writes a search for every ticked role and replaces a role's
@@ -213,7 +232,10 @@ export default function AppShell() {
     if (ok) setView("searches");
   }
 
-  /** "Start over" in the header, after its confirm: clears this browser's copy. */
+  /**
+   * "Start over", after the Resume page's dialog (technical-plan.md D55):
+   * clears this browser's copy.
+   */
   function onStartOver() {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -222,7 +244,7 @@ export default function AppShell() {
     setDrawerOpen(false);
     setErrorText(undefined);
     setLog([]);
-    setView("roles");
+    setView("resume");
     setCopiedAt({});
     persist(startOver());
   }
@@ -233,11 +255,9 @@ export default function AppShell() {
         <Header
           input={screenInput}
           current={navStepFor(screen)}
-          showNav={showNav(screen)}
           profileOpen={drawerOpen}
           onNavigate={onNavigate}
           onToggleProfile={() => setDrawerOpen((open) => !open)}
-          onStartOver={onStartOver}
         />
         {drawerOpen && state !== null ? (
           <ProfileDrawer
@@ -257,8 +277,19 @@ export default function AppShell() {
                 ))}
               </div>
             ) : null}
-            {screen === "firstRun" ? (
-              <FirstRun busy={busy} onStart={onStart} onOpenProfile={() => setDrawerOpen(true)} />
+            {screen === "resume" ? (
+              <ResumeScreen
+                // Remount once the stored session loads, so the boxes start from it.
+                key={state === null ? "loading" : "loaded"}
+                view={resumeView(profile)}
+                busy={busy}
+                onStart={(resume, notes) => void onStart(resume, notes)}
+                onOpenProfile={() => setDrawerOpen(true)}
+                onDownloadProfile={() => {
+                  if (state !== null) saveSessionExport(state);
+                }}
+                onStartOver={onStartOver}
+              />
             ) : null}
             {screen === "highlights" ? (
               <Highlights
@@ -270,7 +301,7 @@ export default function AppShell() {
                 onRemoveSkill={(skill) => writeSession((s) => rejectProfileSkill(s, skill))}
                 onRestoreSkill={(skill) => writeSession((s) => restoreProfileSkill(s, skill))}
                 onToggleInterest={(area) => writeProfile((p) => toggleClimateInterest(p, area))}
-                onFindRoles={onFindRoles}
+                onFindRoles={() => void onFindRoles()}
               />
             ) : null}
             {screen === "pending" ? <Pending elapsed={elapsed} log={log} /> : null}

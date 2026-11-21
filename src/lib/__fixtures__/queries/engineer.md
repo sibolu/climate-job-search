@@ -174,6 +174,8 @@
 - **Reason:** two senior product roles at manufacturers, one hybrid
 - **Changed:** 2026-09-10
 
+## Inputs
+
 ## Session Notes
 
 Discussed F1 and F2. User does not want to pursue a PE license.

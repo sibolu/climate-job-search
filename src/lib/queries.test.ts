@@ -192,6 +192,19 @@ describe("generation prompt", () => {
 });
 
 describe("generateQueries", () => {
+  it("does not send what the person typed, and returns it in the profile (technical-plan.md D56)", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const inputs = { resume: `resume ${MARKER}`, notes: `notes ${MARKER}`, extra: { Later: `later ${MARKER}` } };
+    const llm = fakeLlm([roleOutput()]);
+    const result = await generateQueries({ sessionId: SESSION_ID, profile: { ...engineer(), inputs } }, { llm });
+
+    expect(llm.requests.length).toBeGreaterThan(0);
+    for (const request of llm.requests) {
+      expect(JSON.stringify([request.system, request.messages])).not.toContain(MARKER);
+    }
+    expect(result.profile.inputs).toEqual(inputs);
+  });
+
   it("writes one LinkedIn query per selected role across fields, replacing a role's untried one in place", async () => {
     const llm = fakeLlm([roleOutput()]);
     const before = engineer();
@@ -346,6 +359,22 @@ describe("reviseQueries", () => {
     notes: "User will not pursue a PE license; steer away from stamped-design roles.",
     preferenceEdits: [{ key: "retrainingAppetite", value: "short courses only; no PE license" }],
   };
+
+  it("does not send what the person typed, and returns it in the profile (technical-plan.md D56)", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const inputs = { resume: `resume ${MARKER}`, notes: `notes ${MARKER}`, extra: { Later: `later ${MARKER}` } };
+    const llm = fakeLlm([output]);
+    const result = await reviseQueries(
+      { sessionId: SESSION_ID, profile: { ...engineer(), inputs }, feedback },
+      { llm, changedAt: "2026-09-12" },
+    );
+
+    expect(llm.requests.length).toBeGreaterThan(0);
+    for (const request of llm.requests) {
+      expect(JSON.stringify([request.system, request.messages])).not.toContain(MARKER);
+    }
+    expect(result.profile.inputs).toEqual(inputs);
+  });
 
   it("applies 'bad fit: all roles need PE license': verdict lands, queries retire/narrow, explanation returned", async () => {
     const llm = fakeLlm([output]);

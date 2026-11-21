@@ -40,4 +40,6 @@
 
 ## Queries
 
+## Inputs
+
 ## Session Notes

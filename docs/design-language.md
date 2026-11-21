@@ -49,7 +49,8 @@ reader might fear otherwise.
 
 - Rejected: *Explore the climate fields open to you.* Implies other fields
   are closed.
-- Accepted: *Explore the climate fields that could use your skills.*
+- Accepted: *Explore the climate fields that could most use your skills.*
+  ("most" says the list ranks; it does not mark a boundary.)
 - Accepted: the interest question keeps *The answer decides which roles are
   listed first* and adds a line that unselected areas are not filtered out.
 
@@ -63,8 +64,9 @@ remove the icon.
 
 - Rejected: first-run screen with "paste your resume" in the lead, the
   textarea placeholder and a label, three times on one screen.
-- Accepted: the textarea placeholder carries the instruction; the headline
-  carries the promise; the lead describes what comes next.
+- Accepted: each box has one visible label that carries the instruction and
+  no placeholder; the headline carries the promise; the lead describes what
+  comes next.
 - Rejected: *5 roles ticked* above a button reading *Write … for 5 roles*,
   plus an info icon explaining the same thing.
 - Rejected: a field's one-line description that restates its title. Keep
@@ -79,8 +81,8 @@ promise an output before the step that unlocks it.
 
 - Rejected: *See climate fields… and the searches to run on job boards.*
   Skips the step where the reader picks fields and roles.
-- Accepted: *Explore the climate fields that could use your skills, pick the
-  ones that interest you, and get searches to run on job boards.*
+- Accepted: *Explore the climate fields that could most use your skills, pick
+  the ones that interest you, and get searches to run on job boards.*
 
 ### 5. Leave room for discovery
 
@@ -192,8 +194,8 @@ note it for later rather than keeping it to be safe.
 ```
 Your experience already fits climate work. Find out where.
 
-Explore the climate fields that could use your skills, pick the ones that
-interest you, and get searches to run on job boards.
+Explore the climate fields that could most use your skills, pick the ones
+that interest you, and get searches to run on job boards.
 ```
 
 ## Open questions

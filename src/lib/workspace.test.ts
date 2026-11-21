@@ -4,6 +4,8 @@ import type { Card, Field, Profile, Query } from "./profile";
 import { activeCards, emptyProfile, parseProfile, serializeProfile, activeSkills } from "./profile";
 import type { QueryFeedback } from "./session";
 import {
+  MAX_MESSAGE_CHARS,
+  MAX_PROFILE_MD_CHARS,
   buildTurnRequest,
   clearSession,
   exportSession,
@@ -29,6 +31,7 @@ import {
   normalizeFeedbackReason,
   profileView,
   liveQueryForRole,
+  recordStartInputs,
   rejectProfileSkill,
   restoreProfileSkill,
   rolesForField,
@@ -400,5 +403,46 @@ describe("query feedback", () => {
     const long = "x".repeat(MAX_FEEDBACK_REASON + 100);
     expect(normalizeFeedbackReason(long)).toHaveLength(MAX_FEEDBACK_REASON);
     expect(normalizeFeedbackReason("  hi  ")).toBe("hi");
+  });
+});
+
+describe("recordStartInputs (technical-plan.md D56)", () => {
+  it("writes what was typed into the profile and leaves the rest alone", () => {
+    const base = stateWith({ ...emptyProfile(), cards: [card("C1")] });
+    const once = recordStartInputs(base, "Resume line\r\n## Skills\r\n", "remote only");
+    expect(profileView(once).warnings).toEqual([]);
+    expect(profileView(once).profile.inputs).toEqual({
+      resume: "Resume line\n## Skills",
+      notes: "remote only",
+      extra: {},
+    });
+    expect(profileView(once).profile.cards).toEqual(profileView(base).profile.cards);
+    expect(profileView(once).profile.skills).toEqual(profileView(base).profile.skills);
+
+    const twice = recordStartInputs(once, "second paste", "");
+    expect(profileView(twice).profile.inputs).toEqual({ resume: "second paste", notes: "", extra: {} });
+  });
+
+  it("records nothing when the two inputs together are longer than a message can be", () => {
+    const base = newSessionState();
+    const atLimit = recordStartInputs(base, "x".repeat(MAX_MESSAGE_CHARS - 4), "note");
+    expect(profileView(atLimit).profile.inputs.resume).toHaveLength(MAX_MESSAGE_CHARS - 4);
+    expect(recordStartInputs(base, "x".repeat(MAX_MESSAGE_CHARS - 3), "note")).toBe(base);
+    // An earlier recording is kept, not cleared, when a later paste is too long.
+    expect(recordStartInputs(atLimit, "x".repeat(MAX_MESSAGE_CHARS + 1), "")).toBe(atLimit);
+  });
+
+  it("never takes the profile past its cap", () => {
+    // The quoting's worst case: every line one character long, so each doubles.
+    const worst = `${"a\n".repeat(MAX_MESSAGE_CHARS / 2 - 1)}a`;
+    expect(worst.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS);
+    const recorded = recordStartInputs(newSessionState(), worst, "");
+    expect(profileView(recorded).profile.inputs.resume).toBe(worst);
+    expect(recorded.profileMd.length).toBeLessThanOrEqual(MAX_PROFILE_MD_CHARS);
+
+    const nearlyFull = stateWith({ ...emptyProfile(), sessionNotes: "n".repeat(MAX_PROFILE_MD_CHARS - 1000) });
+    expect(nearlyFull.profileMd.length).toBeLessThanOrEqual(MAX_PROFILE_MD_CHARS);
+    expect(recordStartInputs(nearlyFull, "x".repeat(2000), "")).toBe(nearlyFull);
+    expect(profileView(recordStartInputs(nearlyFull, "short", "")).profile.inputs.resume).toBe("short");
   });
 });

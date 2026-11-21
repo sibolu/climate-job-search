@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CallMetrics, Llm } from "./llm";
-import { emptyProfile, parseProfile, type Profile, serializeProfile, upsertCard, upsertField, upsertQuery } from "./profile";
+import { emptyProfile, parseProfile, type Profile, serializeProfile, setInputs, upsertCard, upsertField, upsertQuery } from "./profile";
 import type { TurnRequest } from "./session";
 import {
   discoverMessage,
@@ -299,5 +299,31 @@ describe("turnErrorMessage", () => {
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 429 }))).toContain("busy");
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 503 }))).toContain("problem");
     expect(turnErrorMessage("nope")).toContain("Something went wrong");
+  });
+});
+
+describe("runTurn — what the person typed (technical-plan.md D56)", () => {
+  const typed = setInputs(emptyProfile(), { resume: "typed resume\n## Skills\n> quoted", notes: "typed notes" });
+
+  it("the cards turn takes its text from the message and returns the stored inputs unchanged", async () => {
+    const texts: string[] = [];
+    const base = fakeDeps();
+    const deps = fakeDeps({
+      extractCards: (llm, req) => {
+        texts.push(req.text);
+        return base.extractCards(llm, req);
+      },
+    });
+    const res = await runTurn(request("cards", typed, "my resume text"), deps);
+    expect(texts).toEqual(["my resume text"]);
+    const after = parseProfile(res.profileMd!).profile;
+    expect(after.cards).toHaveLength(1);
+    expect(after.inputs).toEqual(typed.inputs);
+  });
+
+  it("a later turn returns them unchanged too", async () => {
+    const withCard = { ...cardsOnly(), inputs: typed.inputs };
+    const res = await runTurn(request("elicit", withCard, "Energy"), fakeDeps());
+    expect(parseProfile(res.profileMd!).profile.inputs).toEqual(typed.inputs);
   });
 });

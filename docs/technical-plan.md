@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D54, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D56, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -36,7 +36,7 @@ Defaults; a decision in §5 overrides a row here.
 | Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
 | LLM | Anthropic TS SDK, model per step: `claude-opus-5-5` for every step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on both models. See D44, D45, D52 |
 | Grounding | Supabase reference collection, then the model's own knowledge. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Baseline before a larger roles-and-occupations catalogue; hard constraint still enforced in code |
-| Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" in the header | PRD's "single .md the user keeps"; server is stateless |
+| Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
 | Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
@@ -53,11 +53,14 @@ spacing and interaction states come from its README. Its layout (assistant
 rail, field board, feedback screen) was replaced after the first browser
 run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
 
-- **Header:** the product mark, a three-step nav (1 Highlights, 2 Roles,
-  3 Searches), "Your profile", which opens the drawer, and "Start over",
-  which asks for confirmation, clears this browser's copy and returns to
-  first run. No rail, no tabs, no composer (D42, D49).
-- **First run:** paste a resume or bio, optional notes, Start. Runs `cards`.
+- **Header:** a four-item nav (Resume, Highlights, Roles, Searches; no
+  numbers, steps not yet reached disabled, every reached step a link back)
+  and "Your profile", which opens the drawer. No product mark, no rail, no
+  tabs, no composer (D42, D49, D55).
+- **Resume:** before a paste, paste a resume or bio, optional notes, Start;
+  the two are kept in the profile (D56), then `cards` runs. After, the
+  stored text read-only and the app's only "Start over", behind a dialog
+  that offers the profile download first (D55).
 - **Highlights:** "Skills" first: one row of tiles, accepted unless
   removed, each with a single remove control; removed skills stay visible,
   struck, with a control to add them back (D53). Then the experience cards,
@@ -221,9 +224,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    and an expiry. Signing and verification use the Web Crypto API so the gate
    stays portable to the Edge runtime.
 9. **`profile.md` format is "labeled-bullet markdown"**, defined once in the
-   header comment of `src/lib/profile.ts`: seven `##` sections in fixed order
+   header comment of `src/lib/profile.ts`: eight `##` sections in fixed order
    (Preferences, Experience Cards, Skills, Fields, Role Shortlist, Queries,
-   Session Notes); items are `### <ID>: <title>` headings with
+   Inputs, Session Notes; Inputs added by D56); items are `### <ID>: <title>` headings with
    `- **Key:** value` lines; lists are comma-separated inline except Sources
    (one URL per indented `-` line). No YAML or JSON blocks, so a nontechnical
    user can read and edit it in a textarea. Preferences are stated unless
@@ -768,7 +771,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     stand.
     - `Rail.tsx` is deleted. The header carries the nav (1 Highlights,
       2 Roles, 3 Searches), "Your profile" and "Start over" (confirm, then
-      clear this browser's copy, then first run).
+      clear this browser's copy, then first run). (Superseded by D55: four
+      unnumbered items, and "Start over" only on the Resume page.)
     - Highlights holds the expertise block, collapsed cards with S/A/R
       behind "Details", the two questions inline (superseded by D54: one
       optional question), and one "Find climate roles" button. Its label is `FIND_ROLES_PILL` in `screens.ts`, which
@@ -903,6 +907,55 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       (`QuestionContext`, `QuestionView.answer`, `answerRows`,
       `INFO_TIPS.answer` are deleted from `screens.ts`; `interestPills`
       renders the six pills with their pressed state).
+
+55. **A four-item nav and a Resume page that holds "Start over"
+    (2026-11-20).** From the 2026-11-19 browser walkthrough.
+    - The nav is Resume · Highlights · Roles · Searches (`NAV_STEPS`,
+      `NAV_LABELS` in `screens.ts`): no numbers, always shown, steps not yet
+      reached disabled, every reached step a link back. This fixes the
+      Highlights item, which landed on Roles once fields existed. The
+      `firstRun` screen is renamed `resume`.
+    - The Resume page (`ResumeScreen.tsx`) has two states, chosen by
+      `resumeView` in `screens.ts`. Before any card: the entry form, both
+      boxes starting from `profile.inputs` (non-empty only when an earlier
+      Start failed), each with one visible label and no placeholder. Once
+      cards exist: the stored resume and notes read-only, or "This profile
+      was saved without its resume text." for a profile saved before D56;
+      editing the resume and reading it again is not built
+      (`docs/backlog.md` §1).
+    - "Start over" lives only on the Resume page, behind a native `<dialog>`
+      (`StartOverDialog.tsx`, `showModal()`, no `window.confirm`) that
+      offers "Download profile" first: the same JSON the drawer's Export
+      writes and Import reads back (`saveSessionExport` in
+      `src/components/shell/save-file.ts`).
+    - The green mark is removed from the header. Re-running discovery from
+      Highlights updates the roles; the note under the button says so.
+
+56. **What the person types is kept in the profile (2026-11-20).** The
+    user's decision: inputs are stored in the profile alongside selections,
+    "so the user can always see what they've input and it lets the user
+    revisit prior pages". This reverses the earlier stance that the pasted
+    text is not kept.
+    - `## Inputs` is the eighth section, between `## Queries` and
+      `## Session Notes`, with `### Resume` and `### Notes`. Every line is
+      written as a `> ` quote (a blank line as a bare `>`), so pasted
+      markdown is never read as profile structure; reading strips exactly
+      one `>` and one space. Unknown `###` blocks under it survive a round
+      trip, so a later input needs no format change.
+    - Normalisation (`normalizeInputText`): CRLF and CR become LF, trailing
+      whitespace per line and outer blank lines are dropped.
+    - The browser writes it when Start is pressed (`recordStartInputs` in
+      `workspace.ts`), before the turn is sent, and sends the turn from
+      that recorded state, so a failed read keeps what was typed. Nothing
+      is recorded when the text exceeds the message cap. The cards step
+      still reads its text from the message.
+    - No prompt reads `inputs`: the raw resume carries contact details, and
+      the cards are what every later step reasons from.
+      `serializeProfileForPrompt` omits the section, and marker tests pin
+      all five prompts (elicit, discover, explore, queries, revise).
+    - It stays in `localStorage` with the rest of the profile and travels in
+      each turn's request body; the server remains stateless and logs no
+      bodies.
 
 ---
 
