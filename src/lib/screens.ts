@@ -9,13 +9,8 @@
  */
 
 import type { AnswerPill } from "./session";
-import {
-  ELICIT_ORDER,
-  QUESTIONS,
-  isOpenToSuggestions,
-  pillsFor,
-} from "./elicit";
-import type { Ask, Board, Field, PreferenceKey, Profile, Query, Role } from "./profile";
+import { pillsFor } from "./elicit";
+import type { Ask, Board, Field, Profile, Query, Role } from "./profile";
 import { activeCards, citedCardIds, rolesForField } from "./profile";
 import { liveQueryForRole, selectedRoles } from "./workspace";
 
@@ -103,7 +98,6 @@ export function showNav(screen: Screen): boolean {
 
 export const INFO_TIPS = {
   excludeCard: "Excluded highlights are not used to match roles.",
-  answer: "Your answer is used to rank roles.",
   writeSearches: "Each ticked role becomes one LinkedIn search.",
   fieldAsk: "Your answer is saved to your profile. It does not change the order of these roles.",
 } as const;
@@ -134,110 +128,42 @@ export function composeStartText(pasted: string, notes: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// The two preference questions (D38, D48: seniority is no longer asked)
+// The interest question (technical-plan.md D54)
 // ---------------------------------------------------------------------------
 
 /**
  * Plain-words names for the asked questions. `PREFERENCE_LABELS` in
- * `elicit.ts` are profile keys ("Retraining appetite"); these are what a
- * person reads on screen.
+ * `elicit.ts` are profile keys; these are what a person reads on screen. One
+ * question is asked, optional and multi-select (D54).
  */
-export const QUESTION_LABELS: Record<PreferenceKey, string> = {
-  climateInterests: "What draws you to climate work",
-  retrainingAppetite: "How much retraining you're open to",
-  location: "Where you want to be based",
-  workMode: "How you want to work",
-  seniority: "Your level",
-};
+export const QUESTION_LABELS = {
+  climateInterests: "Which area of climate work interests you most?",
+} as const;
 
-/** True when this preference already has a value on the profile. */
-export function hasPreference(p: Profile, key: PreferenceKey): boolean {
-  if (key === "climateInterests") {
-    return (p.preferences.climateInterests?.values.length ?? 0) > 0;
-  }
-  return (p.preferences[key]?.value.trim() ?? "") !== "";
-}
+/** The line under the interest question: picks rank, never filter (D54). */
+export const INTEREST_NOTE =
+  "Pick as many as you like. Your picks decide which roles are listed first; roles in other areas still appear.";
 
-/** The `ELICIT_ORDER` keys still unanswered, in order. */
-export function remainingQuestions(p: Profile): PreferenceKey[] {
-  return ELICIT_ORDER.filter((key) => !hasPreference(p, key));
-}
-
-export interface QuestionPill extends AnswerPill {
-  /** This pill is the recorded answer; drawn pressed. */
-  selected: boolean;
-}
-
-export interface QuestionView {
-  key: PreferenceKey;
-  label: string;
-  question: string;
-  pills: QuestionPill[];
-  /** The recorded answer in plain words; empty while unanswered. */
-  answer: string;
-}
-
-export interface QuestionContext {
-  /** Sector groups from the server's own pills, when the cards turn sent any. */
-  sectorGroups?: readonly string[];
+export interface InterestPill extends AnswerPill {
+  /** This area is one of the person's picks; drawn pressed. */
+  pressed: boolean;
 }
 
 function sameAnswer(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** True when `pill` is the answer recorded for `key`. */
-export function pillSelected(p: Profile, key: PreferenceKey, pill: AnswerPill): boolean {
-  if (key === "climateInterests") {
-    const values = p.preferences.climateInterests?.values ?? [];
-    return values.some((value) => sameAnswer(value, pill.value));
-  }
-  const value = p.preferences[key]?.value ?? "";
-  return value.trim() !== "" && sameAnswer(value, pill.value);
-}
-
 /**
- * Both asked questions, in `ELICIT_ORDER`, shown at once on the Highlights
- * screen. An answered one keeps its pills so tapping another changes the
- * answer (this replaced the rail's "Change an answer", technical-plan.md D49).
+ * The six climate areas in `CLIMATE_AREAS` order, each pressed when the
+ * profile's `Climate interests` holds it. Tapping one toggles it through
+ * `toggleClimateInterest`; picking none is a valid answer (D54).
  */
-export function questionViews(p: Profile, ctx: QuestionContext = {}): QuestionView[] {
-  return ELICIT_ORDER.map((key) => ({
-    key,
-    label: QUESTION_LABELS[key],
-    question: QUESTIONS[key],
-    pills: pillsFor(key, { sectorGroups: ctx.sectorGroups ?? [] }).map((pill) => ({
-      ...pill,
-      selected: pillSelected(p, key, pill),
-    })),
-    answer: preferenceText(p, key),
+export function interestPills(p: Profile): InterestPill[] {
+  const values = p.preferences.climateInterests?.values ?? [];
+  return pillsFor("climateInterests").map((pill) => ({
+    ...pill,
+    pressed: values.some((value) => sameAnswer(value, pill.value)),
   }));
-}
-
-export interface AnswerRow {
-  key: PreferenceKey;
-  label: string;
-  /** Empty string when the preference is not answered yet. */
-  value: string;
-}
-
-/** Both asked keys with their current values, in plain words. */
-export function answerRows(p: Profile): AnswerRow[] {
-  return ELICIT_ORDER.map((key) => ({
-    key,
-    label: QUESTION_LABELS[key],
-    value: preferenceText(p, key),
-  }));
-}
-
-/** One preference rendered for display; empty when unset. */
-export function preferenceText(p: Profile, key: PreferenceKey): string {
-  if (key === "climateInterests") {
-    const values = p.preferences.climateInterests?.values ?? [];
-    if (values.length === 0) return "";
-    return isOpenToSuggestions(p) ? "open to suggestions" : values.join(", ");
-  }
-  return p.preferences[key]?.value.trim() ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -259,21 +185,15 @@ export interface FindRolesGate {
 
 /**
  * Discovery never auto-starts (D38): the person excludes highlights first,
- * and the turn costs about $0.50. The note names only things visible on the
- * Highlights screen, never a panel that no longer exists (D49).
+ * and the turn costs about $0.50. The interest question is optional, so only
+ * an active highlight is required (D54). The note names only things visible
+ * on the Highlights screen, never a panel that no longer exists (D49).
  */
 export function findRolesGate(p: Profile): FindRolesGate {
   if (activeCards(p).length === 0) {
     return { enabled: false, note: "Include at least one highlight above first." };
   }
-  const remaining = remainingQuestions(p);
-  if (remaining.length === ELICIT_ORDER.length) {
-    return { enabled: false, note: "Answer the two questions above first." };
-  }
-  if (remaining.length > 0) {
-    return { enabled: false, note: `Answer “${QUESTION_LABELS[remaining[0]]}” above first.` };
-  }
-  return { enabled: true, note: "About a minute. Nothing else to do while it runs." };
+  return { enabled: true, note: "You can come back and change any of this." };
 }
 
 // ---------------------------------------------------------------------------

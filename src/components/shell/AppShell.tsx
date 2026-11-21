@@ -11,9 +11,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { AnswerPill, SessionState, StepName, TurnInput } from "@/lib/session";
+import type { SessionState, StepName, TurnInput } from "@/lib/session";
 import { clearSession, buildTurnRequest, loadSession, saveSession, startOver } from "@/lib/session";
-import { applyPillAnswer } from "@/lib/elicit";
+import { toggleClimateInterest } from "@/lib/elicit";
 import type { Card, Profile } from "@/lib/profile";
 import {
   addOtherPreference,
@@ -68,7 +68,6 @@ export default function AppShell() {
   const [elapsed, setElapsed] = useState("0:00");
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [sectorGroups, setSectorGroups] = useState<string[]>([]);
   const [view, setView] = useState<View>("roles");
   const [copiedAt, setCopiedAt] = useState<Record<string, number>>({});
   const [now, setNow] = useState(0);
@@ -168,8 +167,6 @@ export default function AppShell() {
             saveSession(next);
             return next;
           });
-          const values = response.pills?.map((pill: AnswerPill) => pill.value) ?? [];
-          if (values.length > 0) setSectorGroups(values);
         }
       }
     } catch {
@@ -223,7 +220,6 @@ export default function AppShell() {
     clearSession();
     setBusy(false);
     setDrawerOpen(false);
-    setSectorGroups([]);
     setErrorText(undefined);
     setLog([]);
     setView("roles");
@@ -267,14 +263,13 @@ export default function AppShell() {
             {screen === "highlights" ? (
               <Highlights
                 profile={profile}
-                sectorGroups={sectorGroups}
                 onExclude={(cardId, excluded) =>
                   writeProfile((p) => setCardExcluded(p, cardId, excluded))
                 }
                 onEditCard={(card: Card) => writeProfile((p) => upsertCard(p, card))}
                 onRemoveSkill={(skill) => writeSession((s) => rejectProfileSkill(s, skill))}
                 onRestoreSkill={(skill) => writeSession((s) => restoreProfileSkill(s, skill))}
-                onAnswer={(key, pill) => writeProfile((p) => applyPillAnswer(p, key, pill))}
+                onToggleInterest={(area) => writeProfile((p) => toggleClimateInterest(p, area))}
                 onFindRoles={onFindRoles}
               />
             ) : null}

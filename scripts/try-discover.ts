@@ -1,7 +1,7 @@
 /**
- * `pnpm try:discover <profile.md> [profile.md-out] [--interest=<pill value>]
- * [--retraining=<pill value>]` — the Phase 1.4 acceptance check, and the
- * Gate 1 script to run on a real profile.
+ * `pnpm try:discover <profile.md> [profile.md-out] [--interest=<area>[,<area>...]]`
+ * — the Phase 1.4 acceptance check, and the Gate 1 script to run on a real
+ * profile.
  *
  * It reads a `profile.md`, runs `discoverFields` (one live `discover` call
  * through `src/lib/llm.ts`, no web tools — technical-plan.md D44), prints the
@@ -15,13 +15,15 @@
  * keeps such a field and no screen renders evidence lines (D50), so failing
  * on it would hold the script to a rule the product does not have.
  *
- * `--interest` and `--retraining` record the two pill-only answers the app
- * collects before discovery (D48), the way the app does: the value must be
- * one of the pills `pillsFor` offers and is written with `applyPillAnswer`.
- * An unknown value lists the pills and exits before any model call.
+ * `--interest` records the one answer the app collects before discovery
+ * (technical-plan.md D54), the way the app does: a comma-separated list of
+ * the six climate areas (`CLIMATE_AREAS`), each written with
+ * `toggleClimateInterest`. The list replaces any interests already in the
+ * profile, so a run is repeatable. An unknown area lists the six and exits
+ * before any model call.
  *
  *   pnpm try:discover src/lib/__fixtures__/discover/videographer.md
- *   pnpm try:discover profile.md out/profile.md --interest="open to suggestions" --retraining="none, use existing skills"
+ *   pnpm try:discover profile.md out/profile.md --interest="Energy,Carbon Removal"
  *
  * It never echoes the profile except as the output the app would store in
  * the browser. Needs `ANTHROPIC_API_KEY` and the local Supabase stack (the
@@ -33,19 +35,15 @@ import process from "node:process";
 
 import { DiscoverInputError, discoverFields, droppedSummary } from "../src/lib/discover";
 import { catalogueSourceUrls, citedActiveCardIds, hasLevelWord } from "../src/lib/discover";
-import { applyPillAnswer, pillsFor } from "../src/lib/elicit";
-import { listFields, listRoles, listSectorGroups } from "../src/lib/reference";
-import { type PreferenceKey, parseProfile, serializeProfile } from "../src/lib/profile";
+import { CLIMATE_AREAS, toggleClimateInterest } from "../src/lib/elicit";
+import { listFields, listRoles } from "../src/lib/reference";
+import { parseProfile, serializeProfile, setClimateInterests } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
 
-const USAGE =
-  "usage: pnpm try:discover <profile.md> [profile.md-out] [--interest=<pill value>] [--retraining=<pill value>]";
+const USAGE = "usage: pnpm try:discover <profile.md> [profile.md-out] [--interest=<area>[,<area>...]]";
 
-/** The two questions the app asks before discovery (technical-plan.md D48), by flag. */
-const ANSWER_FLAGS: Readonly<Record<string, PreferenceKey>> = {
-  "--interest": "climateInterests",
-  "--retraining": "retrainingAppetite",
-};
+/** The one question the app asks before discovery (technical-plan.md D54). */
+const INTEREST_FLAG = "--interest";
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
@@ -56,7 +54,8 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const flags = args.filter((a) => a.startsWith("-"));
   const [input, output] = args.filter((a) => !a.startsWith("-"));
-  if (input === undefined || flags.some((f) => ANSWER_FLAGS[f.split("=")[0] ?? ""] === undefined)) fail(USAGE);
+  const interestFlag = flags.find((f) => f.startsWith(`${INTEREST_FLAG}=`));
+  if (input === undefined || flags.length > 1 || (flags.length === 1 && interestFlag === undefined)) fail(USAGE);
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -71,17 +70,14 @@ async function main(): Promise<void> {
   for (const w of parsed.warnings) process.stderr.write(`warning: ${w}\n`);
 
   let profile = parsed.profile;
-  if (flags.length > 0) {
-    const ctx = { sectorGroups: await listSectorGroups() };
-    for (const flag of flags) {
-      const [name = "", ...rest] = flag.split("=");
-      const key = ANSWER_FLAGS[name];
-      if (key === undefined) fail(USAGE);
-      const pills = pillsFor(key, ctx);
-      const pill = pills.find((p) => p.value === rest.join("="));
-      if (pill === undefined) fail(`${name} takes one of: ${pills.map((p) => `"${p.value}"`).join(", ")}`);
-      profile = applyPillAnswer(profile, key, pill);
+  if (interestFlag !== undefined) {
+    const areas = [...new Set(interestFlag.slice(INTEREST_FLAG.length + 1).split(",").map((a) => a.trim()))];
+    if (areas.some((a) => !CLIMATE_AREAS.includes(a))) {
+      fail(`${INTEREST_FLAG} takes a comma-separated list of: ${CLIMATE_AREAS.map((a) => `"${a}"`).join(", ")}`);
     }
+    // The flag is the whole answer: start from no interests, then pick each area as a pill click would.
+    profile = setClimateInterests(profile, []);
+    for (const area of areas) profile = toggleClimateInterest(profile, area);
   }
 
   const started = Date.now();

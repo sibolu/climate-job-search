@@ -2,51 +2,51 @@
 
 import { useState } from "react";
 
-import type { AnswerPill } from "@/lib/session";
-import { activeSkills, type Card, type PreferenceKey, type Profile } from "@/lib/profile";
+import { activeSkills, type Card, type Profile } from "@/lib/profile";
 import {
   FIND_ROLES_PILL,
   INFO_TIPS,
+  INTEREST_NOTE,
+  QUESTION_LABELS,
   findRolesGate,
   highlightsCountNote,
-  questionViews,
+  interestPills,
 } from "@/lib/screens";
 
 import InfoTip from "./InfoTip";
 
 export interface HighlightsProps {
   profile: Profile;
-  /** Sector groups carried by the cards turn's pills, when it sent any. */
-  sectorGroups: readonly string[];
   onExclude: (cardId: string, excluded: boolean) => void;
   onEditCard: (card: Card) => void;
   onRemoveSkill: (skill: string) => void;
   /** Puts a removed skill back, so a mis-click is not final (technical-plan.md D53). */
   onRestoreSkill: (skill: string) => void;
-  onAnswer: (key: PreferenceKey, pill: AnswerPill) => void;
+  /** Adds or removes one climate area; written locally, no turn (D54). */
+  onToggleInterest: (area: string) => void;
   onFindRoles: () => void;
 }
 
 /**
  * The Highlights step, top to bottom: the person's skills, the collapsed
- * highlight cards, the two preference questions, and one button. Corrections
+ * highlight cards, the one optional interest question (technical-plan.md
+ * D54), and one button. Corrections
  * happen here, through the UI — there is no free-text composer (D42) and no
  * rail (technical-plan.md D49). Discovery starts only when the person presses
  * the button (D38).
  */
 export default function Highlights({
   profile,
-  sectorGroups,
   onExclude,
   onEditCard,
   onRemoveSkill,
   onRestoreSkill,
-  onAnswer,
+  onToggleInterest,
   onFindRoles,
 }: HighlightsProps) {
   const [editing, setEditing] = useState<string | undefined>(undefined);
   const gate = findRolesGate(profile);
-  const questions = questionViews(profile, { sectorGroups });
+  const interests = interestPills(profile);
   // Skills are accepted unless removed: no confirm step (technical-plan.md D53).
   const skills = activeSkills(profile);
   const removed = profile.skills.excluded;
@@ -163,33 +163,23 @@ export default function Highlights({
         </div>
       </div>
 
-      {questions.map((question) => (
-        <div key={question.key} className="cc-block">
-          <h3 className="cc-h3 cc-with-tip">
-            {question.label}
-            <InfoTip text={INFO_TIPS.answer} label={`What your answer to “${question.label}” changes`} />
-          </h3>
-          <p className="cc-question-text">{question.question}</p>
-          <div className="cc-chips" role="group" aria-label={question.label}>
-            {question.pills.map((pill) => (
-              <button
-                key={pill.value}
-                type="button"
-                className="cc-pill"
-                aria-pressed={pill.selected}
-                onClick={() => onAnswer(question.key, { label: pill.label, value: pill.value })}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
-          {question.answer !== "" ? (
-            <p className="cc-note" style={{ marginTop: 8 }}>
-              Your answer: {question.answer}. Tap another option to change it.
-            </p>
-          ) : null}
+      <div className="cc-block">
+        <h3 className="cc-h3">{QUESTION_LABELS.climateInterests}</h3>
+        <p className="cc-question-text">{INTEREST_NOTE}</p>
+        <div className="cc-chips" role="group" aria-label={QUESTION_LABELS.climateInterests}>
+          {interests.map((pill) => (
+            <button
+              key={pill.value}
+              type="button"
+              className="cc-pill"
+              aria-pressed={pill.pressed}
+              onClick={() => onToggleInterest(pill.value)}
+            >
+              {pill.label}
+            </button>
+          ))}
         </div>
-      ))}
+      </div>
 
       <div className="cc-cta-row" style={{ marginTop: 26 }}>
         <button type="button" className="cc-btn" disabled={!gate.enabled} onClick={onFindRoles}>

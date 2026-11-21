@@ -31,7 +31,6 @@ import { FIND_ROLES_PILL } from "./screens";
 import { discoverFields, type DiscoverResult } from "./discover";
 import {
   applyPillAnswer,
-  type ElicitContext,
   type ElicitDecision,
   inferPreferences,
   interpretAnswer,
@@ -52,8 +51,6 @@ import { exploreChatText } from "./workspace";
 
 export interface TurnDeps {
   llm: () => Llm;
-  /** Distinct `climate_fields.sector_group` values for the interest chips; empty when unavailable. */
-  sectorGroups: () => Promise<string[]>;
   extractCards: typeof extractCards;
   inferPreferences: typeof inferPreferences;
   interpretAnswer: typeof interpretAnswer;
@@ -63,19 +60,11 @@ export interface TurnDeps {
   reviseQueries: typeof reviseQueries;
 }
 
-/** `llm.ts` and `reference.ts` are loaded lazily so tests never touch env or Supabase. */
+/** `llm.ts` is loaded lazily so tests never touch env. */
 export async function defaultDeps(): Promise<TurnDeps> {
-  const [{ llm }, reference] = await Promise.all([import("./llm"), import("./reference")]);
+  const { llm } = await import("./llm");
   return {
     llm,
-    sectorGroups: async () => {
-      try {
-        return await reference.listSectorGroups();
-      } catch (error) {
-        if (error instanceof reference.ReferenceReadError) return [];
-        throw error;
-      }
-    },
     extractCards,
     inferPreferences,
     interpretAnswer,
@@ -274,20 +263,18 @@ export async function runTurn(
       }
       onProgress("Checking what your experience already says about your preferences…");
       const inferred = await d.inferPreferences(d.llm(), { sessionId, profile: extracted.profile });
-      const ctx: ElicitContext = { sectorGroups: await d.sectorGroups() };
-      const decision = nextQuestion(inferred.profile, ctx);
+      const decision = nextQuestion(inferred.profile);
       return respond(inferred.profile, [cardsSummary(inferred.profile), decisionText(decision), ...note], decisionPills(decision));
     }
 
     case "elicit": {
       const answer = messageContent(request);
-      const ctx: ElicitContext = { sectorGroups: await d.sectorGroups() };
       const key = nextMissingPreference(profile);
       if (key === undefined) {
-        const done = nextQuestion(profile, ctx);
+        const done = nextQuestion(profile);
         return respond(profile, [decisionText(done), ...note], decisionPills(done));
       }
-      const pill = pillsFor(key, ctx).find((p) => p.value === answer.trim());
+      const pill = pillsFor(key).find((p) => p.value === answer.trim());
       let next: Profile;
       let answered = true;
       if (pill !== undefined) {
@@ -298,8 +285,8 @@ export async function runTurn(
         next = result.profile;
         answered = result.answered;
       }
-      const decision = nextQuestion(next, ctx);
-      const prefix = answered ? [] : ["I did not catch an answer to that one, so here it is again — a rough answer is fine, or pick \"Not sure\"."];
+      const decision = nextQuestion(next);
+      const prefix = answered ? [] : ["I did not catch an answer to that one, so here it is again."];
       return respond(next, [...prefix, decisionText(decision), ...note], decisionPills(decision));
     }
 

@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D53, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D54, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -62,11 +62,12 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
   removed, each with a single remove control; removed skills stay visible,
   struck, with a control to add them back (D53). Then the experience cards,
   collapsed to title, years, one-line result and skills, with Situation /
-  Action / Result behind "Details" and Edit / Exclude per card. Then the
-  two preference questions inline, answered by pills with no model call
-  (D48). Then one button, "Find climate roles", which runs `discover` and
-  never starts on its own (D38); while it is disabled its note names what
-  is missing on this screen.
+  Action / Result behind "Details" and Edit / Exclude per card. Then one
+  optional question, "Which area of climate work interests you most?",
+  answered by toggling any of six area pills with no model call; the picks
+  rank roles, never filter them (D54). Then one button, "Find climate
+  roles", which runs `discover` and never starts on its own (D38); it needs
+  only one included highlight, and while it is disabled its note says so.
 - **Pending:** the status line, elapsed time and the live log in the main
   column while a turn runs. Real phases, no estimates.
 - **Roles:** one group per discovered field, in rank order. The field is a
@@ -550,7 +551,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     field counts ("5 of 6 in", "two more fields") and time estimates are not
     built; the pending screen shows elapsed time and the real progress lines
     the server streams. (Two questions now, inline on Highlights, and the
-    button reads "Find climate roles": D48, D49.)
+    button reads "Find climate roles": D48, D49. Superseded by D54: one
+    optional question, and the button no longer waits for an answer.)
 
 39. **The expanded field card renders from discovery data; explore leaves
     the beta path.** `discover.ts` gains, per field: `fitLevel`
@@ -737,7 +739,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     - `ELICIT_ORDER` is `climateInterests`, `retrainingAppetite`. Both are
       answered by pills alone; no question invites typed text. `seniority`
       stays a `PreferenceKey` on the profile and `inferPreferences` may
-      still fill it from the cards, but nothing reads it.
+      still fill it from the cards, but nothing reads it. (Superseded by
+      D54: one optional, multi-select interest question; retraining is no
+      longer asked.)
     - Discovery asks for plain occupations. A post-check
       (`stripLevelWords` in `discover.ts`) strips level modifiers from role
       titles, dedupes roles within a field after stripping, and drops a
@@ -766,8 +770,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       2 Roles, 3 Searches), "Your profile" and "Start over" (confirm, then
       clear this browser's copy, then first run).
     - Highlights holds the expertise block, collapsed cards with S/A/R
-      behind "Details", the two questions inline, and one "Find climate
-      roles" button. Its label is `FIND_ROLES_PILL` in `screens.ts`, which
+      behind "Details", the two questions inline (superseded by D54: one
+      optional question), and one "Find climate roles" button. Its label is `FIND_ROLES_PILL` in `screens.ts`, which
       `turn.ts` re-exports as `GO_PILL`.
     - Pending, errors and parser warnings render in the main column. The
       assistant message a turn returns is no longer shown.
@@ -853,6 +857,52 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     - The copy follows `docs/design-language.md` principle 6 (trust the
       inference; the reader removes, never confirms) and principle 7
       ("Skills", not "Your expertise").
+
+54. **One optional, multi-select interest question; no retraining question
+    (2026-11-20).** Decided after the 2026-11-19 browser walkthrough: two
+    required questions held the button back, the retraining pills asked
+    the person to rate themselves before seeing a single role, and the
+    interest pills came from the catalogue's coarse `sector_group`s with a
+    "Not sure yet" escape. Supersedes the two pill-only questions of D48.
+    - The Highlights screen asks one question, "Which area of climate work
+      interests you most?" (`QUESTION_LABELS.climateInterests` in
+      `screens.ts`), under the note `INTEREST_NOTE`, with six fixed
+      `aria-pressed` toggle pills: `CLIMATE_AREAS` in `elicit.ts`, label and
+      value the same. Any number may be picked; there is no "Not sure yet"
+      pill, because picking nothing means "rank on fit alone".
+      `toggleClimateInterest` (pure, case-insensitive) writes a pick
+      locally with no turn; removing the last one deletes the preference.
+      `ELICIT_ORDER` is `["climateInterests"]`.
+    - `findRolesGate` needs only one active highlight; its enabled note is
+      "You can come back and change any of this." (principle 9 in
+      `docs/design-language.md`: reversibility, not duration).
+    - Interests rank, never filter (design-language principle 2).
+      Discovery rule 5 as shipped defines "comparable" fit as fit level
+      `strong` or `some`: every field in a named area at those levels ranks
+      above every field outside; only a `stretch` field in a named area
+      gives way. A named area never removes a field, and the model judges
+      which area a field belongs to from the work, not from the
+      catalogue's coarser `sector_group`.
+    - Live check (2026-11-20, videographer fixture,
+      `--interest="Energy,Carbon Removal"`, $0.24, 80s): six fields, the
+      four in the picked areas first, the two outside fields still listed.
+      A first run with the looser wording interleaved outside fields, which
+      is why "comparable" was defined.
+    - The retraining question is gone. `retrainingAppetite` stays a
+      preference key that discovery reads; it is filled from the notes
+      box, and `inferPreferences` may still infer it from the cards at high
+      confidence. `inferPreferences` no longer writes climate interests, so
+      a pick is always the person's own, and it makes no call when only
+      climate interests are missing.
+    - Discovery's `summary` must not repeat or paraphrase the field's name:
+      it is shown directly under it (2b.18 keeps the summary on the Roles
+      screen).
+    - `try:discover` takes `--interest=<comma-separated areas>`;
+      `--retraining` is gone. `listSectorGroups` is deleted, and the cards
+      turn no longer carries sector groups to the browser
+      (`QuestionContext`, `QuestionView.answer`, `answerRows`,
+      `INFO_TIPS.answer` are deleted from `screens.ts`; `interestPills`
+      renders the six pills with their pressed state).
 
 ---
 

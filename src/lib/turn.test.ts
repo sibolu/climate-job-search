@@ -53,7 +53,6 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
   const calls: string[] = [];
   const deps: TurnDeps = {
     llm: () => ({}) as never,
-    sectorGroups: () => Promise.resolve(["Energy", "Food"]),
     extractCards: (_llm, { profile = emptyProfile() }) => {
       calls.push("extractCards");
       const next = cardsOnly();
@@ -146,16 +145,18 @@ describe("runTurn — cards", () => {
 });
 
 describe("runTurn — elicit", () => {
-  it("applies a pill click without a model call and asks the next question", async () => {
+  it("toggles an area pill without a model call, and sends anything else to the model", async () => {
     const deps = fakeDeps();
-    const first = await runTurn(request("elicit", cardsOnly(), "x"), deps);
+    const picked = await runTurn(request("elicit", cardsOnly(), "Energy"), deps);
+    expect(deps.calls).toEqual([]);
+    expect(parseProfile(picked.profileMd!).profile.preferences.climateInterests).toEqual({
+      values: ["Energy"],
+      source: "stated",
+    });
     // "x" is not a pill: the model interprets it.
+    const typed = await runTurn(request("elicit", cardsOnly(), "x"), deps);
     expect(deps.calls).toEqual(["interpretAnswer"]);
-    const asked = parseProfile(first.profileMd!).profile;
-    const pill = first.pills![0]!;
-    const second = await runTurn(request("elicit", asked, pill.value), deps);
-    expect(deps.calls).toEqual(["interpretAnswer"]);
-    expect(second.profileMd).not.toEqual(first.profileMd);
+    expect(typed.profileMd).not.toEqual(picked.profileMd);
   });
 
   it("offers the go pill once nothing is missing", async () => {

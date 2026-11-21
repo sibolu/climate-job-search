@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 
+import { isOpenToSuggestions } from "./elicit";
 import type { CallMetrics, Llm } from "./llm";
 import {
   type Ask,
@@ -285,7 +286,9 @@ export const FieldDraftSchema = z.object({
   ),
   summary: z
     .string()
-    .describe("Two sentences, second person, no hedging: what the work is and why this person fits it."),
+    .describe(
+      "Two sentences, second person, no hedging: what the work is and why this person fits it. Shown directly under the field's name, so it says what the name does not and never repeats or paraphrases the name.",
+    ),
   chips: z
     .array(z.string())
     .describe("Three to four short transferable-skill phrases from the cards, two to four words each."),
@@ -325,13 +328,13 @@ Rules that decide whether your answer is usable:
 
 4. Name what you do not know. 1-3 short "uncertainties" per field: whether roles are in-house or freelance, how many companies hire for it in their location, whether a credential is expected, pay bands, and so on.
 
-5. Respect preferences. Location, work mode, retraining appetite and climate interests are constraints when stated. Do not use excluded cards; they are not shown to you.
+5. Respect preferences. Location, work mode and retraining appetite are constraints when stated. Climate interests set the order, never the list: when the person names areas, rank fields in those areas first where the fit is comparable, and still include a strong fit outside them. Comparable means "strong" or "some": the person named those areas to see them first, so every field in a named area whose fit level is "strong" or "some" ranks above every field outside them, and only a "stretch" field in a named area gives way to a better fit outside. They did not ask to see nothing else, so a named area never removes a field you would otherwise list. The areas are unordered among themselves, and you judge which area a field belongs to from the work it does, not from the catalogue's sector-group headings, which are coarser. With no interests stated, rank on fit alone. Do not use excluded cards; they are not shown to you.
 
 6. Roles: give 2-4 per field. Each has a title, 1-4 real example companies or organisation types, a "why" that cites cards, and the catalogue's sources when it is a catalogue role. Do not repeat the same role across fields.
 
 The title is the plain occupation and carries no level: "Data Scientist", "Product Manager", "Policy Analyst", "Wind Turbine Technician". The person searches job boards with this title and decides for themselves which level to apply at. A level word narrows that search to one rung and makes a judgement that is not yours to make. This rules out level modifiers (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III), and it rules out titles that are a rank rather than an occupation (Director of X, Head of X, VP of X, Chief X Officer). For a rank, name the occupation underneath it: "Director of Data Science" is "Data Scientist", "Head of Partnerships" is "Partnerships Manager", "Senior Product Manager" is "Product Manager". "Manager" is fine where it is the occupation's own name, as in "Product Manager" or "Project Manager". The catalogue's own titles sometimes carry a rank; when you use such a role, keep its "ref" and write the plain occupation as the title. Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field short of roles.
 
-7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means companies hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
+7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means companies hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. It is shown directly under the field's name, so it says what the name does not and never repeats or paraphrases the name: open with the work itself, what the person would make, run or decide in a normal week, not with a sentence that announces the field. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
 
 Answer with the JSON only.`;
 
@@ -359,7 +362,10 @@ export function renderCardsForDiscover(profile: Profile): string {
 /**
  * Stated (and inferred) preferences, one per line; deterministic order.
  * Seniority is left out on purpose: role titles carry no level, so discovery
- * has nothing to do with it (technical-plan.md D48).
+ * has nothing to do with it (technical-plan.md D48). Climate interests are
+ * sent as an unordered set of named areas that order the fields and never
+ * filter them (technical-plan.md D54); "open to suggestions" names no area,
+ * so it sends no line and the prompt's "no interests stated" case applies.
  */
 export function renderPreferencesForDiscover(profile: Profile): string {
   const p = profile.preferences;
@@ -370,9 +376,10 @@ export function renderPreferencesForDiscover(profile: Profile): string {
   single("Location", p.location);
   single("Work mode", p.workMode);
   single("Retraining appetite", p.retrainingAppetite);
-  if (p.climateInterests !== undefined && p.climateInterests.values.length > 0) {
+  const interests = p.climateInterests;
+  if (interests !== undefined && interests.values.length > 0 && !isOpenToSuggestions(profile)) {
     lines.push(
-      `- Climate interests: ${p.climateInterests.values.join(", ")} (${p.climateInterests.source})`,
+      `- Climate interests (areas named, in no order of preference): ${interests.values.join("; ")} (${interests.source})`,
     );
   }
   for (const o of p.other) lines.push(`- ${o.key}: ${o.value} (${o.source})`);

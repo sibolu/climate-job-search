@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  answerRows,
   findRolesGate,
   highlightsCountNote,
+  interestPills,
   pendingStatusLine,
-  questionViews,
+  INTEREST_NOTE,
+  QUESTION_LABELS,
   FIND_ROLES_PILL,
   appendLogLines,
   composeStartText,
@@ -13,8 +14,6 @@ import {
   formatElapsed,
   navStepEnabled,
   navStepFor,
-  preferenceText,
-  remainingQuestions,
   showNav,
   askAnswer,
   boardSearchUrl,
@@ -27,11 +26,11 @@ import {
   writeSearchesLabel,
   MAX_LOG_LINES,
 } from "./screens";
+import { CLIMATE_AREAS } from "./elicit";
 import {
   addOtherPreference,
   emptyProfile,
   setClimateInterests,
-  setPreference,
   upsertCard,
   type Card,
   type Field,
@@ -54,10 +53,8 @@ function card(patch: Partial<Card> = {}): Omit<Card, "id"> & { id?: string } {
 }
 
 function answered(): Profile {
-  let p = upsertCard(emptyProfile(), card());
-  p = setClimateInterests(p, ["clean energy & grid"], "stated");
-  p = setPreference(p, "retrainingAppetite", "short courses", "stated");
-  return p;
+  const p = upsertCard(emptyProfile(), card());
+  return setClimateInterests(p, ["Energy"], "stated");
 }
 
 describe("currentScreen", () => {
@@ -114,73 +111,44 @@ describe("composeStartText", () => {
   });
 });
 
-describe("preference questions", () => {
-  it("lists the unanswered keys in ELICIT_ORDER", () => {
-    expect(remainingQuestions(emptyProfile())).toEqual(["climateInterests", "retrainingAppetite"]);
-    // Seniority is not asked (technical-plan.md D48): having it on file answers nothing.
-    const p = setPreference(emptyProfile(), "seniority", "mid-level", "stated");
-    expect(remainingQuestions(p)).toEqual(["climateInterests", "retrainingAppetite"]);
-    expect(remainingQuestions(answered())).toEqual([]);
+describe("the interest question", () => {
+  it("lists the six areas in order, none pressed on a new profile", () => {
+    const pills = interestPills(emptyProfile());
+    expect(pills.map((pill) => pill.value)).toEqual([...CLIMATE_AREAS]);
+    expect(pills.some((pill) => pill.pressed)).toBe(false);
   });
 
-  it("shows both questions at once and uses the server's sector groups", () => {
-    const views = questionViews(emptyProfile(), { sectorGroups: ["energy/grid"] });
-    expect(views.map((view) => view.key)).toEqual(["climateInterests", "retrainingAppetite"]);
-    expect(views[0].pills.some((pill) => pill.value === "energy/grid")).toBe(true);
-    expect(views.every((view) => view.answer === "")).toBe(true);
-    expect(views.flatMap((view) => view.pills).some((pill) => pill.selected)).toBe(false);
+  it("presses every picked area, matching case-insensitively", () => {
+    const p = setClimateInterests(emptyProfile(), ["energy", "carbon removal"], "stated");
+    const pressed = interestPills(p).filter((pill) => pill.pressed).map((pill) => pill.value);
+    expect(pressed).toEqual(["Energy", "Carbon Removal"]);
   });
 
-  it("keeps an answered question's pills and marks the recorded one", () => {
-    const p = setPreference(answered(), "retrainingAppetite", "low, a short course or certificate", "stated");
-    const [interests, retraining] = questionViews(p, { sectorGroups: ["clean energy & grid"] });
-    expect(retraining.answer).toBe("low, a short course or certificate");
-    expect(retraining.pills.filter((pill) => pill.selected).map((pill) => pill.value)).toEqual([
-      "low, a short course or certificate",
-    ]);
-    expect(interests.pills.filter((pill) => pill.selected).map((pill) => pill.value)).toEqual([
-      "clean energy & grid",
-    ]);
-  });
-
-  it("labels the questions in plain words, never by profile key", () => {
-    const labels = questionViews(emptyProfile()).map((view) => view.label);
-    expect(labels.join(" ")).not.toMatch(/appetite/i);
-    expect(labels[1]).toBe("How much retraining you're open to");
-  });
-
-  it("renders current values for the answer rows", () => {
-    const rows = answerRows(answered());
-    expect(rows.map((row) => row.key)).toEqual(["climateInterests", "retrainingAppetite"]);
-    expect(rows[1].value).toBe("short courses");
-    expect(preferenceText(emptyProfile(), "seniority")).toBe("");
-  });
-
-  it("collapses the open-to-suggestions marker", () => {
-    const p = setClimateInterests(emptyProfile(), ["open to suggestions"], "stated");
-    expect(preferenceText(p, "climateInterests")).toBe("open to suggestions");
+  it("asks in plain words and says picks rank, never filter", () => {
+    expect(QUESTION_LABELS.climateInterests).toBe("Which area of climate work interests you most?");
+    expect(INTEREST_NOTE).toMatch(/still appear/);
   });
 });
 
 describe("findRolesGate", () => {
   it("needs at least one active card", () => {
-    const p = setClimateInterests(emptyProfile(), ["clean energy & grid"], "stated");
-    expect(findRolesGate(p).enabled).toBe(false);
-    expect(findRolesGate(p).note).toMatch(/highlight/i);
+    const p = setClimateInterests(emptyProfile(), ["Energy"], "stated");
+    expect(findRolesGate(p)).toEqual({
+      enabled: false,
+      note: "Include at least one highlight above first.",
+    });
   });
 
-  it("needs the questions answered", () => {
+  it("opens with a highlight and no answer", () => {
     const p = upsertCard(emptyProfile(), card());
-    const gate = findRolesGate(p);
-    expect(gate.enabled).toBe(false);
-    expect(gate.note).toBe("Answer the two questions above first.");
-    expect(gate.note).not.toMatch(/rail|assistant/i);
+    expect(findRolesGate(p)).toEqual({
+      enabled: true,
+      note: "You can come back and change any of this.",
+    });
   });
 
-  it("names the one question still open", () => {
-    let p = upsertCard(emptyProfile(), card());
-    p = setClimateInterests(p, ["clean energy & grid"], "stated");
-    expect(findRolesGate(p).note).toMatch(/how much retraining you're open to/i);
+  it("opens with a highlight and an answer", () => {
+    expect(findRolesGate(answered()).enabled).toBe(true);
   });
 
   it("labels the button with the pill the server offers", () => {
@@ -190,10 +158,6 @@ describe("findRolesGate", () => {
   it("counts the highlights used to match", () => {
     const p = upsertCard(answered(), card({ excluded: true }));
     expect(highlightsCountNote(p)).toBe("1 of 2 highlights used to match roles.");
-  });
-
-  it("opens once both hold", () => {
-    expect(findRolesGate(answered()).enabled).toBe(true);
   });
 
   it("stays shut when every card is excluded", () => {

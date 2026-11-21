@@ -591,6 +591,19 @@ describe("level words (technical-plan.md D48)", () => {
     expect(buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES)).not.toContain("director or above");
   });
 
+  it("sends named climate areas as an unordered set, and no line when none is named (D54)", () => {
+    const base = fixture("videographer");
+    const withInterests = (values: string[]) => ({
+      ...base,
+      preferences: { ...base.preferences, climateInterests: { values, source: "stated" as const } },
+    });
+    expect(renderPreferencesForDiscover(withInterests(["Energy", "Carbon Removal"])).split("\n")).toContain(
+      "- Climate interests (areas named, in no order of preference): Energy; Carbon Removal (stated)",
+    );
+    expect(renderPreferencesForDiscover(withInterests(["open to suggestions"]))).not.toMatch(/climate interests/i);
+    expect(DISCOVER_SYSTEM_PROMPT).toContain("Climate interests set the order, never the list");
+  });
+
   it("sends every skill the person has not removed, untouched inferred ones included (D53)", () => {
     const profile = {
       ...fixture("videographer"),
