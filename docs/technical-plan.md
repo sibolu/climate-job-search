@@ -99,8 +99,10 @@ run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
 
 Policy lives in pure, unit-tested modules, and the components in
 `src/components/shell/` only render: `screens.ts` decides which screen
-shows, nav gating, question order, the "Find climate roles" gate, log
-lines, role groups, `citationsToTitles` and the search cards;
+shows, nav gating, the Start text and the Resume page's view, the
+interest question's label, note and pressed pills, the "Find climate
+roles" gate, log lines, role groups, `citationsToTitles`, the write-searches
+label and the search cards;
 `profile-summary.ts` decides what the drawer shows; `workspace.ts` holds
 the profile edits and the turn inputs.
 
@@ -134,8 +136,10 @@ src/
     profile-summary.ts # readable profile summary for the drawer (2b.11; D49)
     turn-stream.ts  # NDJSON wire codec + sendTurn (2.1)
     turn.ts         # server dispatcher: TurnRequest → TurnResponse (2.5; D31)
-  components/shell/ # AppShell, Header, ProfileDrawer, FirstRun, Highlights,
-                    # Pending, RoleBoard, RoleGroup, Searches, QueryCard (2b.4/2b.11/2b.12)
+  components/shell/ # AppShell, Header, ProfileDrawer, ResumeScreen, StartOverDialog,
+                    # Highlights, Pending, RoleBoard, RoleGroup, Searches, QueryCard
+                    # (2b.4/2b.11/2b.12/2b.17); save-file.ts, the browser download
+                    # helper the drawer and the Start over dialog share (2b.17; D55)
   app/
     api/turn/       # the one turn endpoint (NDJSON stream; 2.5)
     api/enter/      # passcode check
@@ -1197,3 +1201,77 @@ What the run showed, and what changed:
 No query carried a level word and no title tripped the level check in either
 pass. The UI steps 2b.11–2b.12 were verified by unit tests, lint, typecheck
 and build only; the browser check is left to gate G2b.4.
+
+### Phase 2b revision: the 2b.19 end-to-end run (2026-11-20)
+
+The loop as it stands after 2b.14–2b.18 (D52–D57) was run live through the
+try scripts on the same two inputs as 2b.13: the `userdata/` resume (never
+committed; only counts, costs and times are recorded for it) and the
+videographer fixture. Each pass was `try:cards`, then `try:discover` with two
+interest areas written by `--interest` (D54), then `try:queries --tick` on
+four roles in four fields. Every step ran on `claude-opus-5-5` at `medium`
+effort (`MODEL_BY_STEP`, `EFFORT_BY_STEP`; D52 for `queries`). All six
+scripts exited 0 on the first model call; nothing was rerun and no script
+or prompt was changed.
+
+| Pass | Step | Result | Tokens (in / cache write / out) | Cost | Time |
+|---|---|---|---|---|---|
+| `userdata/` resume | `try:cards` | 5 cards, 20 inferred skills | 1,573 / 3,053 / 2,282 | $0.0672 | 19.4s |
+| | `try:discover --interest="Energy,Transportation"` | 6 fields, 12 roles, nothing dropped, no level word in a title | 15,616 / 3,452 / 8,803 | $0.2558 | 79.8s |
+| | `try:queries --tick` (4 roles, 4 fields) | 4 LinkedIn queries, one per ticked role | 2,015 / 2,171 / 581 | $0.0305 | 8.4s |
+| | **Total** | | | **$0.3535** | **107.6s** |
+| Videographer | `try:cards` | 3 cards, 16 inferred skills | 1,014 / 3,053 / 1,232 | $0.0440 | 11.9s |
+| | `try:discover --interest="Food & Agriculture,Energy"` | 6 fields, 14 roles, nothing dropped, no level word in a title | 14,711 / 3,452 / 6,525 | $0.2066 | 61.6s |
+| | `try:queries --tick R1,R4,R10,R12` | 4 LinkedIn queries, one per ticked role | 1,839 / 2,171 / 896 | $0.0361 | 10.6s |
+| | **Total** | | | **$0.2867** | **84.1s** |
+
+The whole run cost $0.64. No call read from the cache (each stage ran once
+per input, in parallel across the two inputs). Discovery is still about
+three quarters of a session. A `queries` call on Opus 5.5 costs about three
+times what it did on Sonnet 5.5 in 2b.13 ($0.031–0.036 against
+$0.011–0.012), which is two to three cents a session. One run per stage, so
+the numbers are rough.
+
+The checks, on both inputs:
+
+- **Inputs survive (D56).** The cards output has `## Inputs` with a
+  `### Resume` block, and the section is byte-identical (same hash) in the
+  cards, discover and queries outputs.
+- **Skills (D53).** The `Inferred` skills line is non-empty in both cards
+  outputs. That the prompts read `activeSkills` is covered by unit tests,
+  not by this run.
+- **Interest order (D54).** Fields in the picked areas come first and a
+  field outside them is still listed. Fixture: regenerative agriculture and
+  agtech (strong), clean energy brand and content video (strong) and
+  alternative proteins (some) rank above land, water and conservation
+  nonprofit storytelling (strong), climate communications and media
+  (strong) and climate policy and advocacy (some). `userdata/` resume: five
+  fields in the picked areas, then one outside. A `some` field inside a
+  picked area ranks above a `strong` field outside it, as D54 says.
+- **Summaries (D54).** All twelve `Summary` lines open with what the person
+  would do ("You would film growers and agronomists on working farms…");
+  none repeats or paraphrases its field's name.
+- **Level words.** No title tripped the level check and no query phrase
+  carried a level word.
+- **One warning, not a failure:** on the `userdata/` resume, discovery wrote
+  one field whose fit text cites a card with no evidence line of its own,
+  the same case 2b.13 turned into a warning.
+
+**Search quality: all eight queries pass.** Every query pairs the role's
+title variants with terms that name what employers in its field work on;
+none has a climate half made only of generic terms ("green jobs", "climate
+careers", "sustainability"), the Sonnet 5.5 failure that D52 reversed. The
+four `userdata/` queries were read and judged the same way and are not
+recorded. The fixture's four:
+
+- Video Producer, regenerative agriculture and agtech: `("video producer" OR videographer OR "content producer") AND ("regenerative agriculture" OR agtech OR "soil health" OR farmers)`
+- Video Content Creator, clean energy brand and content video: `("video content creator" OR "content creator" OR "social video producer") AND (solar OR "heat pumps" OR "home energy" OR "energy storage")`
+- Multimedia Storyteller, land, water and conservation nonprofit storytelling: `("multimedia storyteller" OR "multimedia producer" OR "digital storyteller") AND (conservation OR "land trust" OR watershed OR "river restoration")`
+- Documentary Producer, climate communications and media: `("documentary producer" OR "documentary filmmaker" OR "video journalist") AND ("climate change" OR "climate solutions" OR "environmental journalism")`
+
+The last is the least specific of the eight. Climate is that field's own
+subject, so its terms are the subject phrases the 2b.13 prompt change asks
+for, and it passes; it is the query to watch if the check is tightened.
+Queries were judged by reading them: no job board was opened or searched.
+The UI steps 2b.15–2b.18 were not exercised by this run; the try scripts
+cover the model stages and the profile, not the screens.

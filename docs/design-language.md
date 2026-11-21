@@ -16,8 +16,9 @@ only when a real decision produced it; add the example in the same commit.
 Open questions are listed at the end rather than resolved by guesswork.
 
 Sources so far: the first-run copy session (2026-11-19) and the end-to-end
-walkthrough notes (2026-11-19). The walkthrough's concrete change list is
-being applied separately; this file keeps only the rules it revealed.
+walkthrough notes (2026-11-19). The walkthrough's concrete change list was
+applied in PLAN.md steps 2b.14–2b.18; this file keeps only the rules it
+revealed.
 
 ## Who reads the screen, and how they arrive
 
@@ -53,6 +54,8 @@ reader might fear otherwise.
   ("most" says the list ranks; it does not mark a boundary.)
 - Accepted: the interest question keeps *The answer decides which roles are
   listed first* and adds a line that unselected areas are not filtered out.
+  As built (2b.16): *Pick as many as you like. Your picks decide which roles
+  are listed first; roles in other areas still appear.*
 
 ### 3. Say a thing once per screen
 
@@ -125,7 +128,9 @@ Say how a section feeds the result when the reader would otherwise not know
 what any reader infers on their own (that an excluded item is not used).
 
 - Accepted: one sentence on the Highlights screen on how Highlights differ
-  from Skills in generating fields.
+  from Skills in generating fields. As built (2b.15): *Every suggested field
+  and role is tied to at least one highlight. Skills sum up what you know
+  across them and shape your searches.*
 - Rejected: a note that excluded skills or highlights are not used.
 
 ### 9. Reassure about reversibility, not about duration
@@ -182,8 +187,9 @@ note it for later rather than keeping it to be safe.
 - Prose does not repeat what a control already says (principle 3).
 - Info icons are a last resort. Before adding one, ask whether the page
   already says it; if so, remove the icon, not the sentence.
-- Navigation is a plain list of screen names, no step numbers, every item a
-  link back to its screen.
+- Navigation is a plain list of screen names, no step numbers, every
+  reached item a link back to its screen; a step not yet reached is shown
+  but disabled.
 - Destructive actions live on the one screen where they make sense (*Start
   over* on the resume screen only) and are confirmed with a chance to save
   first: offer the profile download, warn that everything else is lost.
@@ -191,7 +197,7 @@ note it for later rather than keeping it to be safe.
   action, it goes.
 - Every control does something. Nothing is shown that is not built.
 
-## Current first-run copy (reference)
+## Current Resume page copy (reference)
 
 ```
 Your experience already fits climate work. Find out where.

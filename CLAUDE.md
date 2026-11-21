@@ -41,7 +41,8 @@ environment, the hard constraints, and the rules each module enforces.
 - **User control over the profile.** Users can correct inferred skills and
   exclude experiences. One person's information is never used as an example
   for another without consent.
-- **No user data stored server-side.** Route handlers are stateless. Profile,
+- **No user data stored server-side.** Route handlers are stateless. The
+  profile (the pasted resume and notes included, kept under `## Inputs`),
   chat, and query feedback live in the browser's `localStorage` and are resent
   each turn. The only server-side write is the anonymous `llm_usage` row
   (random session id, model, tokens, cost, duration, step name — no content,
@@ -301,8 +302,9 @@ dispatches and returns the assistant message, pills, and the **whole**
 canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 `delta`s, a heartbeat every 15s, then one `final` or one `error`.
 
-- The browser names what it wants through `TurnInput`: `message` (paste,
-  pills), `selectedRoles` (write one LinkedIn search per selected role; no
+- The browser names what it wants through `TurnInput`: `message` (the
+  pasted text on Start, and "Find climate roles"; the interest pills are
+  local edits and send no turn, D54), `selectedRoles` (write one LinkedIn search per selected role; no
   payload, the server reads `Selected: yes` from the profile it is sent,
   technical-plan.md D47) and `feedback` (revise; still dispatched, but
   nothing in the browser sends it). The one remaining text convention, `exploreChatText`
@@ -319,12 +321,17 @@ canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
   (its `llm` import is type-only), `screens.ts` and `profile-summary.ts`.
   `cards.ts` is server-only.
 - The UI is `src/components/shell/` (technical-plan.md §2, D37, D42, D43,
-  D47–D51): one centred column, no rail, no tabs, no composer, and no
-  feedback screen. Pure screen logic (which screen, nav gating, question
-  order, the "Find climate roles" gate, log lines, role groups, card ids
-  rendered as titles, search cards) is in `src/lib/screens.ts`, and the
-  drawer's readable summary in `src/lib/profile-summary.ts`, both with unit
-  tests; components hold no policy.
+  D47–D51, D53–D57): one centred column under a four-item nav (Resume,
+  Highlights, Roles, Searches), no rail, no tabs, no composer, and no
+  feedback screen; the only "Start over" is on the Resume page, behind
+  `StartOverDialog.tsx`. `save-file.ts` in that folder is the component-side
+  download helper (profile and session JSON). Pure screen logic (which
+  screen, nav gating, the Start text and Resume page view, the one interest
+  question's label, note and pills, the "Find climate roles" gate, log
+  lines, role groups, card ids rendered as titles, the write-searches label,
+  search cards) is in `src/lib/screens.ts`, and the drawer's readable summary
+  in `src/lib/profile-summary.ts`, both with unit tests; components hold no
+  policy.
 
 ## Passcode gate
 
@@ -369,6 +376,12 @@ One shared passcode, no accounts (docs/technical-plan.md §1 "Access", D5).
 - `session.ts` owns what the browser stores and sends: the profile text is
   the source of truth, `sessionId` is random and anonymous, and no field may
   carry identity. Route handlers validate bodies with `parseTurnRequest`.
+- The profile has eight sections; the eighth, `## Inputs` (D56), holds the
+  pasted resume and notes as typed. It is written only through `setInputs`,
+  which the browser calls via `recordStartInputs` in `workspace.ts` on Start,
+  before the cards turn is sent. No prompt reads it:
+  `serializeProfileForPrompt` leaves the section out, and the cards step
+  reads its text from the turn's message.
 
 ## Repo layout
 

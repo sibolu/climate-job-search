@@ -156,28 +156,31 @@
   <div class="store"><b>Response</b>a <u>whole new</u> profile.md replaces the stored copy</div>
 </div>
 <ul class="note" style="margin-top:10px">
-  <li>Clicks on expertise, cards, question pills and roles edit profile.md in the browser. No server call.</li>
+  <li>Start (which records the pasted text and notes under <code>Inputs</code>), and clicks on skills, cards, interest pills and roles, edit profile.md in the browser. No server call.</li>
+  <li>profile.md, <code>Inputs</code> included, lives in <code>localStorage</code> and is resent whole in every turn's request body; the server keeps nothing.</li>
   <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content.</li>
   <li>Every call: adaptive thinking, structured JSON output, no web tools. <code>claude-opus-5-5</code> for every call: cards, preferences, discovery and searches (<code>MODEL_BY_STEP</code>). All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
 </ul>
 
 <!-- ───────────── flow 1 ───────────── -->
 <h2>1 · Paste → climate fields and roles</h2>
-<p class="sub">Screens: First run → Highlights → Roles. Three API calls.</p>
+<p class="sub">Screens: Resume → Highlights → Roles. Three API calls.</p>
 
 <div class="lanes"><div>You / screen</div><div>What runs</div><div>profile.md</div></div>
 
 <div class="flow">
   <div class="row">
     <div class="cell"><div class="box you">
-      <div class="screen">First run</div>
+      <div class="screen">Resume</div>
       <ul><li>Paste resume or bio</li><li>Optional notes: constraints, interests</li><li>Click <b>Start</b></li></ul>
     </div></div>
     <div class="cell"><div class="box codebox">
-      <h3>Browser builds the message</h3>
-      <ul><li>Notes appended under a <code>Notes</code> label (<a href="../src/lib/screens.ts">composeStartText · screens.ts:130</a>)</li></ul>
+      <h3>Browser records the inputs, then builds the message</h3>
+      <ul><li>Pasted text and notes written to <code>## Inputs</code> as typed, before the turn is sent (<a href="../src/lib/workspace.ts">recordStartInputs · workspace.ts:106</a>); no prompt reads them (<code>serializeProfileForPrompt</code> leaves the section out)</li><li>Notes appended under a <code>Notes</code> label (<a href="../src/lib/screens.ts">composeStartText · screens.ts:100</a>); the cards step reads its text from this message</li></ul>
     </div></div>
-    <div class="cell"><div class="nochange">Empty profile</div></div>
+    <div class="cell">
+      <div class="chips"><em>writes</em><span class="chip w">Inputs</span></div>
+    </div>
   </div>
 
   <div class="turn">
@@ -193,9 +196,9 @@
           <li><b>Out:</b> cards (situation / actions / results / areas of expertise), inferred expertise, preferences stated in the notes</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/cards.ts">CARDS_SYSTEM_PROMPT · cards.ts:191</a></div>
-          <div><span>User message</span><a href="../src/lib/cards.ts">buildExtractMessage · cards.ts:257</a></div>
-          <div><span>Call site</span><a href="../src/lib/cards.ts">extractCards · cards.ts:441</a></div>
+          <div><span>System prompt</span><a href="../src/lib/cards.ts">CARDS_SYSTEM_PROMPT · cards.ts:193</a></div>
+          <div><span>User message</span><a href="../src/lib/cards.ts">buildExtractMessage · cards.ts:259</a></div>
+          <div><span>Call site</span><a href="../src/lib/cards.ts">extractCards · cards.ts:443</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -211,14 +214,14 @@
         <h3>Cards → preferences they clearly support</h3>
         <ul class="io">
           <li><b>In:</b> active cards, skills, preferences already known</li>
-          <li><b>Out:</b> location, work mode, seniority, retraining appetite, climate interests, each with a confidence</li>
+          <li><b>Out:</b> location, work mode, seniority, retraining appetite, each with a confidence; never climate interests, which are always the person's own pick</li>
           <li>Only <b>high</b>-confidence answers to still-missing preferences are kept</li>
-          <li>Skipped (no call) when nothing is missing</li>
+          <li>Skipped (no call) when no text preference is missing, including when only climate interests are</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/elicit.ts">INFER_SYSTEM · elicit.ts:506</a></div>
-          <div><span>User message</span><a href="../src/lib/elicit.ts">inline in inferPreferences · elicit.ts:571</a></div>
-          <div><span>Call site</span><a href="../src/lib/elicit.ts">inferPreferences · elicit.ts:560</a></div>
+          <div><span>System prompt</span><a href="../src/lib/elicit.ts">INFER_SYSTEM · elicit.ts:501</a></div>
+          <div><span>User message</span><a href="../src/lib/elicit.ts">inline in inferPreferences · elicit.ts:561</a></div>
+          <div><span>Call site</span><a href="../src/lib/elicit.ts">inferPreferences · elicit.ts:549</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -232,14 +235,14 @@
   <div class="row">
     <div class="cell"><div class="box you">
       <div class="screen">Highlights</div>
-      <ul><li>Confirm or remove an inferred area of expertise</li><li>Edit or Exclude a card</li><li>Answer the two questions with pills: climate interests, retraining appetite (skipped if already known; a pill is no API call)</li><li>Click <b>Find climate roles</b></li></ul>
+      <ul><li>Remove a skill, or add a removed one back (skills are accepted unless removed)</li><li>Edit or Exclude a card</li><li>Optionally toggle any of six climate-area pills (one multi-select question; a pill is no API call)</li><li>Click <b>Find climate roles</b></li></ul>
     </div></div>
     <div class="cell"><div class="box codebox">
       <h3>Local edits, no API call</h3>
-      <ul><li>Each click rewrites profile.md in localStorage</li></ul>
+      <ul><li>Each click rewrites profile.md in localStorage</li><li><a href="../src/lib/workspace.ts">rejectProfileSkill, restoreProfileSkill · workspace.ts:118</a>; <a href="../src/lib/elicit.ts">toggleClimateInterest · elicit.ts:363</a></li></ul>
     </div></div>
     <div class="cell">
-      <div class="chips"><em>writes</em><span class="chip w">Experience Cards</span><span class="chip w">Skills</span><span class="chip w">Preferences (stated)</span></div>
+      <div class="chips"><em>writes</em><span class="chip w">Experience Cards</span><span class="chip w">Skills (removed)</span><span class="chip w">Preferences (climate interests)</span></div>
     </div>
   </div>
 
@@ -255,17 +258,17 @@
         <div class="api-head"><span class="num">API 3</span><code>discoverFields</code><span class="tag">step discover</span><span class="tag">effort medium</span></div>
         <h3>Cards + preferences + catalogue → 4–7 ranked fields, 2–4 roles each</h3>
         <ul class="io">
-          <li><b>In:</b> active cards, preferences, confirmed skills, fields already on file (rejected ones must not return), the reference catalogue</li>
+          <li><b>In:</b> active cards, preferences (picked climate areas rank first, never filter), skills from <code>activeSkills</code> (accepted unless removed), fields already on file (rejected ones must not return), the reference catalogue</li>
           <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles with plain occupation titles, each citing cards</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT · discover.ts:315</a></div>
-          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:442</a></div>
-          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:838</a></div>
+          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT · discover.ts:319</a></div>
+          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:452</a></div>
+          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:848</a></div>
         </div>
       </div></div>
       <div class="cell">
-        <div class="chips"><em>reads</em><span class="chip r">Experience Cards</span><span class="chip r">Preferences</span><span class="chip r">Skills (confirmed)</span><span class="chip r">Fields</span></div>
+        <div class="chips"><em>reads</em><span class="chip r">Experience Cards</span><span class="chip r">Preferences</span><span class="chip r">Skills (active)</span><span class="chip r">Fields</span></div>
       </div>
     </div>
 
@@ -279,7 +282,7 @@
           <li>Strip source URLs the catalogue doesn't list</li>
           <li>Cap at 7 fields, drop duplicates</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:636</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:646</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Fields</span><span class="chip w">Role Shortlist</span></div>
@@ -301,7 +304,6 @@
       <div class="screen">Roles</div>
       <ul>
         <li>Fields are headings; tick the roles you want, in any field</li>
-        <li>Optionally answer a field's one question (short text box, <b>Save answer</b>; no re-rank)</li>
       </ul>
     </div></div>
     <div class="cell"><div class="box codebox">
@@ -309,7 +311,7 @@
       <ul><li>Each click rewrites profile.md in localStorage</li></ul>
     </div></div>
     <div class="cell">
-      <div class="chips"><em>writes</em><span class="chip w">Role Shortlist (Selected)</span><span class="chip w">Preferences (field answer)</span></div>
+      <div class="chips"><em>writes</em><span class="chip w">Role Shortlist (Selected)</span></div>
     </div>
   </div>
 
@@ -330,17 +332,17 @@
         <div class="api-head"><span class="num">API 4</span><code>generateQueries</code><span class="tag">step queries</span><span class="tag">claude-opus-5-5</span><span class="tag">effort medium</span></div>
         <h3>Every ticked role, grouped by field → one LinkedIn query per role</h3>
         <ul class="io">
-          <li><b>In:</b> confirmed expertise, climate interests; per field with a ticked role: sector, summary, fit, chips, your answer to its question, searches already judged in it; the ticked roles</li>
+          <li><b>In:</b> skills from <code>activeSkills</code> (accepted unless removed), climate interests; per field with a ticked role: sector, summary, fit, chips, an answer to its question if an older profile holds one (no screen writes one now), searches already judged in it; the ticked roles</li>
           <li><b>Out:</b> one LinkedIn query and a rationale for each ticked role id</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:196</a></div>
-          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:364</a></div>
-          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:860</a></div>
+          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:183</a></div>
+          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:353</a></div>
+          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:851</a></div>
         </div>
       </div></div>
       <div class="cell">
-        <div class="chips"><em>reads</em><span class="chip r">Preferences (interests, field answers)</span><span class="chip r">Skills (confirmed)</span><span class="chip r">Fields (of ticked roles)</span><span class="chip r">Role Shortlist (ticked)</span><span class="chip r">Queries (judged)</span></div>
+        <div class="chips"><em>reads</em><span class="chip r">Preferences (interests)</span><span class="chip r">Skills (active)</span><span class="chip r">Fields (of ticked roles)</span><span class="chip r">Role Shortlist (ticked)</span><span class="chip r">Queries (judged)</span></div>
       </div>
     </div>
 
@@ -353,7 +355,7 @@
           <li>Empty text, or a repeat of a judged query → the turn fails, nothing written</li>
           <li>Each role's untried query replaced in place; extra untried ones retired as superseded; judged ones and unticked roles' queries left alone</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:541</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:532</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Queries</span></div>
@@ -365,7 +367,7 @@
   <div class="row">
     <div class="cell"><div class="box you">
       <div class="screen">Searches</div>
-      <ul><li>One card per ticked role: <b>Open on LinkedIn</b> (a link you click), Copy, alert steps</li><li>Run it on LinkedIn yourself</li><li><b>Change roles</b> goes back to Roles</li></ul>
+      <ul><li>One card per ticked role: <b>Open on LinkedIn</b> (a link you click), Copy</li><li>Run it on LinkedIn yourself</li><li><b>Change roles</b> goes back to Roles</li></ul>
     </div></div>
     <div class="cell"></div>
     <div class="cell"></div>
@@ -377,18 +379,19 @@
 <p class="sub">Both flows, top to bottom in order. Purple edge = API call, green edge = your clicks.</p>
 <div class="tablewrap">
 <table>
-  <thead><tr><th>Moment</th><th>Preferences</th><th>Experience Cards</th><th>Skills</th><th>Fields</th><th>Role Shortlist</th><th>Queries</th></tr></thead>
+  <thead><tr><th>Moment</th><th>Preferences</th><th>Experience Cards</th><th>Skills</th><th>Fields</th><th>Role Shortlist</th><th>Queries</th><th>Inputs</th></tr></thead>
   <tbody>
-    <tr class="rowapi"><td><b>API 1</b> extractCards</td><td><span class="chip w">W</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td><td></td></tr>
-    <tr class="rowapi"><td><b>API 2</b> inferPreferences</td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td></td><td></td><td></td></tr>
-    <tr class="rowyou"><td>Highlights clicks</td><td><span class="chip w">W</span></td><td><span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td><td></td></tr>
-    <tr class="rowapi"><td><b>API 3</b> discoverFields</td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td></tr>
-    <tr class="rowyou"><td>Roles clicks</td><td><span class="chip w">W</span></td><td></td><td></td><td></td><td><span class="chip w">W</span></td><td></td></tr>
-    <tr class="rowapi"><td><b>API 4</b> generateQueries</td><td><span class="chip r">R</span></td><td></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td></tr>
+    <tr class="rowyou"><td>Start (Resume)</td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="chip w">W</span></td></tr>
+    <tr class="rowapi"><td><b>API 1</b> extractCards</td><td><span class="chip w">W</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td><td></td><td></td></tr>
+    <tr class="rowapi"><td><b>API 2</b> inferPreferences</td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td></td><td></td><td></td><td></td></tr>
+    <tr class="rowyou"><td>Highlights clicks</td><td><span class="chip w">W</span></td><td><span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td><td></td><td></td></tr>
+    <tr class="rowapi"><td><b>API 3</b> discoverFields</td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td><span class="chip w">W</span></td><td></td><td></td></tr>
+    <tr class="rowyou"><td>Roles clicks</td><td></td><td></td><td></td><td></td><td><span class="chip w">W</span></td><td></td><td></td></tr>
+    <tr class="rowapi"><td><b>API 4</b> generateQueries</td><td><span class="chip r">R</span></td><td></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span></td><td><span class="chip r">R</span> <span class="chip w">W</span></td><td></td></tr>
   </tbody>
 </table>
 </div>
-<p class="note">Section names are the <code>##</code> headings in profile.md; the format is defined in the header comment of <a href="../src/lib/profile.ts">profile.ts</a>.</p>
+<p class="note">Section names are the <code>##</code> headings in profile.md (<code>Session Notes</code> is left out of this table); the format is defined in the header comment of <a href="../src/lib/profile.ts">profile.ts</a>.</p>
 
 <!-- ───────────── ground truth + out of scope ───────────── -->
 <div class="cols2">

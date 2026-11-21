@@ -18,7 +18,7 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   paste → cards path (`cards.ts`). Google Docs needs an auth flow, so it is
   the last of the three. *(pre-2b; 2026-11-17 run)*
 - **Edit every prior input and show how the profile changes.** Every
-  top-bar item is a link back to its screen (2b.17), and re-running
+  reached nav item is a link back to its screen (2b.17), and re-running
   discovery from Highlights updates the roles, but nothing shows what
   changed. Wanted: change an answer, a card, a skill or a ticked role from
   anywhere, and show a before/after of the profile entries that changed.
@@ -37,8 +37,9 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   and `cards.ts` only if the stored shape changes (then `profile.ts`, the
   fixtures and the round-trip tests too). *(2026-11-19 walkthrough)*
 - **Retraining as a consideration.** The retraining question is gone
-  (2b.16, D54); `retrainingAppetite` stays a preference key, filled only
-  from the notes box, and discovery still labels each field's move
+  (2b.16, D54); `retrainingAppetite` stays a preference key, filled from
+  the notes box or by `inferPreferences` when the cards clearly support it,
+  and discovery still labels each field's move
   (`sector`, `adjacent`, `retraining`) and ranks retraining last. Decide
   whether and where the person says how far they would retrain: a filter
   on the Roles screen next to seniority (below), a later question, or
@@ -51,6 +52,11 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   query). *(2026-11-17 run)*
 - **Editable profile drawer**, scoped to a section that cannot break what
   the app writes (D42). *(pre-2b)*
+- **The stored resume in the profile drawer.** `## Inputs` (D56) is shown
+  only on the Resume page; the drawer's summary (`profile-summary.ts`)
+  leaves it out, so the raw file under "Export" is the only other place it
+  appears. Decide whether the summary names it, and how briefly.
+  *(found in 2b.19)*
 
 ## 2. Discovery, fields and roles
 
@@ -61,8 +67,8 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   and its `accepted | rejected | unsure` values are still on the profile
   waiting for it. *(decided 2026-11-18)*
 - **What a field heading says.** The Roles screen shows a field's name, its
-  overlap label, its move label, "Based on" and the two-sentence summary
-  (2b.18, D57). Discovery still writes a `Sector` line per field that no
+  overlap label, its move label, "Based on", the two-sentence summary and
+  any "Not sure yet" line (2b.18, D57). Discovery still writes a `Sector` line per field that no
   screen shows. Either cut it from the discovery schema (less output, a
   faster turn) or bring it back with a job the title does not already do.
   *(2026-11-19 walkthrough)*
@@ -130,10 +136,13 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 - **Search specificity.** Searches written by Sonnet 5.5 paired a role's
   title with generic climate terms ("green jobs", "climate careers") and
   not the field's own vocabulary. 2b.14 moves `queries` back to Opus 5.5
-  and 2b.15 puts the person's skills into the prompt for the first time. If
-  2b.19 or the pilot still shows general searches, the fix is the
-  `queries.ts` prompt (field-specific terms required, generic ones banned)
-  and a check for it in the Phase 3 eval rubric. Related:
+  and 2b.15 puts the person's skills into the prompt for the first time. In
+  the 2b.19 run all eight queries passed the specificity check on Opus 5.5,
+  at about $0.03 per `queries` call, three times the Sonnet 5.5 cost
+  (technical-plan.md §6). This stays a watch item: if the pilot still shows
+  general searches, the fix is the `queries.ts` prompt (field-specific
+  terms required, generic ones banned), and the Phase 3 eval rubric should
+  check for it either way. Related:
   product-review.md B6. *(2026-11-19 walkthrough)*
 - **Job alerts.** The "Get new matches by email" steps left the search card
   in 2b.18; `ALERT_STEPS` in `boards.ts` keeps the text. The PRD has the
@@ -160,8 +169,8 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   It was shown under the field on the Roles screen and removed in 2b.18
   (D57): a screen for choosing should not open a conversation
   (design-language.md, principle 11). The question is still generated and
-  stored, and `addOtherPreference` still saves an answer; nothing shows
-  either. Decide with the rest of this milestone: whether the question
+  stored, and `addOtherPreference` in `profile.ts` can still save an
+  answer, but the shell no longer calls it and nothing shows either. Decide with the rest of this milestone: whether the question
   comes back, at which stage (after the searches have been run is the
   likely place), and what an answer changes. An answer that changes nothing
   on screen was the earlier complaint (D43, D50): it should re-order that
@@ -188,7 +197,9 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 - **Is the preference-inference call still earning its cost?** The paste
   turn makes a second Opus call (`inferPreferences` in `elicit.ts`) that
   now fills only location, work mode, seniority and retraining appetite,
-  none of which is asked and one of which (seniority) nothing reads. Check
+  none of which is asked and one of which (seniority) nothing reads. Since
+  D54 it never infers climate interests and makes no call when only they
+  are missing, so a profile whose notes state the four makes none. Check
   its share of `llm_usage` cost and whether discovery does any worse
   without it. *(2026-11-19 walkthrough, found while planning)*
 
