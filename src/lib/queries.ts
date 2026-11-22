@@ -75,7 +75,14 @@ import {
   activeSkills,
 } from "./profile";
 import type { QueryFeedback } from "./session";
-import { ALERT_STEPS, BOARD_LABELS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY } from "./boards";
+import {
+  ALERT_STEPS,
+  BOARD_LABELS,
+  BOARD_NAME_KEY,
+  RETIRED_KEY,
+  RETIRED_REASON_KEY,
+  isRetiredQuery,
+} from "./boards";
 
 /** Re-exported for callers of this module; `boards.ts` is the client-safe owner. */
 export { ALERT_STEPS, BOARD_NAME_KEY, RETIRED_KEY, RETIRED_REASON_KEY };
@@ -92,8 +99,12 @@ export type QueryBoard = (typeof QUERY_BOARDS)[number];
 const WRITE_BOARD: QueryBoard = QUERY_BOARDS[0];
 /** A revision may add this many queries at most, so a run cannot flood the list. */
 const MAX_REVISION_ADDS = 4;
-/** Fields a revision's added query may serve. */
-const FIELDS_IN_PLAY: readonly FieldStatus[] = ["accepted", "unsure"];
+/**
+ * Fields a revision reads and its added queries may serve: every field but
+ * a rejected one. Since D50 no screen marks a field, so discovered fields
+ * stay `candidate` and must count (technical-plan.md D58).
+ */
+const FIELDS_IN_PLAY: readonly FieldStatus[] = ["candidate", "accepted", "unsure"];
 
 /** `extra` keys this module writes on queries and fields. */
 export const WHY_KEY = "Rationale";
@@ -201,7 +212,7 @@ Rules for every query:
 - rationale is one plain sentence saying which titles and field terms the search combines and why those were chosen.
 - Use nothing about the person beyond what the message states; invent no personal detail.`;
 
-export const REVISE_SYSTEM_PROMPT = `You revise LinkedIn job searches for one career switcher moving into climate work. You get their preferences, skills, the fields they have accepted or are unsure about, the example roles, every query with its status and the role it was written for, and one piece of feedback the person just gave on one query: a verdict (good or bad) and a reason in their own words. The verdict is already recorded on that query; never change that query and never rewrite any query the person has judged. Every query you write is a LinkedIn search. Return JSON:
+export const REVISE_SYSTEM_PROMPT = `You revise LinkedIn job searches for one career switcher moving into climate work. You get their preferences, skills, the fields they have not rejected, the example roles, every query with its status and the role it was written for, and one piece of feedback the person just gave on one query: a verdict (good or bad) and a reason in their own words. The verdict is already recorded on that query; never change that query and never rewrite any query the person has judged. Every query you write is a LinkedIn search. Return JSON:
 - explanation: one paragraph for the chat. Quote or closely paraphrase the person's reason, name exactly which query ids you retired or narrowed and why, describe each added query by its terms (added queries get their ids later; never invent ids), and mention any field status change or note.
 - retire: untried query ids the reason also invalidates (same field, same problem), each with a reason.
 - narrow: untried LinkedIn query ids rewritten in place to sidestep the problem, with the full new query text. To replace the judged query itself, name its id here with the new text; it is saved as a new query for the same role and the judged one keeps its record.
@@ -227,10 +238,6 @@ Rules for every query:
 
 function fieldsInPlay(p: Profile): Field[] {
   return p.fields.filter((f) => FIELDS_IN_PLAY.includes(f.status));
-}
-
-function isRetired(q: Query): boolean {
-  return q.extra[RETIRED_KEY] === "yes";
 }
 
 /** Revision context. Seniority is deliberately absent: no query may carry a level word. */
@@ -271,7 +278,7 @@ function renderQueries(p: Profile): string {
     .map((q) => {
       const name = q.extra[BOARD_NAME_KEY] === undefined ? q.board : `${q.board}: ${q.extra[BOARD_NAME_KEY]}`;
       const role = q.roleId === "" ? "" : ` role ${q.roleId};`;
-      const retired = isRetired(q) ? `; retired: ${q.extra[RETIRED_REASON_KEY] ?? ""}` : "";
+      const retired = isRetiredQuery(q) ? `; retired: ${q.extra[RETIRED_REASON_KEY] ?? ""}` : "";
       const reason = q.reason === "" ? "" : `; reason: ${q.reason}`;
       return `- ${q.id} [${name}]${role} fields ${q.fieldIds.join(", ")}; status ${q.status}${reason}${retired}\n  ${q.query}`;
     })
@@ -288,7 +295,7 @@ function renderProfileContext(p: Profile): string {
     "# Skills",
     skills.length === 0 ? "(none)" : skills.join(", "),
     "",
-    "# Fields (accepted or unsure) and their roles",
+    "# Fields (not rejected) and their roles",
     renderFields(p),
     "",
     "# Queries so far",
@@ -299,7 +306,7 @@ function renderProfileContext(p: Profile): string {
 /** The role's untried, unretired LinkedIn queries, oldest first: the ones a generation run may replace. */
 function untriedQueriesForRole(p: Profile, roleId: string): Query[] {
   return p.queries.filter(
-    (q) => q.roleId === roleId && q.board === WRITE_BOARD && q.status === "untried" && !isRetired(q),
+    (q) => q.roleId === roleId && q.board === WRITE_BOARD && q.status === "untried" && !isRetiredQuery(q),
   );
 }
 
@@ -395,7 +402,7 @@ export function buildReviseMessage(p: Profile, feedback: QueryFeedback): string 
 export interface QueriesDropped {
   /** Drafts with an empty (or absent) query text. */
   emptyQuery: number;
-  /** Revision drafts whose fieldIds named no accepted/unsure field. */
+  /** Revision drafts whose fieldIds named no field in play (any but rejected). */
   unfielded: number;
   /** Revision drafts repeating an earlier draft's `(board, normalized query)` key. */
   duplicate: number;
@@ -728,7 +735,7 @@ export function applyRevision(
       dropped.judgedQueries += 1;
       continue;
     }
-    if (isRetired(q)) continue;
+    if (isRetiredQuery(q)) continue;
     next = upsertQuery(next, {
       ...q,
       extra: { ...q.extra, [RETIRED_KEY]: "yes", [RETIRED_REASON_KEY]: r.reason.trim() },
@@ -747,7 +754,7 @@ export function applyRevision(
       dropped.emptyQuery += 1;
       continue;
     }
-    if (q.status !== "untried" || isRetired(q)) {
+    if (q.status !== "untried" || isRetiredQuery(q)) {
       // A judged (or retired) query keeps its record; the rewrite becomes a
       // LinkedIn add that keeps the fields and the role of the query it replaces.
       extraDrafts.push({ query, fieldIds: q.fieldIds, roleId: q.roleId, rationale: `Narrowed from ${q.id}` });

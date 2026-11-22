@@ -160,23 +160,20 @@ describe("profile edits through session state", () => {
 });
 
 describe("turn bookkeeping", () => {
-  it("appends the user message and then the assistant answer", () => {
+  it("replaces the profile and keeps no assistant message (D49)", () => {
     const afterUser = appendUserMessage(newSessionState(), "here is my resume");
     const afterTurn = applyTurnResponse(afterUser, {
       message: "I made three cards.",
       profileMd: serializeProfile({ ...emptyProfile(), cards: [card("C1")] }),
       pills: [{ label: "Looks right", value: "looks right" }],
     });
-    expect(afterTurn.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
-    expect(afterTurn.messages[1]?.pills).toHaveLength(1);
+    expect(afterTurn.messages.map((m) => m.role)).toEqual(["user"]);
     expect(profileView(afterTurn).profile.cards).toHaveLength(1);
   });
 
-  it("leaves the profile untouched when the turn returns none", () => {
+  it("leaves the state untouched when the turn returns no profile", () => {
     const before = stateWith({ ...emptyProfile(), cards: [card("C1")] });
-    const after = applyTurnResponse(before, { message: "Tell me more." });
-    expect(after.profileMd).toBe(before.profileMd);
-    expect(after.messages[0]?.pills).toBeUndefined();
+    expect(applyTurnResponse(before, { message: "Tell me more." })).toBe(before);
   });
 });
 

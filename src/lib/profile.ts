@@ -1849,6 +1849,18 @@ export function setRoleSelected(p: Profile, id: string, selected: boolean): Prof
   return { ...p, roles: p.roles.map((r) => (r.id === id ? { ...r, selected } : r)) };
 }
 
+/**
+ * `extra` key discovery sets to `yes` on a field or role its latest run did
+ * not return (technical-plan.md D58). The item keeps its id, so queries that
+ * cite it still resolve; no screen lists it and its role is un-ticked.
+ */
+export const DROPPED_KEY = "Dropped";
+
+/** True for a field or role the latest discovery run did not return (D58). */
+export function isDropped(item: { extra: Extra }): boolean {
+  return item.extra[DROPPED_KEY] === "yes";
+}
+
 /** Roles that belong to a field, in file order; `selectedOnly` keeps the ticked ones. */
 export function rolesForField(p: Profile, fieldId: string, selectedOnly = false): Role[] {
   return p.roles.filter((r) => r.fieldId === fieldId && (!selectedOnly || r.selected));
@@ -1860,10 +1872,13 @@ export function rolesForField(p: Profile, fieldId: string, selectedOnly = false)
  * writing and the UI share. A field's status is not consulted: the Roles
  * screen shows every discovered field as a heading with no marking, so a tick
  * always means a search. A ticked role whose `Field` names no field in the
- * profile is left out, because no screen shows it.
+ * profile is left out, because no screen shows it, and so is a dropped field
+ * or role (D58).
  */
 export function selectedRoles(p: Profile): Role[] {
-  return p.fields.flatMap((f) => rolesForField(p, f.id, true));
+  return p.fields
+    .filter((f) => !isDropped(f))
+    .flatMap((f) => rolesForField(p, f.id, true).filter((r) => !isDropped(r)));
 }
 
 /**
@@ -1958,6 +1973,32 @@ export function moveSkill(p: Profile, skill: string, to: SkillBucket): Profile {
   };
   skills[to] = [...skills[to], skill.trim()];
   return { ...p, skills };
+}
+
+/** The spelling already stored for this skill, in any bucket, or the input. */
+function canonicalSkill(p: Profile, skill: string): string {
+  const key = skill.trim().toLowerCase();
+  const all = [...p.skills.confirmed, ...p.skills.inferred, ...p.skills.excluded];
+  return all.find((s) => s.trim().toLowerCase() === key) ?? skill.trim();
+}
+
+/**
+ * The user removes a skill: it moves to `Excluded` from whichever bucket it
+ * is in, so `activeSkills` stops listing it (technical-plan.md D53).
+ */
+export function rejectSkill(p: Profile, skill: string): Profile {
+  if (skill.trim() === "") return p;
+  return moveSkill(p, canonicalSkill(p, skill), "excluded");
+}
+
+/**
+ * The user brings back a skill they removed: it moves to `Inferred`, keeping
+ * the spelling already in the profile, so `activeSkills` lists it again
+ * (technical-plan.md D53).
+ */
+export function restoreSkill(p: Profile, skill: string): Profile {
+  if (skill.trim() === "") return p;
+  return moveSkill(p, canonicalSkill(p, skill), "inferred");
 }
 
 /** Replaces the session notes. */

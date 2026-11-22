@@ -14,7 +14,7 @@
  *              question, or the done summary with a "go" pill.
  * - `discover` ranked fields and roles from cards + reference data (no web; D44).
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
- *              with no field id is answered with a list of fields to pick;
+ *              with no field id is answered with a list of fields to pick.
  * - `queries`  one LinkedIn search per selected role, for every role with
  *              `Selected: yes`; a `selectedRoles` input (technical-plan.md D47).
  * - `revise`   one piece of "Tried it" feedback → revised queries and an
@@ -96,8 +96,6 @@ export class TurnInputError extends Error {
  * browser-safe `screens.ts` so client and server share one source.
  */
 export const GO_PILL: AnswerPill = FIND_ROLES_PILL;
-
-/** Offered after explore and discover when the profile has fields to search on. */
 
 export const FIELD_ID_PATTERN = /\bF\d+\b/;
 

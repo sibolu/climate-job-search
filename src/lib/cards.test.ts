@@ -11,8 +11,6 @@ import {
   MAX_INFERRED_SKILLS,
   MAX_SKILLS_PER_CARD,
   MIN_CARDS,
-  NOTES_LABEL,
-  appendNotes,
   applyNotedPreferences,
   buildExtractMessage,
   buildReviseMessage,
@@ -22,13 +20,23 @@ import {
   mergeInferredSkills,
   normalizeDrafts,
   normalizeSkills,
-  rejectSkill,
-  restoreSkill,
   renderCardsForPrompt,
   reviseCards,
 } from "./cards";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, emptyProfile, setCardExcluded, setInputs, setPreference, upsertCard, activeSkills, moveSkill } from "./profile";
+import {
+  type Profile,
+  emptyProfile,
+  setCardExcluded,
+  setInputs,
+  setPreference,
+  upsertCard,
+  activeSkills,
+  moveSkill,
+  rejectSkill,
+  restoreSkill,
+} from "./profile";
+import { NOTES_LABEL, composeStartText } from "./screens";
 import { MAX_MESSAGE_CHARS } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -310,12 +318,8 @@ describe("years", () => {
 });
 
 describe("notes → preferences", () => {
-  it("appendNotes adds the labelled block and skips blank notes", () => {
-    expect(appendNotes("resume text\n", "  ")).toBe("resume text\n");
-    expect(appendNotes("resume text\n\n", " senior, no retraining ")).toBe(
-      `resume text\n\n${NOTES_LABEL}\nsenior, no retraining`,
-    );
-    expect(buildExtractMessage(appendNotes("r", "n"), emptyProfile())).toContain(`${NOTES_LABEL}\nn\n</pasted_text>`);
+  it("the cards prompt names the notes block the Start screen writes", () => {
+    expect(buildExtractMessage(composeStartText("r", "n"), emptyProfile())).toContain(`${NOTES_LABEL}\nn\n</pasted_text>`);
   });
 
   it("writes noted preferences as stated, clipped, without overwriting what is there", async () => {

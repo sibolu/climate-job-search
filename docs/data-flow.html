@@ -196,9 +196,9 @@
           <li><b>Out:</b> cards (situation / actions / results / areas of expertise), inferred expertise, preferences stated in the notes</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/cards.ts">CARDS_SYSTEM_PROMPT · cards.ts:193</a></div>
-          <div><span>User message</span><a href="../src/lib/cards.ts">buildExtractMessage · cards.ts:259</a></div>
-          <div><span>Call site</span><a href="../src/lib/cards.ts">extractCards · cards.ts:443</a></div>
+          <div><span>System prompt</span><a href="../src/lib/cards.ts">CARDS_SYSTEM_PROMPT · cards.ts:189</a></div>
+          <div><span>User message</span><a href="../src/lib/cards.ts">buildExtractMessage · cards.ts:255</a></div>
+          <div><span>Call site</span><a href="../src/lib/cards.ts">extractCards · cards.ts:428</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -220,7 +220,7 @@
         </ul>
         <div class="links">
           <div><span>System prompt</span><a href="../src/lib/elicit.ts">INFER_SYSTEM · elicit.ts:501</a></div>
-          <div><span>User message</span><a href="../src/lib/elicit.ts">inline in inferPreferences · elicit.ts:561</a></div>
+          <div><span>User message</span><a href="../src/lib/elicit.ts">inline in inferPreferences · elicit.ts:549</a></div>
           <div><span>Call site</span><a href="../src/lib/elicit.ts">inferPreferences · elicit.ts:549</a></div>
         </div>
       </div></div>
@@ -239,7 +239,7 @@
     </div></div>
     <div class="cell"><div class="box codebox">
       <h3>Local edits, no API call</h3>
-      <ul><li>Each click rewrites profile.md in localStorage</li><li><a href="../src/lib/workspace.ts">rejectProfileSkill, restoreProfileSkill · workspace.ts:118</a>; <a href="../src/lib/elicit.ts">toggleClimateInterest · elicit.ts:363</a></li></ul>
+      <ul><li>Each click rewrites profile.md in localStorage</li><li><a href="../src/lib/workspace.ts">rejectProfileSkill, restoreProfileSkill · workspace.ts:123</a>; <a href="../src/lib/elicit.ts">toggleClimateInterest · elicit.ts:363</a></li></ul>
     </div></div>
     <div class="cell">
       <div class="chips"><em>writes</em><span class="chip w">Experience Cards</span><span class="chip w">Skills (removed)</span><span class="chip w">Preferences (climate interests)</span></div>
@@ -259,12 +259,12 @@
         <h3>Cards + preferences + catalogue → 4–7 ranked fields, 2–4 roles each</h3>
         <ul class="io">
           <li><b>In:</b> active cards, preferences (picked climate areas rank first, never filter), skills from <code>activeSkills</code> (accepted unless removed), fields already on file (rejected ones must not return), the reference catalogue</li>
-          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles with plain occupation titles, each citing cards</li>
+          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles with plain occupation titles, each citing cards. A re-run replaces the list: fields and roles it does not return are marked <code>Dropped</code> and un-ticked, never deleted (D58)</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT · discover.ts:319</a></div>
-          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:452</a></div>
-          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:848</a></div>
+          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT · discover.ts:320</a></div>
+          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:453</a></div>
+          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:877</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -282,7 +282,7 @@
           <li>Strip source URLs the catalogue doesn't list</li>
           <li>Cap at 7 fields, drop duplicates</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:646</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:770</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Fields</span><span class="chip w">Role Shortlist</span></div>
@@ -336,9 +336,9 @@
           <li><b>Out:</b> one LinkedIn query and a rationale for each ticked role id</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:183</a></div>
-          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:353</a></div>
-          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:851</a></div>
+          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:194</a></div>
+          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:360</a></div>
+          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:858</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -355,7 +355,7 @@
           <li>Empty text, or a repeat of a judged query → the turn fails, nothing written</li>
           <li>Each role's untried query replaced in place; extra untried ones retired as superseded; judged ones and unticked roles' queries left alone</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:532</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:583</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Queries</span></div>

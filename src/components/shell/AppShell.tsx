@@ -33,7 +33,7 @@ import {
   navStepFor,
   resumeView,
 } from "@/lib/screens";
-import { sendTurn } from "@/lib/turn-stream";
+import { TURN_DROPPED_TEXT, sendTurn } from "@/lib/turn-stream";
 import {
   applyTurnResponse,
   buildSelectedRolesTurnInput,
@@ -151,6 +151,7 @@ export default function AppShell() {
     const request = buildTurnRequest(base, step, input);
     const result = await sendTurn(request, { signal: controller.signal });
     if (!result.ok) {
+      if (controller.signal.aborted) return false;
       setBusy(false);
       abortRef.current = null;
       if (result.kind === "unauthorized") {
@@ -162,6 +163,7 @@ export default function AppShell() {
     }
 
     let failed: string | undefined;
+    let answered = false;
     try {
       for await (const event of result.events) {
         if (event.type === "delta") {
@@ -169,6 +171,7 @@ export default function AppShell() {
         } else if (event.type === "error") {
           failed = event.message;
         } else if (event.type === "final") {
+          answered = true;
           const response = event.response;
           setState((current) => {
             if (current === null) return current;
@@ -179,8 +182,13 @@ export default function AppShell() {
         }
       }
     } catch {
-      failed = "The connection dropped before the answer was complete.";
+      failed = TURN_DROPPED_TEXT;
     }
+    // "Start over" cancelled this turn and has already reset the screen.
+    if (controller.signal.aborted) return false;
+    // A stream that closes with neither a final nor an error line (a cut at
+    // maxDuration, a proxy closing the body) is a failed turn, not a success.
+    if (failed === undefined && !answered) failed = TURN_DROPPED_TEXT;
     setErrorText(failed);
     setBusy(false);
     abortRef.current = null;
@@ -262,7 +270,11 @@ export default function AppShell() {
           <ProfileDrawer
             state={state}
             profileMd={profileMd}
-            onImport={persist}
+            importDisabled={busy}
+            onImport={(next) => {
+              // A running turn would overwrite the import when it lands.
+              if (!busy) persist(next);
+            }}
             onClose={() => setDrawerOpen(false)}
           />
         ) : null}
@@ -318,9 +330,7 @@ export default function AppShell() {
                 profile={profile}
                 copiedAt={copiedAt}
                 now={now}
-                onCopy={(queryId) =>
-                  setCopiedAt((current) => ({ ...current, [queryId]: nowMs() }))
-                }
+                onCopy={(key) => setCopiedAt((current) => ({ ...current, [key]: nowMs() }))}
                 onWriteSearches={() => void writeSearches()}
                 onChangeRoles={() => setView("roles")}
               />

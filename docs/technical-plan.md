@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D57, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D58, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1003,6 +1003,27 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       search card; `ALERT_STEPS` stays in `boards.ts` as data.
     - **Info icons** are deleted outright (`InfoTip.tsx`, `INFO_TIPS` and
       their CSS): each one repeated the page or the button it sat on.
+
+58. **The latest discovery run is the person's list (2026-11-21).** A
+    re-run used to upsert only what it returned, so fields and roles from
+    earlier runs stayed on the Roles screen in their old order, ticks
+    included, and "Write LinkedIn searches" still wrote a search for a role
+    resting on a highlight the person had since excluded (Gate 2b code
+    review). Since D50 no screen can remove a field, so nothing else could
+    clear them.
+    - `applyDiscovery` moves the fields a run returns into that run's rank
+      order and marks every field and role it did not return
+      `- **Dropped:** yes` (`DROPPED_KEY`, `isDropped` in `profile.ts`),
+      un-ticking the role. A field or role the next run returns again loses
+      the mark. Ids are kept, never deleted, so queries that cite them still
+      resolve and no id is reused.
+    - `roleGroups` and `selectedRoles` leave dropped items out, so the Roles
+      and Searches screens, the drawer and query writing all see the latest
+      run only. A run that writes no field leaves the profile as it was.
+    - Revision (`queries.ts`) now reads every field that is not rejected:
+      with no screen marking fields, discovered ones stay `candidate`, and
+      the old accepted-or-unsure filter left revision with no field to add a
+      search for.
 
 ---
 

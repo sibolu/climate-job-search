@@ -12,6 +12,8 @@ import { saveFile, saveSessionExport } from "./save-file";
 export interface ProfileDrawerProps {
   state: SessionState;
   profileMd: string;
+  /** True while a turn runs: its answer would replace an imported session. */
+  importDisabled: boolean;
   onImport: (state: SessionState) => void;
   onClose: () => void;
 }
@@ -43,7 +45,13 @@ function Section<T>({
  * `profile-summary.ts`), with the raw file, export and import under
  * "Export". Everything shown lives in this browser only.
  */
-export default function ProfileDrawer({ state, profileMd, onImport, onClose }: ProfileDrawerProps) {
+export default function ProfileDrawer({
+  state,
+  profileMd,
+  importDisabled,
+  onImport,
+  onClose,
+}: ProfileDrawerProps) {
   const [importError, setImportError] = useState<string | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const summary = useMemo(() => profileSummary(parseProfile(profileMd).profile), [profileMd]);
@@ -149,7 +157,12 @@ export default function ProfileDrawer({ state, profileMd, onImport, onClose }: P
           >
             Download JSON
           </button>
-          <button type="button" className="cc-drawer-btn" onClick={() => fileRef.current?.click()}>
+          <button
+            type="button"
+            className="cc-drawer-btn"
+            disabled={importDisabled}
+            onClick={() => fileRef.current?.click()}
+          >
             Import
           </button>
         </div>

@@ -11,7 +11,7 @@
 import type { AnswerPill } from "./session";
 import { pillsFor } from "./elicit";
 import type { Board, Field, Profile, Query, Role } from "./profile";
-import { activeCards, citedCardIds, rolesForField } from "./profile";
+import { activeCards, citedCardIds, isDropped, rolesForField } from "./profile";
 import { liveQueryForRole, selectedRoles } from "./workspace";
 
 // ---------------------------------------------------------------------------
@@ -317,7 +317,8 @@ export interface RoleGroupView {
 }
 
 /**
- * One group per discovered field, in the rank order discovery wrote them.
+ * One group per field the latest discovery run returned, in its rank order;
+ * fields and roles it did not return are left out (technical-plan.md D58).
  * A field's status is never read: every field is a heading with no marking
  * (technical-plan.md D50). The sector line and the field's ask are written
  * to the profile but not shown (D57).
@@ -325,7 +326,7 @@ export interface RoleGroupView {
  */
 export function roleGroups(p: Profile): RoleGroupView[] {
   const titles = cardTitles(p);
-  return p.fields.map((field) => {
+  return p.fields.filter((field) => !isDropped(field)).map((field) => {
     const cited = [
       ...field.evidence.map((line) => line.cardId),
       ...citedCardIds(field.fit),
@@ -351,7 +352,9 @@ export function roleGroups(p: Profile): RoleGroupView[] {
       summary: citationsToTitles(p, field.summary),
       basedOn,
       uncertain: citationsToTitles(p, field.uncertain),
-      roles: rolesForField(p, field.id).map((role) => ({
+      roles: rolesForField(p, field.id)
+        .filter((role) => !isDropped(role))
+        .map((role) => ({
         role,
         why: citationsToTitles(p, role.why),
         companies: role.companies.length > 0 ? `Example companies: ${role.companies.join(", ")}` : "",
@@ -388,6 +391,16 @@ export function searchCards(p: Profile): SearchCardView[] {
     fieldName: names.get(role.fieldId) ?? "",
     query: liveQueryForRole(p, role.id),
   }));
+}
+
+/**
+ * What the "Copied" marker is keyed by: the query's id and its text. Writing
+ * searches again rewrites a role's untried query in place under the same id
+ * (technical-plan.md D47), so keying by id alone would mark text the person
+ * never copied.
+ */
+export function copyKey(query: Query): string {
+  return `${query.id}\n${query.query}`;
 }
 
 /** True once some selected role has a live search: that unlocks the Searches step. */

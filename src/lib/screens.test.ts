@@ -19,6 +19,7 @@ import {
   citationsToTitles,
   hasLiveQueries,
   roleGroups,
+  copyKey,
   searchCards,
   selectedRolesNote,
   sourceLabel,
@@ -327,6 +328,22 @@ describe("citationsToTitles", () => {
   });
 });
 
+describe("roleGroups and selectedRoles leave dropped items out (D58)", () => {
+  it("hides a dropped field and a dropped role, ticked or not", () => {
+    const dropped = { Dropped: "yes" };
+    const keptRole = role("R1", "F1", true);
+    const droppedRole = { ...role("R2", "F1", true), extra: dropped };
+    const p = withFields(
+      [field("F1"), field("F2", { extra: dropped })],
+      [keptRole, droppedRole, role("R3", "F2", true)],
+      [],
+    );
+    expect(roleGroups(p).map((g) => g.field.id)).toEqual(["F1"]);
+    expect(roleGroups(p)[0]!.roles.map((r) => r.role.id)).toEqual(["R1"]);
+    expect(searchCards(p).map((c) => c.role.id)).toEqual(["R1"]);
+  });
+});
+
 describe("roleGroups", () => {
   const p: Profile = {
     ...withFields(
@@ -425,6 +442,15 @@ describe("the write-searches label", () => {
     expect(writeSearchesLabel(3)).toBe("Write LinkedIn searches for 3 roles");
     expect(selectedRolesNote(1)).toBe("");
     expect(selectedRolesNote(2)).toBe("");
+  });
+});
+
+describe("copyKey", () => {
+  it("changes when a query is rewritten under the same id", () => {
+    const before = query("Q3", "linkedin", ["F1"], { roleId: "R1" });
+    const after = { ...before, query: `${before.query} rewritten` };
+    expect(copyKey(after)).not.toBe(copyKey(before));
+    expect(copyKey({ ...before })).toBe(copyKey(before));
   });
 });
 

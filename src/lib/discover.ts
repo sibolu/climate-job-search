@@ -26,6 +26,7 @@ import { z } from "zod";
 import { isOpenToSuggestions } from "./elicit";
 import type { CallMetrics, Llm } from "./llm";
 import {
+  DROPPED_KEY,
   type Ask,
   AskSchema,
   type Evidence,
@@ -763,7 +764,8 @@ export interface ApplyResult {
  * Writes validated fields and roles into the profile. An existing field
  * (matched by `extra.Ref`, then by name) keeps its id, status and explored
  * flag; a new one is appended as `candidate`. Roles are matched within their
- * field by ref, then title.
+ * field by ref, then title. Fields and roles from earlier runs that this run
+ * did not return are marked dropped (technical-plan.md D58).
  */
 export function applyDiscovery(profile: Profile, fields: readonly ValidatedField[]): ApplyResult {
   let next = profile;
@@ -772,6 +774,7 @@ export function applyDiscovery(profile: Profile, fields: readonly ValidatedField
   for (const f of fields) {
     const existing = findExistingField(next, f);
     const extra = { ...(existing?.extra ?? {}) };
+    delete extra[DROPPED_KEY];
     if (f.ref !== null) extra[REF_KEY] = f.ref;
     else delete extra[REF_KEY];
     next = upsertField(next, {
@@ -797,6 +800,7 @@ export function applyDiscovery(profile: Profile, fields: readonly ValidatedField
     for (const r of f.roles) {
       const existingRole = findExistingRole(next, field.id, r);
       const rExtra = { ...(existingRole?.extra ?? {}) };
+      delete rExtra[DROPPED_KEY];
       if (r.ref !== null) rExtra[REF_KEY] = r.ref;
       else delete rExtra[REF_KEY];
       next = upsertRole(next, {
@@ -814,7 +818,32 @@ export function applyDiscovery(profile: Profile, fields: readonly ValidatedField
       if (role !== undefined) writtenRoles.push(role);
     }
   }
-  return { profile: next, fields: writtenFields, roles: writtenRoles };
+  return { profile: dropUnreturned(next, writtenFields, writtenRoles), fields: writtenFields, roles: writtenRoles };
+}
+
+/**
+ * The latest run is the person's list (technical-plan.md D58): fields it
+ * returned move into its rank order, and every field or role it did not
+ * return is marked dropped and un-ticked, so no screen shows it and no
+ * search is written for it. Ids are kept, never deleted. A run that wrote
+ * nothing leaves the profile as it was.
+ */
+function dropUnreturned(profile: Profile, fields: readonly Field[], roles: readonly Role[]): Profile {
+  if (fields.length === 0) return profile;
+  const keptFieldIds = [...new Set(fields.map((f) => f.id))];
+  const keptRoleIds = new Set(roles.map((r) => r.id));
+  const byId = new Map(profile.fields.map((f) => [f.id, f] as const));
+  const ranked = keptFieldIds.flatMap((id) => byId.get(id) ?? []);
+  const rest = profile.fields
+    .filter((f) => !keptFieldIds.includes(f.id))
+    .map((f) => ({ ...f, extra: { ...f.extra, [DROPPED_KEY]: "yes" } }));
+  return {
+    ...profile,
+    fields: [...ranked, ...rest],
+    roles: profile.roles.map((r) =>
+      keptRoleIds.has(r.id) ? r : { ...r, selected: false, extra: { ...r.extra, [DROPPED_KEY]: "yes" } },
+    ),
+  };
 }
 
 // ---------------------------------------------------------------------------

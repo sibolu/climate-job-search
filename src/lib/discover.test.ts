@@ -39,12 +39,15 @@ import {
   type Profile,
   activeCards,
   emptyProfile,
+  isDropped,
   parseProfile,
+  selectedRoles,
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
   setInputs,
   setPreference,
+  setRoleSelected,
 } from "./profile";
 
 const METRICS: CallMetrics = {
@@ -395,6 +398,37 @@ describe("profile writes", () => {
     const applied = applyDiscovery(profile, v.fields);
     expect(applied.fields.map((f) => f.id)).toEqual(["F1", "F2"]);
     expect(applied.fields[1]!.extra[REF_KEY]).toBeUndefined();
+  });
+
+  it("drops and un-ticks what a later run does not return, and ranks by the latest run (D58)", () => {
+    const profile = fixture("web-designer");
+    const original = output().fields[0]!;
+    const fresh = { ...original, ref: null, name: "Brand new field", fit: "C3 shows it." };
+    const first = applyDiscovery(profile, validateOutput({ fields: [original, fresh] }, profile, ALLOWED).fields);
+    const [f1, f2] = first.fields.map((f) => f.id);
+    const r2 = first.profile.roles.find((r) => r.fieldId === f2)!.id;
+    const ticked = setRoleSelected(first.profile, r2, true);
+    expect(selectedRoles(ticked).map((r) => r.id)).toEqual([r2]);
+
+    const second = applyDiscovery(ticked, validateOutput({ fields: [original] }, ticked, ALLOWED).fields);
+    const dropped = second.profile.fields.find((f) => f.id === f2)!;
+    expect(isDropped(dropped)).toBe(true);
+    expect(isDropped(second.profile.fields.find((f) => f.id === f1)!)).toBe(false);
+    const droppedRole = second.profile.roles.find((r) => r.id === r2)!;
+    expect(isDropped(droppedRole)).toBe(true);
+    expect(droppedRole.selected).toBe(false);
+    expect(selectedRoles(second.profile)).toEqual([]);
+
+    const third = applyDiscovery(second.profile, validateOutput({ fields: [fresh, original] }, second.profile, ALLOWED).fields);
+    expect(third.profile.fields.map((f) => f.id)).toEqual([f2, f1]);
+    expect(third.profile.fields.some(isDropped)).toBe(false);
+    expect(parseProfile(serializeProfile(third.profile)).profile.fields.map((f) => f.id)).toEqual([f2, f1]);
+  });
+
+  it("leaves the profile as it was when a run writes no field", () => {
+    const profile = fixture("web-designer");
+    const first = applyDiscovery(profile, validateOutput(output(), profile, ALLOWED).fields);
+    expect(applyDiscovery(first.profile, []).profile).toBe(first.profile);
   });
 
   it("dedupes on the same key it matches on: one name, two refs", () => {

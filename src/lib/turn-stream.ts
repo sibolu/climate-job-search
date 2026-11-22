@@ -98,6 +98,12 @@ export async function* decodeTurnEvents(
 // Transport
 // ---------------------------------------------------------------------------
 
+/**
+ * Shown when the stream breaks, or closes with neither a `final` nor an
+ * `error` line: the turn did not finish, whatever the transport says.
+ */
+export const TURN_DROPPED_TEXT = "The connection dropped before the answer was complete.";
+
 export const TURN_ENDPOINT = "/api/turn";
 
 export interface SendTurnOptions {

@@ -8,17 +8,17 @@
  */
 
 import type { Profile } from "@/lib/profile";
-import { searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
+import { copyKey, searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
 import { canWriteQueries } from "@/lib/workspace";
 
 import QueryCard from "./QueryCard";
 
 export interface SearchesProps {
   profile: Profile;
-  /** Query id → epoch ms of the last copy, kept in the browser only (D41). */
+  /** `copyKey(query)` → epoch ms of the last copy, kept in the browser only (D41). */
   copiedAt: Record<string, number>;
   now: number;
-  onCopy: (queryId: string) => void;
+  onCopy: (key: string) => void;
   onWriteSearches: () => void;
   onChangeRoles: () => void;
 }
@@ -86,7 +86,8 @@ export default function Searches({
       <div className="cc-query-list">
         {cards.map(({ role, fieldName, query }) => {
           if (query === undefined) return null;
-          const at = copiedAt[query.id];
+          const key = copyKey(query);
+          const at = copiedAt[key];
           return (
             <QueryCard
               key={role.id}
@@ -94,7 +95,7 @@ export default function Searches({
               fieldName={fieldName}
               query={query}
               copiedMinutes={at === undefined ? undefined : Math.max(0, Math.floor((now - at) / 60000))}
-              onCopy={() => onCopy(query.id)}
+              onCopy={() => onCopy(key)}
             />
           );
         })}

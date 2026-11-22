@@ -10,7 +10,6 @@
  * markdown.
  */
 
-import { rejectSkill, restoreSkill } from "./cards";
 import { isRetiredQuery } from "./boards";
 import { isElicitationComplete } from "./elicit";
 import type { Card, Field, FieldStatus, Profile, Query, Role } from "./profile";
@@ -18,6 +17,8 @@ import {
   activeCards,
   normalizeInputText,
   parseProfile,
+  rejectSkill,
+  restoreSkill,
   rolesForField as profileRolesForField,
   selectedRoles as profileSelectedRoles,
   serializeProfile,
@@ -27,7 +28,6 @@ import {
   setQueryStatus,
 } from "./profile";
 import type {
-  AnswerPill,
   QueryFeedback,
   SessionState,
   StepName,
@@ -137,27 +137,16 @@ export function appendUserMessage(state: SessionState, content: string): Session
   return appendMessage(state, { role: "user", content });
 }
 
-export function appendAssistantMessage(
-  state: SessionState,
-  content: string,
-  pills?: AnswerPill[],
-): SessionState {
-  return appendMessage(state, {
-    role: "assistant",
-    content,
-    ...(pills !== undefined && pills.length > 0 ? { pills } : {}),
-  });
-}
-
 /**
- * Folds a completed turn into state: the assistant message (with its pills)
- * is appended and a returned `profileMd` replaces the stored profile text
- * wholesale — the server sends the whole file, never a patch.
+ * Folds a completed turn into state: a returned `profileMd` replaces the
+ * stored profile text wholesale — the server sends the whole file, never a
+ * patch. The assistant message is not kept: no screen shows it
+ * (technical-plan.md D49) and no step reads it back, so storing it would
+ * only grow what `localStorage` holds and each turn uploads.
  */
 export function applyTurnResponse(state: SessionState, response: TurnResponse): SessionState {
-  const withMessage = appendAssistantMessage(state, response.message, response.pills);
-  if (response.profileMd === undefined) return withMessage;
-  return { ...withMessage, profileMd: response.profileMd };
+  if (response.profileMd === undefined) return state;
+  return { ...state, profileMd: response.profileMd };
 }
 
 // ---------------------------------------------------------------------------
