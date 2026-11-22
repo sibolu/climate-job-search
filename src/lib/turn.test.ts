@@ -3,23 +3,22 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { CallMetrics } from "./llm";
-import { emptyProfile, parseProfile, type Profile, serializeProfile, upsertCard, upsertField, upsertQuery } from "./profile";
+import type { CallMetrics, Llm } from "./llm";
+import { emptyProfile, parseProfile, type Profile, serializeProfile, setInputs, upsertCard, upsertField, upsertQuery } from "./profile";
 import type { TurnRequest } from "./session";
 import {
   discoverMessage,
   explorePills,
   fieldIdIn,
-  GENERATE_QUERIES_PILL,
   GO_PILL,
   queriesMessage,
   reviseMessage,
   runTurn,
+  withSignal,
   type TurnDeps,
   TurnInputError,
   turnErrorMessage,
 } from "./turn";
-import { GENERATE_QUERIES_TEXT } from "./workspace";
 
 const SESSION_ID = "a".repeat(32);
 const METRICS: CallMetrics = { usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as never, costUsd: 0, durationMs: 0, continuations: 0, stopReason: "end_turn" };
@@ -54,11 +53,10 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
   const calls: string[] = [];
   const deps: TurnDeps = {
     llm: () => ({}) as never,
-    sectorGroups: () => Promise.resolve(["Energy", "Food"]),
     extractCards: (_llm, { profile = emptyProfile() }) => {
       calls.push("extractCards");
       const next = cardsOnly();
-      return Promise.resolve({ profile: { ...profile, cards: next.cards }, cards: next.cards, metrics: METRICS });
+      return Promise.resolve({ profile: { ...profile, cards: next.cards }, cards: next.cards, noted: [], metrics: METRICS });
     },
     inferPreferences: (_llm, { profile }) => {
       calls.push("inferPreferences");
@@ -78,6 +76,10 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         status: "candidate",
         explored: false,
         move: "adjacent",
+        sector: "",
+        summary: "",
+        chips: [],
+        evidence: [],
         fit: "C1 shows it.",
         uncertain: "",
         sources: ["https://example.com/a"],
@@ -87,9 +89,8 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         profile: next,
         fields: [next.fields.find((f) => f.id === "F9")!],
         roles: [],
-        dropped: { fieldsUncited: 1, fieldsUnsourced: 0, rolesUncited: 0, rolesUnsourced: 0, fieldsSurplus: 0, sourcesRemoved: 0 },
-        calls: [METRICS],
-        strategy: "single",
+        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 2 },
+        call: METRICS,
       });
     },
     exploreField: ({ profile, fieldId }) => {
@@ -101,9 +102,10 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
     },
     generateQueries: ({ profile }) => {
       calls.push("generateQueries");
-      const next = upsertQuery(profile, { board: "linkedin", query: "grid AND video", fieldIds: ["F1"], status: "untried", reason: "", extra: {} });
+      const roles = [{ id: "R1", title: "Grid video producer", fieldId: "F1", companies: [], why: "", selected: true, sources: [], extra: {} }];
+      const next = upsertQuery(profile, { board: "linkedin", query: "grid AND video", fieldIds: ["F1"], roleId: "R1", status: "untried", reason: "", extra: {} });
       const added = next.queries[next.queries.length - 1]!;
-      return Promise.resolve({ profile: next, added: [added], updated: [], dropped: {} as never, metrics: METRICS });
+      return Promise.resolve({ profile: next, roles, written: [added], added: [added], updated: [], superseded: [], dropped: {} as never, metrics: METRICS });
     },
     reviseQueries: ({ profile, feedback }) => {
       calls.push(`reviseQueries:${feedback.queryId}`);
@@ -143,16 +145,18 @@ describe("runTurn — cards", () => {
 });
 
 describe("runTurn — elicit", () => {
-  it("applies a pill click without a model call and asks the next question", async () => {
+  it("toggles an area pill without a model call, and sends anything else to the model", async () => {
     const deps = fakeDeps();
-    const first = await runTurn(request("elicit", cardsOnly(), "x"), deps);
+    const picked = await runTurn(request("elicit", cardsOnly(), "Energy"), deps);
+    expect(deps.calls).toEqual([]);
+    expect(parseProfile(picked.profileMd!).profile.preferences.climateInterests).toEqual({
+      values: ["Energy"],
+      source: "stated",
+    });
     // "x" is not a pill: the model interprets it.
+    const typed = await runTurn(request("elicit", cardsOnly(), "x"), deps);
     expect(deps.calls).toEqual(["interpretAnswer"]);
-    const asked = parseProfile(first.profileMd!).profile;
-    const pill = first.pills![0]!;
-    const second = await runTurn(request("elicit", asked, pill.value), deps);
-    expect(deps.calls).toEqual(["interpretAnswer"]);
-    expect(second.profileMd).not.toEqual(first.profileMd);
+    expect(typed.profileMd).not.toEqual(picked.profileMd);
   });
 
   it("offers the go pill once nothing is missing", async () => {
@@ -169,7 +173,11 @@ describe("runTurn — discover / explore / queries / revise", () => {
     expect(deps.calls).toEqual(["discoverFields"]);
     expect(res.message).toContain("F9: Grid software");
     expect(res.message).toContain("adjacent move");
-    expect(res.message).toContain("left out 1 suggestion ");
+    expect(res.message).toContain(
+      "Left out: 1 suggestion that cited none of your experience cards; 2 roles titled by rank rather than occupation.",
+    );
+    expect(res.message).toContain("On the Roles screen");
+    expect(res.message).not.toMatch(/Fields tab|tell me|unsure/);
     expect(res.pills?.map((p) => p.value)).toEqual(["Explore F9: Grid software"]);
   });
 
@@ -179,7 +187,7 @@ describe("runTurn — discover / explore / queries / revise", () => {
     expect(deps.calls).toEqual(["exploreField:F3"]);
     expect(res.message).toContain("Explored F3");
     expect(parseProfile(res.profileMd!).profile.fields.find((f) => f.id === "F3")?.explored).toBe(true);
-    expect(res.pills?.[0]).toEqual(GENERATE_QUERIES_PILL);
+    expect(res.pills?.every((p) => p.value.startsWith("Explore "))).toBe(true);
     expect(res.pills?.some((p) => p.value.startsWith("Explore F3"))).toBe(false);
   });
 
@@ -188,14 +196,20 @@ describe("runTurn — discover / explore / queries / revise", () => {
     const res = await runTurn(request("explore", fixture(), "tell me more"), deps);
     expect(deps.calls).toEqual([]);
     expect(res.message).toContain("Which field");
-    expect(res.pills?.some((p) => p.value === GENERATE_QUERIES_TEXT)).toBe(true);
+    expect(res.pills?.every((p) => p.value.startsWith("Explore "))).toBe(true);
   });
 
-  it("explore routes the generate-queries text to the queries step", async () => {
+  it("queries needs a selectedRoles input and names each role's search", async () => {
     const deps = fakeDeps();
-    const res = await runTurn(request("explore", fixture(), GENERATE_QUERIES_TEXT), deps);
+    await expect(runTurn(request("queries", fixture(), "write queries"), deps)).rejects.toBeInstanceOf(TurnInputError);
+    expect(deps.calls).toEqual([]);
+    const req: TurnRequest = { ...request("queries", fixture()), input: { kind: "selectedRoles" } };
+    const res = await runTurn(req, deps);
     expect(deps.calls).toEqual(["generateQueries"]);
+    expect(res.message).toContain("LinkedIn search for the role you selected");
+    expect(res.message).toContain("**Grid video producer**");
     expect(res.message).toContain("grid AND video");
+    expect(res.pills).toBeUndefined();
   });
 
   it("revise needs feedback input and returns the explanation with the change list", async () => {
@@ -227,9 +241,45 @@ describe("pure helpers", () => {
   });
 
   it("messages render without throwing on empty results", () => {
-    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, fieldsUnsourced: 0, rolesUncited: 0, rolesUnsourced: 0, fieldsSurplus: 0, sourcesRemoved: 0 }, calls: [], strategy: "single" })).toContain("could not find");
-    expect(queriesMessage({ profile: emptyProfile(), added: [], updated: [], dropped: {} as never, metrics: METRICS })).toContain("did not come up");
+    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 0 }, call: METRICS })).toContain("could not find");
+    expect(queriesMessage({ profile: emptyProfile(), roles: [], written: [], added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS })).toContain("could not write");
     expect(reviseMessage({ profile: emptyProfile(), explanation: "Nothing.", retired: [], added: [], narrowed: [], fieldChanges: [], dropped: {} as never, metrics: METRICS })).toContain("No queries changed");
+  });
+});
+
+describe("withSignal", () => {
+  it("puts the turn's abort signal on every model request", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const base = {
+      streamText: (r: { signal?: AbortSignal }) => {
+        seen.push(r.signal);
+        return {} as never;
+      },
+      structured: (r: { signal?: AbortSignal }) => {
+        seen.push(r.signal);
+        return Promise.resolve({} as never);
+      },
+    } as unknown as Llm;
+    const signal = new AbortController().signal;
+    const wrapped = withSignal(base, signal);
+    wrapped.streamText({} as never);
+    await wrapped.structured({} as never);
+    expect(seen).toEqual([signal, signal]);
+    expect(withSignal(base, undefined)).toBe(base);
+  });
+
+  it("hands the signal-carrying llm to the step modules", async () => {
+    let received: unknown;
+    const deps = fakeDeps({
+      discoverFields: (_req, options) => {
+        received = options?.llm;
+        return Promise.reject(new Error("stop here"));
+      },
+    });
+    const signal = new AbortController().signal;
+    await runTurn(request("discover", cardsOnly(), "go"), deps, undefined, signal).catch(() => undefined);
+    // The fake deps' llm is `{}`; only the signal wrapper has methods.
+    expect(typeof (received as Llm).structured).toBe("function");
   });
 });
 
@@ -242,11 +292,38 @@ describe("turnErrorMessage", () => {
   });
 
   it("never leaks model or SDK text", () => {
-    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "ReferenceReadError", "SomethingElse"]) {
+    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "LlmTimeoutError", "LlmCancelledError", "ReferenceReadError", "QueriesOutputError", "SomethingElse"]) {
       expect(turnErrorMessage(named(name))).not.toContain("SECRET");
     }
+    expect(turnErrorMessage(named("LlmTimeoutError"))).toContain("three minutes");
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 429 }))).toContain("busy");
     expect(turnErrorMessage(Object.assign(new Error("SECRET"), { status: 503 }))).toContain("problem");
     expect(turnErrorMessage("nope")).toContain("Something went wrong");
+  });
+});
+
+describe("runTurn — what the person typed (technical-plan.md D56)", () => {
+  const typed = setInputs(emptyProfile(), { resume: "typed resume\n## Skills\n> quoted", notes: "typed notes" });
+
+  it("the cards turn takes its text from the message and returns the stored inputs unchanged", async () => {
+    const texts: string[] = [];
+    const base = fakeDeps();
+    const deps = fakeDeps({
+      extractCards: (llm, req) => {
+        texts.push(req.text);
+        return base.extractCards(llm, req);
+      },
+    });
+    const res = await runTurn(request("cards", typed, "my resume text"), deps);
+    expect(texts).toEqual(["my resume text"]);
+    const after = parseProfile(res.profileMd!).profile;
+    expect(after.cards).toHaveLength(1);
+    expect(after.inputs).toEqual(typed.inputs);
+  });
+
+  it("a later turn returns them unchanged too", async () => {
+    const withCard = { ...cardsOnly(), inputs: typed.inputs };
+    const res = await runTurn(request("elicit", withCard, "Energy"), fakeDeps());
+    expect(parseProfile(res.profileMd!).profile.inputs).toEqual(typed.inputs);
   });
 });

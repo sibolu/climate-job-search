@@ -5,15 +5,14 @@ import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
 import {
-  DEFAULT_CLIMATE_AREAS,
+  CLIMATE_AREAS,
   ELICIT_ORDER,
   SUMMARY_ORDER,
   INFERRED_TAG,
   INFER_SYSTEM,
   INTERPRET_SYSTEM,
-  MAX_INTEREST_CHIPS,
+  InferredPreferencesSchema,
   MAX_PREFERENCE_VALUE_CHARS,
-  NOT_SURE_PILL,
   OPEN_TO_SUGGESTIONS,
   QUESTIONS,
   applyPillAnswer,
@@ -23,16 +22,22 @@ import {
   isOpenToSuggestions,
   nextQuestion,
   pillsFor,
-  type ElicitContext,
-  type ElicitDecision,
+  toggleClimateInterest,
   type InferredPreferences,
   type InterpretedAnswer,
 } from "./elicit";
 import type { CallMetrics, Llm, StructuredRequest } from "./llm";
-import { KNOWN_PREFERENCE_KEYS, missingPreferences, parseProfile, type Profile } from "./profile";
+import {
+  KNOWN_PREFERENCE_KEYS,
+  missingPreferences,
+  parseProfile,
+  setClimateInterests,
+  setInputs,
+  setPreference,
+  type Profile,
+} from "./profile";
 
 const SESSION_ID = "0123456789abcdef0123456789abcdef";
-const CTX: ElicitContext = { sectorGroups: [] };
 
 /** The videographer fixture with every preference wiped: cards, no preferences. */
 function cardsOnly(): Profile {
@@ -75,7 +80,6 @@ function inference(overrides: Partial<InferredPreferences> = {}): InferredPrefer
     workMode: NONE,
     seniority: NONE,
     retrainingAppetite: NONE,
-    climateInterests: { values: [], confidence: "none", evidence: "" },
     ...overrides,
   };
 }
@@ -96,9 +100,10 @@ function questionMarks(text: string): number {
   return (text.match(/\?/g) ?? []).length;
 }
 
-describe("acceptance: a scripted 5-turn transcript", () => {
-  it("asks exactly one preference per turn, skips what is known, and stops for good", async () => {
-    // Cards exist; seniority is inferable from them, nothing else is.
+describe("acceptance: one optional question", () => {
+  it("asks the interest question once, takes any number of picks, and stops for good", async () => {
+    // Cards exist; seniority is inferable from them and is recorded, though
+    // nothing asks for it or reads it (technical-plan.md D48).
     const { profile: afterInfer, updatedKeys } = await inferPreferences(
       fakeLlm(inference({ seniority: { value: "mid-level, 7 years", confidence: "high", evidence: "C1, C2" } })),
       { sessionId: SESSION_ID, profile: cardsOnly() },
@@ -106,124 +111,119 @@ describe("acceptance: a scripted 5-turn transcript", () => {
     expect(updatedKeys).toEqual(["seniority"]);
     expect(afterInfer.preferences.seniority).toEqual({ value: "mid-level, 7 years", source: "inferred" });
 
-    const decisions: ElicitDecision[] = [];
+    // The one question: climate interests, answered from its six pills.
     let p = afterInfer;
+    const ask = nextQuestion(p);
+    if (ask.kind !== "ask") throw new Error("expected a question");
+    expect(ask.key).toBe("climateInterests");
+    expect(questionMarks(ask.question)).toBe(1);
+    expect(ask.pills).toEqual(pillsFor("climateInterests"));
 
-    // Turn 1: climate interests, answered with the "not sure" pill.
-    let d = nextQuestion(p, CTX);
-    decisions.push(d);
-    if (d.kind !== "ask") throw new Error("expected a question");
-    expect(d.key).toBe("climateInterests");
-    p = applyPillAnswer(p, d.key, NOT_SURE_PILL);
-    expect(isOpenToSuggestions(p)).toBe(true);
+    // Two picks, each one tap.
+    p = applyPillAnswer(p, ask.key, ask.pills[3]);
+    p = applyPillAnswer(p, ask.key, ask.pills[5]);
+    expect(p.preferences.climateInterests).toEqual({ values: ["Energy", "Carbon Removal"], source: "stated" });
 
-    // Turn 2: seniority is inferred, so retraining appetite is next. It is
-    // answered in free text that also volunteers location and work mode —
-    // neither is ever asked, but both are recorded when the person says them.
-    d = nextQuestion(p, CTX);
-    decisions.push(d);
-    if (d.kind !== "ask") throw new Error("expected a question");
-    expect(d.key).toBe("retrainingAppetite");
-    const llm = fakeLlm(
-      interpretation({
-        retrainingAppetite: "a short course, not a degree",
-        location: "Portland, OR",
-        workMode: "hybrid",
-      }),
+    // Retraining, location and work mode are never asked, but all three are
+    // recorded when the person says them in free text.
+    const answered = await interpretAnswer(
+      fakeLlm(
+        interpretation({
+          retrainingAppetite: "a short course, not a degree",
+          location: "Portland, OR",
+          workMode: "hybrid",
+        }),
+      ),
+      {
+        sessionId: SESSION_ID,
+        profile: p,
+        key: "retrainingAppetite",
+        answer: "A short course maybe. I'm in Portland and would like hybrid.",
+      },
     );
-    const answered = await interpretAnswer(llm, {
-      sessionId: SESSION_ID,
-      profile: p,
-      key: d.key,
-      answer: "A short course maybe. I'm in Portland and would like hybrid.",
-    });
     expect(answered.answered).toBe(true);
     expect(answered.updatedKeys).toEqual(["location", "workMode", "retrainingAppetite"]);
     p = answered.profile;
 
-    // Turns 3 and 4: done, and it stays done.
-    d = nextQuestion(p, CTX);
-    decisions.push(d);
-    expect(d.kind).toBe("done");
-    d = nextQuestion(p, CTX);
-    decisions.push(d);
-    expect(d.kind).toBe("done");
-
-    expect(decisions).toHaveLength(4);
-    const asks = decisions.filter((x) => x.kind === "ask");
-    expect(asks).toHaveLength(2);
-    const askedKeys = asks.map((a) => a.key);
-    expect(new Set(askedKeys).size).toBe(askedKeys.length);
-    expect(askedKeys).not.toContain("seniority");
-    expect(askedKeys).not.toContain("location");
-    expect(askedKeys).not.toContain("workMode");
-    for (const ask of asks) {
-      expect(questionMarks(ask.question)).toBe(1);
-      expect(ask.pills).toEqual(pillsFor(ask.key, CTX));
-      expect(ask.allowFreeText).toBe(true);
-    }
-
+    // Done, and it stays done.
+    const done = nextQuestion(p);
+    expect(nextQuestion(p)).toEqual(done);
+    if (done.kind !== "done") throw new Error("expected done");
     expect(isElicitationComplete(p)).toBe(true);
     expect(missingPreferences(p)).toEqual([]);
-    if (d.kind !== "done") throw new Error("expected done");
-    expect(questionMarks(d.summary)).toBe(0);
-    expect(d.summary).toContain(`Seniority: mid-level, 7 years ${INFERRED_TAG}`);
-    expect(d.summary).toContain("Location: Portland, OR");
-    expect(d.summary).not.toContain(`Location: Portland, OR ${INFERRED_TAG}`);
-    expect(d.summary).toContain("2 experience cards");
+    expect(questionMarks(done.summary)).toBe(0);
+    expect(done.summary).toContain("Climate interests: Energy, Carbon Removal");
+    expect(done.summary).toContain(`Seniority: mid-level, 7 years ${INFERRED_TAG}`);
+    expect(done.summary).toContain("Location: Portland, OR");
+    expect(done.summary).not.toContain(`Location: Portland, OR ${INFERRED_TAG}`);
+    expect(done.summary).toContain("2 experience cards");
   });
 
-  it("asks every key in ELICIT_ORDER when nothing is inferable, then is done", () => {
-    let p = cardsOnly();
-    const asked: string[] = [];
-    for (let turn = 0; turn < ELICIT_ORDER.length; turn++) {
-      const d = nextQuestion(p, CTX);
-      if (d.kind !== "ask") throw new Error(`turn ${turn} should ask`);
-      asked.push(d.key);
-      p = applyPillAnswer(p, d.key, d.pills[0]);
-    }
-    expect(asked).toEqual([...ELICIT_ORDER]);
-    expect(nextQuestion(p, CTX).kind).toBe("done");
+  it("with nothing picked the one question is on offer, and nothing else is ever asked", () => {
+    const p = cardsOnly();
+    expect(nextQuestion(p)).toMatchObject({ kind: "ask", key: "climateInterests" });
+    expect(isElicitationComplete(p)).toBe(false);
+    const picked = toggleClimateInterest(p, "Energy");
+    expect(nextQuestion(picked).kind).toBe("done");
+    expect(isElicitationComplete(picked)).toBe(true);
+    // Done with no retraining appetite, seniority, location or work mode on file.
+    expect(missingPreferences(picked).sort()).toEqual(["location", "retrainingAppetite", "seniority", "workMode"]);
   });
 });
 
 describe("policy tables", () => {
+  it("asks one question: climate interests", () => {
+    // technical-plan.md D54: retraining joins seniority (D48) and location and
+    // work mode (D36) as preference keys nothing asks for.
+    expect(ELICIT_ORDER).toEqual(["climateInterests"]);
+    for (const key of ["retrainingAppetite", "seniority", "location", "workMode"] as const) {
+      expect(ELICIT_ORDER).not.toContain(key);
+      expect(KNOWN_PREFERENCE_KEYS).toContain(key);
+    }
+    expect(QUESTIONS.climateInterests).toBe(
+      "Which area of climate work interests you most? Pick as many as you like.",
+    );
+  });
+
+  it("the asked question can be answered by a tap alone", () => {
+    // The screen has pills and no text box, so a question may not invite typing.
+    for (const key of ELICIT_ORDER) {
+      expect(QUESTIONS[key]).not.toMatch(/\btyp(?:e|ing)\b|tell me|describe|your own|\bwrite\b/i);
+      // It sits inline on a form: no assistant voice, no instruction to tap (technical-plan.md D49).
+      expect(QUESTIONS[key]).not.toMatch(/\b(?:I|I'll|I'd|me|let's)\b|\btap\b|\bbelow\b/i);
+    }
+  });
+
   it("ELICIT_ORDER lists known preference keys, each at most once", () => {
     expect(new Set(ELICIT_ORDER).size).toBe(ELICIT_ORDER.length);
     for (const key of ELICIT_ORDER) expect(KNOWN_PREFERENCE_KEYS).toContain(key);
   });
 
-  it("never asks for location or work mode — the job boards filter on those", () => {
-    // technical-plan.md D36: both stay PreferenceKeys (inferred, editable, settable
-    // from query feedback); only the conversational question is gone.
-    expect(ELICIT_ORDER).not.toContain("location");
-    expect(ELICIT_ORDER).not.toContain("workMode");
-    expect(SUMMARY_ORDER).toContain("location");
-    expect(SUMMARY_ORDER).toContain("workMode");
+  it("the summary shows every preference, asked or not", () => {
     expect([...SUMMARY_ORDER].sort()).toEqual([...KNOWN_PREFERENCE_KEYS].sort());
-  });
-
-  it("completes even when location and work mode are unknown", () => {
-    let p = cardsOnly();
-    for (let turn = 0; turn < ELICIT_ORDER.length; turn++) {
-      const d = nextQuestion(p, CTX);
-      if (d.kind !== "ask") throw new Error("expected a question");
-      p = applyPillAnswer(p, d.key, d.pills[0]);
-    }
-    expect(isElicitationComplete(p)).toBe(true);
-    expect(p.preferences.location).toBeUndefined();
-    expect(p.preferences.workMode).toBeUndefined();
   });
 
   it("every question is exactly one question", () => {
     for (const key of KNOWN_PREFERENCE_KEYS) expect(questionMarks(QUESTIONS[key])).toBe(1);
   });
 
-  it("pillsFor returns a small set of unique, non-empty pills for every key", () => {
+  it("the interest pills are the six climate areas, in order, label and value the same", () => {
+    const areas = [
+      "Circular Economy",
+      "Built Environment",
+      "Transportation",
+      "Energy",
+      "Food & Agriculture",
+      "Carbon Removal",
+    ];
+    expect([...CLIMATE_AREAS]).toEqual(areas);
+    expect(pillsFor("climateInterests")).toEqual(areas.map((area) => ({ label: area, value: area })));
+  });
+
+  it("pillsFor returns unique, non-empty pills for every key", () => {
     for (const key of KNOWN_PREFERENCE_KEYS) {
-      const pills = pillsFor(key, CTX);
+      const pills = pillsFor(key);
       expect(pills.length).toBeGreaterThan(0);
-      expect(pills.length).toBeLessThanOrEqual(MAX_INTEREST_CHIPS + 1);
       expect(new Set(pills.map((x) => x.label)).size).toBe(pills.length);
       expect(new Set(pills.map((x) => x.value)).size).toBe(pills.length);
       for (const pill of pills) {
@@ -233,32 +233,73 @@ describe("policy tables", () => {
     }
   });
 
-  it("climate chips come from sector groups, capped, deduped, with the not-sure pill last", () => {
-    const groups = ["energy/grid/storage", " energy/grid/storage ", "", "b", "c", "d", "e", "f", "g", "h"];
-    const pills = pillsFor("climateInterests", { sectorGroups: groups });
-    expect(pills).toHaveLength(MAX_INTEREST_CHIPS + 1);
-    expect(pills[0]).toEqual({ label: "Energy / grid / storage", value: "energy/grid/storage" });
-    expect(pills.at(-1)).toEqual(NOT_SURE_PILL);
-    expect(pillsFor("climateInterests", CTX).map((x) => x.value)).toEqual([
-      ...DEFAULT_CLIMATE_AREAS,
-      OPEN_TO_SUGGESTIONS,
-    ]);
-  });
-
   it("system prompts are byte-stable strings with no per-call content", () => {
     expect(INFER_SYSTEM).not.toMatch(/\$\{|Portland|C1:/);
     expect(INTERPRET_SYSTEM).not.toMatch(/\$\{|Portland|C1:/);
   });
 });
 
+describe("toggleClimateInterest", () => {
+  it("toggles one area on, then off", () => {
+    const on = toggleClimateInterest(cardsOnly(), "Energy");
+    expect(on.preferences.climateInterests).toEqual({ values: ["Energy"], source: "stated" });
+    const off = toggleClimateInterest(on, "Energy");
+    expect(off.preferences.climateInterests).toBeUndefined();
+    expect(missingPreferences(off)).toContain("climateInterests");
+  });
+
+  it("holds several areas at once, in the order picked, and removes only the one toggled", () => {
+    let p = cardsOnly();
+    for (const area of ["Energy", "Carbon Removal", "Food & Agriculture"]) p = toggleClimateInterest(p, area);
+    expect(p.preferences.climateInterests).toEqual({
+      values: ["Energy", "Carbon Removal", "Food & Agriculture"],
+      source: "stated",
+    });
+    p = toggleClimateInterest(p, "Carbon Removal");
+    expect(p.preferences.climateInterests).toEqual({ values: ["Energy", "Food & Agriculture"], source: "stated" });
+  });
+
+  it("matches case-insensitively and writes the pill's own spelling", () => {
+    const on = toggleClimateInterest(cardsOnly(), " carbon removal ");
+    expect(on.preferences.climateInterests?.values).toEqual(["Carbon Removal"]);
+    expect(toggleClimateInterest(on, "CARBON REMOVAL").preferences.climateInterests).toBeUndefined();
+  });
+
+  it("adding an area drops open-to-suggestions", () => {
+    const open = setClimateInterests(cardsOnly(), [OPEN_TO_SUGGESTIONS], "stated");
+    expect(isOpenToSuggestions(open)).toBe(true);
+    const picked = toggleClimateInterest(open, "Energy");
+    expect(picked.preferences.climateInterests).toEqual({ values: ["Energy"], source: "stated" });
+    expect(isOpenToSuggestions(picked)).toBe(false);
+  });
+
+  it("keeps values that are not one of the six, and the result is stated", () => {
+    const noted = setClimateInterests(cardsOnly(), ["regenerative agriculture"], "inferred");
+    const both = toggleClimateInterest(noted, "Energy");
+    expect(both.preferences.climateInterests).toEqual({
+      values: ["regenerative agriculture", "Energy"],
+      source: "stated",
+    });
+    expect(toggleClimateInterest(both, "Energy").preferences.climateInterests?.values).toEqual([
+      "regenerative agriculture",
+    ]);
+  });
+
+  it("is pure: the profile passed in is not changed", () => {
+    const p = cardsOnly();
+    toggleClimateInterest(p, "Energy");
+    expect(p.preferences.climateInterests).toBeUndefined();
+  });
+});
+
 describe("applyPillAnswer", () => {
   it("records a stated value", () => {
-    const p = applyPillAnswer(cardsOnly(), "seniority", pillsFor("seniority", CTX)[2]);
+    const p = applyPillAnswer(cardsOnly(), "seniority", pillsFor("seniority")[2]);
     expect(p.preferences.seniority).toEqual({ value: "senior", source: "stated" });
   });
 
   it("a remote-only location also settles work mode, but never over a stated one", () => {
-    const remoteOnly = pillsFor("location", CTX).find((x) => x.value === "anywhere, remote only");
+    const remoteOnly = pillsFor("location").find((x) => x.value === "anywhere, remote only");
     if (!remoteOnly) throw new Error("pill missing");
     const fresh = applyPillAnswer(cardsOnly(), "location", remoteOnly);
     expect(fresh.preferences.workMode).toEqual({ value: "remote", source: "stated" });
@@ -268,12 +309,19 @@ describe("applyPillAnswer", () => {
     expect(kept.preferences.workMode).toEqual({ value: "hybrid", source: "stated" });
   });
 
+  it("a click on an interest pill toggles it", () => {
+    const [first] = pillsFor("climateInterests");
+    const on = applyPillAnswer(cardsOnly(), "climateInterests", first);
+    expect(on.preferences.climateInterests).toEqual({ values: ["Circular Economy"], source: "stated" });
+    expect(applyPillAnswer(on, "climateInterests", first).preferences.climateInterests).toBeUndefined();
+  });
+
   it("OPEN_TO_SUGGESTIONS is a known value, and open phrases normalize to it", () => {
     const p = applyPillAnswer(cardsOnly(), "climateInterests", { label: "?", value: "Not sure yet." });
     expect(p.preferences.climateInterests).toEqual({ values: [OPEN_TO_SUGGESTIONS], source: "stated" });
     expect(isOpenToSuggestions(p)).toBe(true);
     expect(missingPreferences(p)).not.toContain("climateInterests");
-    const real = applyPillAnswer(cardsOnly(), "climateInterests", { label: "Grid", value: "energy/grid" });
+    const real = applyPillAnswer(cardsOnly(), "climateInterests", { label: "Energy", value: "Energy" });
     expect(isOpenToSuggestions(real)).toBe(false);
     expect(isOpenToSuggestions(cardsOnly())).toBe(false);
   });
@@ -299,7 +347,6 @@ describe("inferPreferences", () => {
         seniority: { value: "senior (inferred)", confidence: "high", evidence: "C1" },
         location: { value: "Seattle", confidence: "medium", evidence: "C2" },
         workMode: { value: "remote", confidence: "high", evidence: "C1" },
-        climateInterests: { values: ["Regenerative agriculture", "not sure", "regenerative agriculture"], confidence: "high", evidence: "C1" },
       }),
     );
     const stated = applyPillAnswer(cardsOnly(), "workMode", { label: "Hybrid", value: "hybrid" });
@@ -308,15 +355,31 @@ describe("inferPreferences", () => {
     expect(llm.requests[0].system).toBe(INFER_SYSTEM);
     expect(llm.requests[0].messages[0].content).toContain("### C1:");
     expect(llm.requests[0].messages[0].content).not.toContain("### C3:"); // excluded card
-    expect(r.updatedKeys).toEqual(["seniority", "climateInterests"]);
+    expect(r.updatedKeys).toEqual(["seniority"]);
     expect(r.profile.preferences.seniority).toEqual({ value: "senior", source: "inferred" });
     expect(r.profile.preferences.location).toBeUndefined();
     expect(r.profile.preferences.workMode).toEqual({ value: "hybrid", source: "stated" });
-    expect(r.profile.preferences.climateInterests).toEqual({
-      values: ["Regenerative agriculture"],
-      source: "inferred",
-    });
-    expect(r.inferred.map((x) => x.key)).toEqual(["seniority", "climateInterests"]);
+    expect(r.inferred.map((x) => x.key)).toEqual(["seniority"]);
+  });
+
+  it("never writes climate interests, and makes no call when only they are missing (D54)", async () => {
+    expect(Object.keys(InferredPreferencesSchema.shape)).not.toContain("climateInterests");
+    expect(INFER_SYSTEM).not.toMatch(/climate ?interests/i);
+    const some = await inferPreferences(
+      fakeLlm(inference({ seniority: { value: "senior", confidence: "high", evidence: "C1" } })),
+      { sessionId: SESSION_ID, profile: cardsOnly() },
+    );
+    expect(some.profile.preferences.climateInterests).toBeUndefined();
+
+    let known = cardsOnly();
+    for (const key of ["location", "workMode", "seniority", "retrainingAppetite"] as const) {
+      known = setPreference(known, key, "x", "stated");
+    }
+    const llm = fakeLlm(inference());
+    const r = await inferPreferences(llm, { sessionId: SESSION_ID, profile: known });
+    expect(llm.requests).toHaveLength(0);
+    expect(r.updatedKeys).toEqual([]);
+    expect(r.profile.preferences.climateInterests).toBeUndefined();
   });
 
   it("caps an over-long value at MAX_PREFERENCE_VALUE_CHARS", async () => {
@@ -364,12 +427,39 @@ describe("interpretAnswer", () => {
     const r = await interpretAnswer(llm, {
       sessionId: SESSION_ID,
       profile: cardsOnly(),
-      key: "seniority",
+      key: "retrainingAppetite",
       answer: "no idea what area yet",
     });
     expect(r.answered).toBe(false);
     expect(r.updatedKeys).toEqual(["climateInterests"]);
     expect(isOpenToSuggestions(r.profile)).toBe(true);
-    expect(nextQuestion(r.profile, CTX)).toMatchObject({ kind: "ask", key: "seniority" });
+    expect(r.profile.preferences.retrainingAppetite).toBeUndefined();
+  });
+});
+
+describe("what the person typed (technical-plan.md D56)", () => {
+  it("is in neither elicit prompt, and comes back in the profile", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const typed = setInputs(cardsOnly(), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+
+    const infer = fakeLlm(inference());
+    const inferred = await inferPreferences(infer, { sessionId: SESSION_ID, profile: typed });
+    const interpret = fakeLlm(interpretation());
+    const interpreted = await interpretAnswer(interpret, {
+      sessionId: SESSION_ID,
+      profile: typed,
+      key: "retrainingAppetite",
+      answer: "a short course",
+    });
+
+    const prompts = [...infer.requests, ...interpret.requests].map((r) => JSON.stringify([r.system, r.messages]));
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) {
+      expect(prompt).toContain("## Preferences");
+      expect(prompt).not.toContain(MARKER);
+      expect(prompt).not.toContain("## Inputs");
+    }
+    expect(inferred.profile.inputs).toEqual(typed.inputs);
+    expect(interpreted.profile.inputs).toEqual(typed.inputs);
   });
 });

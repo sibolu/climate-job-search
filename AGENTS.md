@@ -17,13 +17,17 @@ agreement: how phases are run, who does what, and what each turn may cost.
 ## Where things are written down
 
 - [PLAN.md](PLAN.md): the roadmap. Step statuses are updated there as steps
-  finish, so a fresh session resumes where the last one ended.
+  finish, so a fresh session resumes where the last one ended. Anything
+  that needs the user (a browser run, a review session, a merge, accounts
+  or secrets, an approval) is its own row with **`YOU`** in the Who column,
+  gates included, and is mirrored in "Waiting on you" at the top.
 - [docs/technical-plan.md](docs/technical-plan.md): architecture, the
   numbered decisions (`D1`…), and the verification log. A decision made
   mid-phase is appended there in the same commit as the change; if it
   affects contributors, CLAUDE.md is updated too.
-- [docs/data-flow.md](docs/data-flow.md): the one flowchart. Update it only
-  when a step, a data store or a source of ground truth is added or removed.
+- [docs/data-flow.html](docs/data-flow.html): the data-flow diagrams, one box
+  per API call. Update it when a call, a profile-writing click, a data store
+  or a source of ground truth is added or removed.
 - **Nothing project-related goes into Claude's private memory.** Other
   contributors must be able to read every decision.
 
@@ -113,6 +117,10 @@ turn, and a worker's cost grows with the square of how long it runs.
   `pnpm test && pnpm lint && pnpm typecheck 2>&1 | tail -30`, then
   `pnpm build` once before the commit. Not after every edit.
 - Web-search volume is not the problem and is not capped.
+- **No browser runs unless the user asks.** Playwright MCP (setup in
+  CLAUDE.md, "Looking at the UI") is never used for routine verification:
+  every snapshot and screenshot is re-billed on each later turn. Only run it
+  when the user explicitly asks, in that session or in the kickoff prompt.
 
 ## Reporting
 

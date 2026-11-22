@@ -10,33 +10,40 @@
  * markdown.
  */
 
-import { confirmSkill, rejectSkill } from "./cards";
+import { isRetiredQuery } from "./boards";
 import { isElicitationComplete } from "./elicit";
-import type { Card, Field, FieldStatus, Profile, Role } from "./profile";
+import type { Card, Field, FieldStatus, Profile, Query, Role } from "./profile";
 import {
   activeCards,
+  normalizeInputText,
   parseProfile,
+  rejectSkill,
+  restoreSkill,
+  rolesForField as profileRolesForField,
+  selectedRoles as profileSelectedRoles,
   serializeProfile,
   setCardExcluded,
   setFieldStatus,
+  setInputs,
   setQueryStatus,
 } from "./profile";
 import type {
-  AnswerPill,
   QueryFeedback,
   SessionState,
   StepName,
+  TurnInput,
   TurnResponse,
 } from "./session";
-import { appendMessage } from "./session";
+import { MAX_MESSAGE_CHARS, MAX_PROFILE_MD_CHARS, appendMessage } from "./session";
 
 // ---------------------------------------------------------------------------
 // Which step a turn belongs to
 // ---------------------------------------------------------------------------
 
 /**
- * What triggered the turn: the chat box, the Profile tab's paste box, or one
- * of the buttons on the Fields / Queries tabs.
+ * What triggered the turn: the first-run paste, a pill or button on a
+ * screen, or (scripts only) a typed message, an explore request or query
+ * feedback.
  */
 export type TurnSource = "chat" | "paste" | "explore" | "queries" | "feedback";
 
@@ -85,19 +92,39 @@ export function updateProfile(
   return { ...state, profileMd: serializeProfile(edit(profile)) };
 }
 
+/**
+ * Keeps what the person typed on the first screen in the profile
+ * (technical-plan.md D56). Called when Start is pressed, before the turn is
+ * sent, so a read that fails still leaves the text to come back to.
+ *
+ * Nothing is recorded, and the same `state` object is returned, when the two
+ * inputs together are longer than `MAX_MESSAGE_CHARS` (the turn cannot carry
+ * that paste either) or when recording them would take the profile past
+ * `MAX_PROFILE_MD_CHARS`. So the stored inputs are never what makes a session
+ * too large to send or to load again.
+ */
+export function recordStartInputs(state: SessionState, resume: string, notes: string): SessionState {
+  const typed = { resume: normalizeInputText(resume), notes: normalizeInputText(notes) };
+  if (typed.resume.length + typed.notes.length > MAX_MESSAGE_CHARS) return state;
+  const next = updateProfile(state, (p) => setInputs(p, typed));
+  return next.profileMd.length > MAX_PROFILE_MD_CHARS ? state : next;
+}
+
 export function toggleCardExcluded(state: SessionState, cardId: string, excluded: boolean): SessionState {
   return updateProfile(state, (p) => setCardExcluded(p, cardId, excluded));
 }
 
-export function confirmProfileSkill(state: SessionState, skill: string): SessionState {
-  return updateProfile(state, (p) => confirmSkill(p, skill));
-}
-
+/** Removes a skill: it stops reaching every prompt (technical-plan.md D53). */
 export function rejectProfileSkill(state: SessionState, skill: string): SessionState {
   return updateProfile(state, (p) => rejectSkill(p, skill));
 }
 
-/** Cards in file order, excluded ones included — the Profile tab lists them all. */
+/** Brings a removed skill back into use (technical-plan.md D53). */
+export function restoreProfileSkill(state: SessionState, skill: string): SessionState {
+  return updateProfile(state, (p) => restoreSkill(p, skill));
+}
+
+/** Cards in file order, excluded ones included — Highlights lists them all. */
 export function allCards(profile: Profile): Card[] {
   return profile.cards;
 }
@@ -110,27 +137,16 @@ export function appendUserMessage(state: SessionState, content: string): Session
   return appendMessage(state, { role: "user", content });
 }
 
-export function appendAssistantMessage(
-  state: SessionState,
-  content: string,
-  pills?: AnswerPill[],
-): SessionState {
-  return appendMessage(state, {
-    role: "assistant",
-    content,
-    ...(pills !== undefined && pills.length > 0 ? { pills } : {}),
-  });
-}
-
 /**
- * Folds a completed turn into state: the assistant message (with its pills)
- * is appended and a returned `profileMd` replaces the stored profile text
- * wholesale — the server sends the whole file, never a patch.
+ * Folds a completed turn into state: a returned `profileMd` replaces the
+ * stored profile text wholesale — the server sends the whole file, never a
+ * patch. The assistant message is not kept: no screen shows it
+ * (technical-plan.md D49) and no step reads it back, so storing it would
+ * only grow what `localStorage` holds and each turn uploads.
  */
 export function applyTurnResponse(state: SessionState, response: TurnResponse): SessionState {
-  const withMessage = appendAssistantMessage(state, response.message, response.pills);
-  if (response.profileMd === undefined) return withMessage;
-  return { ...withMessage, profileMd: response.profileMd };
+  if (response.profileMd === undefined) return state;
+  return { ...state, profileMd: response.profileMd };
 }
 
 // ---------------------------------------------------------------------------
@@ -141,10 +157,10 @@ export function applyTurnResponse(state: SessionState, response: TurnResponse): 
 export const EXPORT_FILENAME = "profile-session.json";
 
 // ---------------------------------------------------------------------------
-// Fields tab
+// Fields and roles
 // ---------------------------------------------------------------------------
 
-/** Sets a field's status from the Fields tab. A local edit — no server call. */
+/** Sets a field's status. A local edit, no server call; no screen calls it while fields are unmarked headings (technical-plan.md D50). */
 export function setProfileFieldStatus(
   state: SessionState,
   fieldId: string,
@@ -161,9 +177,9 @@ export function exploreChatText(field: Field): string {
   return `Explore ${field.id}: ${field.name}`;
 }
 
-/** The roles from the Role Shortlist that belong to a field, in file order. */
-export function rolesForField(profile: Profile, fieldId: string): Role[] {
-  return profile.roles.filter((r) => r.fieldId === fieldId);
+/** The roles from the Role Shortlist that belong to a field, in file order; `profile.ts` owns the rule. */
+export function rolesForField(profile: Profile, fieldId: string, selectedOnly = false): Role[] {
+  return profileRolesForField(profile, fieldId, selectedOnly);
 }
 
 /** Roles whose `fieldId` names no field in the profile; shown ungrouped. */
@@ -173,18 +189,42 @@ export function unassignedRoles(profile: Profile): Role[] {
 }
 
 // ---------------------------------------------------------------------------
-// Queries tab
+// Searches
 // ---------------------------------------------------------------------------
 
-/** The user message the Generate queries button posts. */
-export const GENERATE_QUERIES_TEXT = "Generate search queries for my accepted fields";
+/**
+ * The turn input the "write searches" button sends: one `queries` turn for
+ * every selected role (technical-plan.md D47). It carries no payload; the
+ * server reads `Selected: yes` from the profile sent with the turn.
+ */
+export function buildSelectedRolesTurnInput(): TurnInput {
+  return { kind: "selectedRoles" };
+}
 
 /**
- * Queries are only worth generating once the user has told us which fields to
- * aim at: at least one field accepted, or still under consideration.
+ * Every ticked role, in field order and then role order: the roles a
+ * `queries` turn writes for. `profile.ts` owns the rule (a field's status is
+ * not consulted; a ticked role under no field is left out).
  */
-export function canGenerateQueries(profile: Profile): boolean {
-  return profile.fields.some((f) => f.status === "accepted" || f.status === "unsure");
+export function selectedRoles(profile: Profile): Role[] {
+  return profileSelectedRoles(profile);
+}
+
+/** Searches can be written once at least one role is selected; `generateQueries` enforces the same. */
+export function canWriteQueries(profile: Profile): boolean {
+  return selectedRoles(profile).length > 0;
+}
+
+/**
+ * The one search to show for a role: its newest (last in file order)
+ * LinkedIn query that is not retired, whether still untried or already
+ * judged. Undefined when none has been written for the role yet.
+ */
+export function liveQueryForRole(profile: Profile, roleId: string): Query | undefined {
+  if (roleId === "") return undefined;
+  return profile.queries
+    .filter((q) => q.roleId === roleId && q.board === "linkedin" && !isRetiredQuery(q))
+    .at(-1);
 }
 
 /** The longest "why" the feedback box keeps (`QueryFeedbackSchema`'s cap). */

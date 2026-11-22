@@ -10,7 +10,7 @@
  *
  * ## The format ("labeled-bullet markdown")
  *
- * Seven `##` sections in a fixed order. Items (cards, fields, roles, queries)
+ * Eight `##` sections in a fixed order. Items (cards, fields, roles, queries)
  * are `### <ID>: <title>` headings followed by `- **Key:** value` lines.
  * IDs are stable: `C1`, `F1`, `R1`, `Q1`… are never renumbered; a new item
  * takes the highest existing number plus one. Minimal complete example:
@@ -30,6 +30,7 @@
  * ## Experience Cards
  *
  * ### C1: Documentary series on regenerative farms
+ * - **Years:** 2019–2022
  * - **Situation:** Small studio, three-person crew, six-month shoot.
  * - **Actions:** Planned shoots, interviewed farmers, edited 8 episodes.
  * - **Results:** 1.2M views; series licensed by a public broadcaster.
@@ -48,9 +49,20 @@
  * - **Status:** accepted
  * - **Explored:** yes
  * - **Move:** sector
+ * - **Sector:** Renewable energy development
+ * - **Fit level:** strong
+ * - **Summary:** Developers tell site stories to regulators and neighbours.
+ *   Your field production maps onto that directly.
+ * - **Chips:** field production, interviewing, community storytelling
  * - **Fit:** Developers need site stories for permitting and community
  *   meetings; C1 shows exactly that kind of field production.
+ * - **Evidence:**
+ *   - C1: Shot and edited farm stories for a public audience under a small budget.
  * - **Uncertain:** Whether in-house video roles exist below the top 10 developers.
+ * - **Ask:**
+ *   - Question: Would you take a role that is half video, half written content?
+ *   - Key: Content mix
+ *   - Placeholder: e.g. video only, or happy to write too
  * - **Sources:**
  *   - https://example.com/solar-developer-careers
  *
@@ -60,6 +72,7 @@
  * - **Field:** F1
  * - **Companies:** Example Solar, Sample Renewables
  * - **Why:** Same craft as C1 aimed at permitting audiences.
+ * - **Selected:** yes
  * - **Sources:**
  *   - https://example.com/careers/video-producer
  *
@@ -68,9 +81,21 @@
  * ### Q1: "video producer" AND (solar OR renewable)
  * - **Board:** linkedin
  * - **Fields:** F1
+ * - **Role:** R1
  * - **Status:** bad
  * - **Reason:** every result was an agency job, not in-house
  * - **Changed:** 2026-09-10
+ *
+ * ## Inputs
+ *
+ * ### Resume
+ * > Video producer, Small Studio (2019–2022)
+ * >
+ * > ## Skills
+ * > - **Editing:** eight episodes a season
+ *
+ * ### Notes
+ * > Remote only. Open to a short course.
  *
  * ## Session Notes
  *
@@ -83,15 +108,43 @@
  *   comma-separated on one line. `Sources` are one URL per indented `-` line.
  *   Any list may also be written one item per indented `-` line.
  * - A value may continue on following lines indented by two spaces.
- * - `Excluded` on a card, `Explored` on a field: `yes` or `no`.
+ * - `Excluded` on a card, `Explored` on a field, `Selected` on a role:
+ *   `yes` or `no`.
+ * - `Years` on a card is free text (`2019–2022`, `since 2020`); blank means unknown.
  * - Field `Status`: `candidate | accepted | rejected | unsure`.
  *   Field `Move`: `sector | adjacent | retraining`.
+ *   Field `Fit level`: `strong | some | stretch` (technical-plan.md D39); blank means unrated.
+ * - Field `Evidence` is one indented `- C1: why` line per cited card;
+ *   `Chips` is a short comma list of transferable skills.
+ * - Field `Ask` is the question the assistant would put to the person about the
+ *   uncertainty, as indented `- Question:` / `- Key:` / `- Placeholder:` lines.
+ *   `Key` is the preference label the answer is filed under (D43).
  *   Query `Board`: `linkedin | indeed | climatebase | other`.
  *   Query `Status`: `untried | good | bad`.
+ * - Query `Role` is the id of the one role the search was written for, and
+ *   `Fields` then holds that role's field (technical-plan.md D47). A query
+ *   written before searches were per role has no `Role` line.
  * - Fit reasoning cites cards by ID in the text, e.g. `(C1, C3)`;
  *   `citedCardIds()` extracts them.
+ * - `Inputs` holds what the person typed, as typed (technical-plan.md D56):
+ *   `### Resume` and `### Notes`, every line written as a `> ` quote and a
+ *   blank line as a bare `>`, so pasted markdown (`## Skills`, `### C1: x`,
+ *   `- **Key:** value`) is never read as profile structure. To edit one by
+ *   hand, keep the `> ` in front of each line. A block with nothing typed in
+ *   it is left out. Any other `###` block under `Inputs` is kept as it is, so
+ *   a later input has a place without a format change. No prompt reads this
+ *   section: `serializeProfileForPrompt` leaves it out.
  *
  * ## Tolerance rules
+ *
+ * Inside `## Inputs` only two unquoted lines are structure: a `##` heading
+ * ends the section and a `###` heading names a block. Every other unquoted
+ * line (`- **Key:** value`, `#### x`, plain text) is kept as a line of the
+ * block it sits in, with a warning, and is written back quoted; it never
+ * becomes a card, a key or a note. Text before the first `###` heading is
+ * kept as the resume, and a repeated block is joined to the first, both with
+ * a warning. Because an unquoted `##` line does end the section, text pasted
+ * in by hand must keep its `> ` prefixes.
  *
  * `parseProfile` never throws on a string. Whitespace, blank lines, CRLF,
  * sections in any order, a missing section, an unknown `##` section, an
@@ -105,9 +158,19 @@
  * ## Serialization rules
  *
  * Output is canonical: fixed section order, fixed key order, every known key
- * always present, extra keys sorted, unknown sections last. So
+ * always present (a query's `Role` is the one exception: the line is omitted
+ * when the role is unknown), extra keys sorted, unknown sections last. So
  * `parse(serialize(p))` deep-equals `p` for any normalized profile and
  * `serialize(parse(md))` is idempotent, which keeps per-turn diffs small.
+ *
+ * `Inputs` follows the item convention: the `## Inputs` heading is always
+ * written, `### Resume` and `### Notes` only when they hold text, other
+ * blocks after them sorted by title. The text is stored as typed with three
+ * normalizations (`normalizeInputText`): CRLF and lone CR become LF, trailing
+ * whitespace on a line is dropped, and blank lines before the first and after
+ * the last line of text are dropped. Indentation, blank lines inside the text
+ * and a line's own leading `>` are kept: reading a line back removes exactly
+ * one `>` and the one space after it.
  */
 
 import { z } from "zod";
@@ -166,6 +229,8 @@ export type Extra = z.infer<typeof ExtraSchema>;
 export const CardSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** Free-text period, e.g. `2019–2022`; absent when the resume gave none. */
+  years: z.string().optional(),
   situation: z.string(),
   actions: z.string(),
   results: z.string(),
@@ -191,15 +256,47 @@ export type FieldStatus = z.infer<typeof FieldStatusSchema>;
 export const MoveTypeSchema = z.enum(["sector", "adjacent", "retraining"]);
 export type MoveType = z.infer<typeof MoveTypeSchema>;
 
+/** Three fixed fit labels; a percentage would be false precision (technical-plan.md D39). */
+export const FitLevelSchema = z.enum(["strong", "some", "stretch"]);
+export type FitLevel = z.infer<typeof FitLevelSchema>;
+
+/** One evidence line on the expanded field card: which card, and why it counts. */
+export const EvidenceSchema = z.object({
+  cardId: z.string(),
+  why: z.string(),
+});
+export type Evidence = z.infer<typeof EvidenceSchema>;
+
+/**
+ * The question attached to a field's uncertainty. `key` is the preference
+ * label the answer is filed under via `addOtherPreference` (technical-plan.md D43).
+ */
+export const AskSchema = z.object({
+  question: z.string(),
+  key: z.string(),
+  placeholder: z.string(),
+});
+export type Ask = z.infer<typeof AskSchema>;
+
 export const FieldSchema = z.object({
   id: z.string(),
   name: z.string(),
   status: FieldStatusSchema,
   explored: z.boolean(),
   move: MoveTypeSchema.optional(),
+  /** One line naming the sector the field sits in. */
+  sector: z.string(),
+  fitLevel: FitLevelSchema.optional(),
+  /** Two-sentence blurb shown on the collapsed card. */
+  summary: z.string(),
+  /** 3–4 transferable skills shown as chips. */
+  chips: z.array(z.string()),
   /** Fit reasoning; cites cards by ID in the text (see `citedCardIds`). */
   fit: z.string(),
+  /** One line per cited card, shown as the evidence lines when expanded. */
+  evidence: z.array(EvidenceSchema),
   uncertain: z.string(),
+  ask: AskSchema.optional(),
   sources: z.array(z.string()),
   extra: ExtraSchema,
 });
@@ -212,6 +309,8 @@ export const RoleSchema = z.object({
   fieldId: z.string(),
   companies: z.array(z.string()),
   why: z.string(),
+  /** Ticked by the person; every selected role gets one LinkedIn query (technical-plan.md D47). */
+  selected: z.boolean(),
   sources: z.array(z.string()),
   extra: ExtraSchema,
 });
@@ -228,6 +327,11 @@ export const QuerySchema = z.object({
   board: BoardSchema,
   query: z.string(),
   fieldIds: z.array(z.string()),
+  /**
+   * ID of the role this query was written for, e.g. `R3`; empty when unknown
+   * (a query written before one-query-per-role, technical-plan.md D47).
+   */
+  roleId: z.string(),
   status: QueryStatusSchema,
   /** The user's own words from the "Tried it" feedback. */
   reason: z.string(),
@@ -243,6 +347,18 @@ export const ExtraSectionSchema = z.object({
 });
 export type ExtraSection = z.infer<typeof ExtraSectionSchema>;
 
+/**
+ * What the person typed, as typed (technical-plan.md D56). Kept so they can
+ * see and revisit it; no prompt reads it. `extra` holds any other `###` block
+ * found under `## Inputs`, keyed by its title.
+ */
+export const InputsSchema = z.object({
+  resume: z.string(),
+  notes: z.string(),
+  extra: ExtraSchema,
+});
+export type Inputs = z.infer<typeof InputsSchema>;
+
 export const ProfileSchema = z.object({
   preferences: PreferencesSchema,
   cards: z.array(CardSchema),
@@ -250,6 +366,7 @@ export const ProfileSchema = z.object({
   fields: z.array(FieldSchema),
   roles: z.array(RoleSchema),
   queries: z.array(QuerySchema),
+  inputs: InputsSchema,
   sessionNotes: z.string(),
   /** Unknown `##` sections, preserved verbatim and emitted last. */
   extraSections: z.array(ExtraSectionSchema),
@@ -261,6 +378,10 @@ export interface ParseResult {
   warnings: string[];
 }
 
+export function emptyInputs(): Inputs {
+  return { resume: "", notes: "", extra: {} };
+}
+
 export function emptyProfile(): Profile {
   return {
     preferences: { other: [] },
@@ -269,6 +390,7 @@ export function emptyProfile(): Profile {
     fields: [],
     roles: [],
     queries: [],
+    inputs: emptyInputs(),
     sessionNotes: "",
     extraSections: [],
   };
@@ -278,7 +400,15 @@ export function emptyProfile(): Profile {
 // Label tables (shared by parser and serializer)
 // ---------------------------------------------------------------------------
 
-type SectionKind = "preferences" | "cards" | "skills" | "fields" | "roles" | "queries" | "notes";
+type SectionKind =
+  | "preferences"
+  | "cards"
+  | "skills"
+  | "fields"
+  | "roles"
+  | "queries"
+  | "inputs"
+  | "notes";
 
 const SECTION_TITLES: Record<SectionKind, string> = {
   preferences: "Preferences",
@@ -287,6 +417,7 @@ const SECTION_TITLES: Record<SectionKind, string> = {
   fields: "Fields",
   roles: "Role Shortlist",
   queries: "Queries",
+  inputs: "Inputs",
   notes: "Session Notes",
 };
 
@@ -297,8 +428,20 @@ const SECTION_ORDER: SectionKind[] = [
   "fields",
   "roles",
   "queries",
+  "inputs",
   "notes",
 ];
+
+type InputKey = "resume" | "notes";
+
+/** The two inputs the first screen collects, by their `###` block title. */
+const INPUT_TITLES: Record<InputKey, string> = { resume: "Resume", notes: "Notes" };
+
+const INPUT_ALIASES: Record<string, InputKey> = {
+  resume: "resume",
+  notes: "notes",
+  note: "notes",
+};
 
 const SECTION_ALIASES: Record<string, SectionKind> = {
   preferences: "preferences",
@@ -320,12 +463,14 @@ const SECTION_ALIASES: Record<string, SectionKind> = {
   queries: "queries",
   query: "queries",
   searchqueries: "queries",
+  inputs: "inputs",
+  input: "inputs",
   sessionnotes: "notes",
   notes: "notes",
   session: "notes",
 };
 
-const ID_PREFIX: Record<Exclude<SectionKind, "preferences" | "skills" | "notes">, string> = {
+const ID_PREFIX: Record<Exclude<SectionKind, "preferences" | "skills" | "inputs" | "notes">, string> = {
   cards: "C",
   fields: "F",
   roles: "R",
@@ -342,6 +487,7 @@ const LABELS = {
   confirmed: "Confirmed",
   inferred: "Inferred",
   excludedSkills: "Excluded",
+  years: "Years",
   situation: "Situation",
   actions: "Actions",
   results: "Results",
@@ -350,14 +496,25 @@ const LABELS = {
   status: "Status",
   explored: "Explored",
   move: "Move",
+  sector: "Sector",
+  fitLevel: "Fit level",
+  summary: "Summary",
+  chips: "Chips",
   fit: "Fit",
+  evidence: "Evidence",
   uncertain: "Uncertain",
+  ask: "Ask",
+  askQuestion: "Question",
+  askKey: "Key",
+  askPlaceholder: "Placeholder",
   sources: "Sources",
+  selected: "Selected",
   field: "Field",
   companies: "Companies",
   why: "Why",
   board: "Board",
   fields: "Fields",
+  role: "Role",
   reason: "Reason",
   changed: "Changed",
   query: "Query",
@@ -403,8 +560,13 @@ const SKILL_ALIASES: Record<string, SkillBucket> = {
   rejected: "excluded",
 };
 
-type CardKey = "situation" | "actions" | "results" | "skills" | "excluded";
+type CardKey = "years" | "situation" | "actions" | "results" | "skills" | "excluded";
 const CARD_ALIASES: Record<string, CardKey> = {
+  years: "years",
+  year: "years",
+  period: "years",
+  dates: "years",
+  when: "years",
   situation: "situation",
   context: "situation",
   actions: "actions",
@@ -420,13 +582,38 @@ const CARD_ALIASES: Record<string, CardKey> = {
   exclude: "excluded",
 };
 
-type FieldKey = "status" | "explored" | "move" | "fit" | "uncertain" | "sources";
+type FieldKey =
+  | "status"
+  | "explored"
+  | "move"
+  | "sector"
+  | "fitLevel"
+  | "summary"
+  | "chips"
+  | "fit"
+  | "evidence"
+  | "uncertain"
+  | "ask"
+  | "sources";
 const FIELD_ALIASES: Record<string, FieldKey> = {
   status: "status",
   explored: "explored",
   move: "move",
   movetype: "move",
   type: "move",
+  sector: "sector",
+  industry: "sector",
+  fitlevel: "fitLevel",
+  level: "fitLevel",
+  summary: "summary",
+  blurb: "summary",
+  chips: "chips",
+  chip: "chips",
+  transferableskills: "chips",
+  transferable: "chips",
+  evidence: "evidence",
+  ask: "ask",
+  question: "ask",
   fit: "fit",
   fitreasoning: "fit",
   why: "fit",
@@ -441,8 +628,11 @@ const FIELD_ALIASES: Record<string, FieldKey> = {
   links: "sources",
 };
 
-type RoleKey = "field" | "companies" | "why" | "sources";
+type RoleKey = "field" | "companies" | "why" | "selected" | "sources";
 const ROLE_ALIASES: Record<string, RoleKey> = {
+  selected: "selected",
+  ticked: "selected",
+  checked: "selected",
   field: "field",
   fieldid: "field",
   companies: "companies",
@@ -456,7 +646,7 @@ const ROLE_ALIASES: Record<string, RoleKey> = {
   links: "sources",
 };
 
-type QueryKey = "board" | "fields" | "status" | "reason" | "changed" | "query";
+type QueryKey = "board" | "fields" | "role" | "status" | "reason" | "changed" | "query";
 const QUERY_ALIASES: Record<string, QueryKey> = {
   board: "board",
   site: "board",
@@ -464,6 +654,8 @@ const QUERY_ALIASES: Record<string, QueryKey> = {
   field: "fields",
   fieldids: "fields",
   targets: "fields",
+  role: "role",
+  roleid: "role",
   status: "status",
   reason: "reason",
   feedback: "reason",
@@ -489,6 +681,16 @@ const FIELD_STATUS_ALIASES: Record<string, FieldStatus> = {
   unsure: "unsure",
   maybe: "unsure",
   undecided: "unsure",
+};
+
+const FIT_LEVEL_ALIASES: Record<string, FitLevel> = {
+  strong: "strong",
+  strongfit: "strong",
+  some: "some",
+  somefit: "some",
+  partial: "some",
+  stretch: "stretch",
+  stretchfit: "stretch",
 };
 
 const MOVE_ALIASES: Record<string, MoveType> = {
@@ -591,9 +793,21 @@ type RawSection = {
   items: RawItem[];
   /** Verbatim body lines (Session Notes, unknown sections). */
   body: string[];
+  /** `###` blocks under Inputs, in file order, each line already unquoted. */
+  blocks: RawInputBlock[];
   /** Lines that fit nowhere. */
   stray: string[];
 };
+
+type RawInputBlock = {
+  title: string;
+  lines: string[];
+  /** Whether the unquoted-text warning has been given for this block. */
+  warned: boolean;
+};
+
+/** One quoted Inputs line: up to three spaces, `>`, and the one space after it. */
+const INPUT_QUOTE_RE = /^ {0,3}> ?/;
 
 function normalizeNewlines(md: string): string {
   return md.replace(/\r\n?/g, "\n");
@@ -613,6 +827,7 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
   let section: RawSection | null = null;
   let item: RawItem | null = null;
   let entry: { label: string; lines: string[] } | null = null;
+  let inputBlock: RawInputBlock | null = null;
   const preamble: string[] = [];
 
   const isItemSection = (s: RawSection | null): boolean =>
@@ -637,17 +852,50 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
         warnings.push(`Line ${i + 1}: duplicate section "## ${title}" merged into the first one.`);
         section = existing;
       } else {
-        section = { kind, heading: title, entries: [], items: [], body: [], stray: [] };
+        section = { kind, heading: title, entries: [], items: [], body: [], blocks: [], stray: [] };
         sections.push(section);
         if (!kind) warnings.push(`Line ${i + 1}: unknown section "## ${title}" preserved as-is.`);
       }
       item = null;
       entry = null;
+      inputBlock = null;
       continue;
     }
 
     if (section === null) {
       if (!isBlank(line)) preamble.push(line.trim());
+      continue;
+    }
+
+    if (section.kind === "inputs") {
+      // Everything under Inputs is the person's own text (technical-plan.md
+      // D56). Only a `###` heading is structure here, and all it does is name
+      // a block: no line in this section becomes a card, a key or a note.
+      const blockTitle =
+        heading && heading[1].length === 3 ? heading[2].trim().replace(/:+$/, "").trim() : "";
+      if (blockTitle !== "") {
+        inputBlock = { title: blockTitle, lines: [], warned: false };
+        section.blocks.push(inputBlock);
+        continue;
+      }
+      const quote = INPUT_QUOTE_RE.exec(line);
+      const text = quote ? line.slice(quote[0].length) : line;
+      if (inputBlock === null) {
+        if (isBlank(text)) continue;
+        // This warning covers the line itself; a later unquoted one gets its own.
+        inputBlock = { title: INPUT_TITLES.resume, lines: [], warned: !quote };
+        section.blocks.push(inputBlock);
+        warnings.push(
+          `Line ${i + 1}: text under "## ${section.heading}" before a "###" heading was kept as the resume.`,
+        );
+      }
+      if (!quote && !isBlank(line) && !inputBlock.warned) {
+        inputBlock.warned = true;
+        warnings.push(
+          `Line ${i + 1}: unquoted text under "${section.heading} → ${inputBlock.title}" was kept as part of it.`,
+        );
+      }
+      inputBlock.lines.push(text);
       continue;
     }
 
@@ -745,7 +993,7 @@ function tokenize(md: string, warnings: string[]): RawSection[] {
 function ensureSection(sections: RawSection[], kind: SectionKind): RawSection {
   let s = sections.find((x) => x.kind === kind);
   if (!s) {
-    s = { kind, heading: SECTION_TITLES[kind], entries: [], items: [], body: [], stray: [] };
+    s = { kind, heading: SECTION_TITLES[kind], entries: [], items: [], body: [], blocks: [], stray: [] };
     sections.push(s);
   }
   return s;
@@ -845,6 +1093,56 @@ function listPreferenceValue(lines: string[]): { values: string[]; source: Prefe
     return tagged.value;
   });
   return { values: listValue(stripped), source };
+}
+
+const EVIDENCE_ITEM_RE = /^([A-Za-z]\d+)\s*[:\-–—]\s*(.*)$/;
+
+/** `- C1: why` lines. A line without a card ID keeps its text with an empty `cardId`. */
+function evidenceValue(lines: string[]): Evidence[] {
+  return listValue(lines).map((item) => {
+    const m = EVIDENCE_ITEM_RE.exec(item);
+    return m ? { cardId: m[1].toUpperCase(), why: m[2].trim() } : { cardId: "", why: item };
+  });
+}
+
+const ASK_SUBKEYS: Record<string, keyof Ask> = {
+  question: "question",
+  q: "question",
+  key: "key",
+  preference: "key",
+  placeholder: "placeholder",
+  hint: "placeholder",
+  example: "placeholder",
+};
+const ASK_LINE_RE = /^[-*+]\s+([A-Za-z][A-Za-z ]{0,20}?)\s*:\s*(.*)$/;
+
+/**
+ * The `Ask` block: text on the label line is the question; indented
+ * `- Question:` / `- Key:` / `- Placeholder:` lines fill the three parts.
+ * Returns `undefined` when every part is empty.
+ */
+function askValue(lines: string[], where: string, warnings: string[]): Ask | undefined {
+  const ask: Ask = { question: "", key: "", placeholder: "" };
+  const questionParts: string[] = [];
+  lines.forEach((raw, i) => {
+    const l = raw.trim();
+    if (l === "") return;
+    const m = i > 0 ? ASK_LINE_RE.exec(l) : null;
+    if (!m) {
+      questionParts.push(l.replace(/^[-*+]\s+/, ""));
+      return;
+    }
+    const sub = ASK_SUBKEYS[norm(m[1])];
+    if (!sub) {
+      warnings.push(`${where}: unknown Ask part "${m[1]}", kept as question text`);
+      questionParts.push(l.replace(/^[-*+]\s+/, ""));
+      return;
+    }
+    if (sub === "question") questionParts.push(m[2].trim());
+    else ask[sub] = m[2].trim();
+  });
+  ask.question = questionParts.join(" ");
+  return ask.question === "" && ask.key === "" && ask.placeholder === "" ? undefined : ask;
 }
 
 function addExtra(extra: Extra, label: string, value: string, where: string, warnings: string[]): void {
@@ -949,6 +1247,11 @@ function parseCards(section: RawSection | undefined, warnings: string[]): Card[]
     for (const { label, lines } of it.entries) {
       const key = CARD_ALIASES[norm(label)];
       switch (key) {
+        case "years": {
+          const v = textValue(lines);
+          if (v) card.years = v;
+          break;
+        }
         case "situation":
         case "actions":
         case "results":
@@ -977,7 +1280,11 @@ function parseFields(section: RawSection | undefined, warnings: string[]): Field
       name: it.title,
       status: "candidate",
       explored: false,
+      sector: "",
+      summary: "",
+      chips: [],
       fit: "",
+      evidence: [],
       uncertain: "",
       sources: [],
       extra: {},
@@ -997,10 +1304,28 @@ function parseFields(section: RawSection | undefined, warnings: string[]): Field
           if (move) field.move = move;
           break;
         }
+        case "fitLevel": {
+          const level = enumValue(lines, FIT_LEVEL_ALIASES, where, warnings);
+          if (level) field.fitLevel = level;
+          break;
+        }
+        case "sector":
+        case "summary":
         case "fit":
         case "uncertain":
           field[key] = textValue(lines);
           break;
+        case "chips":
+          field.chips.push(...listValue(lines));
+          break;
+        case "evidence":
+          field.evidence.push(...evidenceValue(lines));
+          break;
+        case "ask": {
+          const ask = askValue(lines, where, warnings);
+          if (ask) field.ask = ask;
+          break;
+        }
         case "sources":
           field.sources.push(...listValue(lines));
           break;
@@ -1022,12 +1347,16 @@ function parseRoles(section: RawSection | undefined, warnings: string[]): Role[]
       fieldId: "",
       companies: [],
       why: "",
+      selected: false,
       sources: [],
       extra: {},
     };
     for (const { label, lines } of it.entries) {
       const key = ROLE_ALIASES[norm(label)];
       switch (key) {
+        case "selected":
+          role.selected = boolValue(lines, `${role.id} ${label}`, warnings);
+          break;
         case "field":
           role.fieldId = textValue(lines).toUpperCase();
           break;
@@ -1057,6 +1386,7 @@ function parseQueries(section: RawSection | undefined, warnings: string[]): Quer
       board: "other",
       query: it.title,
       fieldIds: [],
+      roleId: "",
       status: "untried",
       reason: "",
       extra: {},
@@ -1070,6 +1400,9 @@ function parseQueries(section: RawSection | undefined, warnings: string[]): Quer
           break;
         case "fields":
           query.fieldIds.push(...listValue(lines).map((f) => f.toUpperCase()));
+          break;
+        case "role":
+          query.roleId = textValue(lines).toUpperCase();
           break;
         case "status":
           query.status = enumValue(lines, QUERY_STATUS_ALIASES, where, warnings) ?? "untried";
@@ -1099,6 +1432,46 @@ function bodyText(lines: string[]): string {
 }
 
 /**
+ * What the person typed, the way the profile stores it: LF newlines, no
+ * trailing whitespace on a line, no blank lines before or after the text.
+ * Everything else is kept as typed.
+ */
+export function normalizeInputText(text: string): string {
+  return bodyText(
+    normalizeNewlines(text)
+      .split("\n")
+      .map((l) => l.trimEnd()),
+  );
+}
+
+function parseInputs(section: RawSection | undefined, warnings: string[]): Inputs {
+  const inputs = emptyInputs();
+  const seen = new Set<string>();
+  const join = (current: string, text: string): string =>
+    current === "" ? text : text === "" ? current : `${current}\n${text}`;
+
+  for (const block of section?.blocks ?? []) {
+    const text = bodyText(block.lines);
+    const alias = norm(block.title);
+    const known = Object.hasOwn(INPUT_ALIASES, alias) ? INPUT_ALIASES[alias] : null;
+    const id = known ?? `extra:${block.title}`;
+    if (seen.has(id)) {
+      warnings.push(`Duplicate "### ${block.title}" under "## Inputs" was joined to the first one.`);
+    }
+    seen.add(id);
+    if (known !== null) {
+      inputs[known] = join(inputs[known], text);
+    } else {
+      inputs.extra[block.title] = join(
+        Object.hasOwn(inputs.extra, block.title) ? inputs.extra[block.title] : "",
+        text,
+      );
+    }
+  }
+  return inputs;
+}
+
+/**
  * Parses `profile.md`. Never throws on a string; problems are reported in
  * `warnings` and the closest sensible value is used instead.
  */
@@ -1114,6 +1487,7 @@ export function parseProfile(md: string): ParseResult {
     fields: parseFields(byKind("fields"), warnings),
     roles: parseRoles(byKind("roles"), warnings),
     queries: parseQueries(byKind("queries"), warnings),
+    inputs: parseInputs(byKind("inputs"), warnings),
     sessionNotes: bodyText(byKind("notes")?.body ?? []),
     extraSections: sections
       .filter((s) => s.kind === null)
@@ -1211,6 +1585,7 @@ function serializePreferences(p: Preferences): string[] {
 function serializeCard(c: Card): string[] {
   return [
     itemHeading(c.id, c.title),
+    keyLine(LABELS.years, c.years ?? ""),
     keyLine(LABELS.situation, c.situation),
     keyLine(LABELS.actions, c.actions),
     keyLine(LABELS.results, c.results),
@@ -1235,10 +1610,36 @@ function serializeField(f: Field): string[] {
     keyLine(LABELS.status, f.status),
     keyLine(LABELS.explored, yesNo(f.explored)),
     keyLine(LABELS.move, f.move ?? ""),
+    keyLine(LABELS.sector, f.sector),
+    keyLine(LABELS.fitLevel, f.fitLevel ?? ""),
+    keyLine(LABELS.summary, f.summary),
+    inlineListLine(LABELS.chips, f.chips),
     keyLine(LABELS.fit, f.fit),
+    bulletListLine(
+      LABELS.evidence,
+      f.evidence.map((e) => (e.cardId ? `${e.cardId}: ${e.why}` : e.why)),
+    ),
     keyLine(LABELS.uncertain, f.uncertain),
+    ...askLines(f.ask),
     bulletListLine(LABELS.sources, f.sources),
     ...extraLines(f.extra),
+  ];
+}
+
+/** The `Ask` block; only the non-empty parts are written, on one line each. */
+function askLines(ask: Ask | undefined): string[] {
+  if (!ask) return [`- **${LABELS.ask}:**`];
+  const parts: Array<[string, string]> = [
+    [LABELS.askQuestion, ask.question],
+    [LABELS.askKey, ask.key],
+    [LABELS.askPlaceholder, ask.placeholder],
+  ];
+  return [
+    `- **${LABELS.ask}:**`,
+    ...parts
+      .map(([label, v]) => [label, v.replace(/\s+/g, " ").trim()] as const)
+      .filter(([, v]) => v !== "")
+      .map(([label, v]) => `  - ${label}: ${v}`),
   ];
 }
 
@@ -1248,6 +1649,7 @@ function serializeRole(r: Role): string[] {
     keyLine(LABELS.field, r.fieldId),
     inlineListLine(LABELS.companies, r.companies),
     keyLine(LABELS.why, r.why),
+    keyLine(LABELS.selected, yesNo(r.selected)),
     bulletListLine(LABELS.sources, r.sources),
     ...extraLines(r.extra),
   ];
@@ -1258,6 +1660,7 @@ function serializeQuery(q: Query): string[] {
     itemHeading(q.id, q.query),
     keyLine(LABELS.board, q.board),
     inlineListLine(LABELS.fields, q.fieldIds),
+    ...(q.roleId === "" ? [] : [keyLine(LABELS.role, q.roleId)]),
     keyLine(LABELS.status, q.status),
     keyLine(LABELS.reason, q.reason),
     keyLine(LABELS.changed, q.changedAt ?? ""),
@@ -1269,8 +1672,43 @@ function joinItems(blocks: string[][]): string[] {
   return blocks.flatMap((b, i) => (i === 0 ? b : ["", ...b]));
 }
 
+/** One Inputs block: its `###` title, then the text with every line quoted. */
+function serializeInputBlock(title: string, text: string): string[] {
+  const body = normalizeInputText(text);
+  const quoted = body === "" ? [] : body.split("\n").map((l) => (l === "" ? ">" : `> ${l}`));
+  return [`### ${title.trim()}`, ...quoted];
+}
+
+function serializeInputs(inputs: Inputs): string[] {
+  const blocks: string[][] = [];
+  for (const key of ["resume", "notes"] as const) {
+    if (normalizeInputText(inputs[key]) !== "") {
+      blocks.push(serializeInputBlock(INPUT_TITLES[key], inputs[key]));
+    }
+  }
+  for (const title of Object.keys(inputs.extra).sort()) {
+    blocks.push(serializeInputBlock(title, inputs.extra[title]));
+  }
+  return joinItems(blocks);
+}
+
 /** Writes the canonical `profile.md` text. Always ends with a single newline. */
 export function serializeProfile(profile: Profile): string {
+  return renderProfile(profile, { withInputs: true });
+}
+
+/**
+ * The profile text a prompt may read: the canonical text without the
+ * `## Inputs` section (technical-plan.md D56). What the person typed carries
+ * their contact details and the cards already say what every later step
+ * reasons from, so a model-facing rendering goes through this, never through
+ * `serializeProfile`.
+ */
+export function serializeProfileForPrompt(profile: Profile): string {
+  return renderProfile(profile, { withInputs: false });
+}
+
+function renderProfile(profile: Profile, { withInputs }: { withInputs: boolean }): string {
   const bodies: Record<SectionKind, string[]> = {
     preferences: serializePreferences(profile.preferences),
     cards: joinItems(profile.cards.map(serializeCard)),
@@ -1278,11 +1716,13 @@ export function serializeProfile(profile: Profile): string {
     fields: joinItems(profile.fields.map(serializeField)),
     roles: joinItems(profile.roles.map(serializeRole)),
     queries: joinItems(profile.queries.map(serializeQuery)),
+    inputs: serializeInputs(profile.inputs),
     notes: profile.sessionNotes.trim() === "" ? [] : [verbatimBody(profile.sessionNotes)],
   };
 
   const out: string[] = ["# Profile"];
   for (const kind of SECTION_ORDER) {
+    if (kind === "inputs" && !withInputs) continue;
     out.push("", `## ${SECTION_TITLES[kind]}`);
     if (bodies[kind].length > 0) out.push("", ...bodies[kind]);
   }
@@ -1331,6 +1771,26 @@ export function citedCardIds(text: string): string[] {
 /** Cards the assistant may use: everything not excluded. */
 export function activeCards(p: Profile): Card[] {
   return p.cards.filter((c) => !c.excluded);
+}
+
+/**
+ * The skills every prompt and screen reads (technical-plan.md D53): a skill
+ * is accepted unless the person removed it. `Confirmed` first, then
+ * `Inferred`, deduplicated case-insensitively (the first spelling wins),
+ * minus anything in `Excluded` (case-insensitive). The three buckets stay in
+ * the file format; this is the one reader that turns them into a list.
+ */
+export function activeSkills(p: Profile): string[] {
+  const keyOf = (skill: string) => skill.trim().toLowerCase();
+  const taken = new Set(p.skills.excluded.map(keyOf));
+  const active: string[] = [];
+  for (const skill of [...p.skills.confirmed, ...p.skills.inferred]) {
+    const key = keyOf(skill);
+    if (key === "" || taken.has(key)) continue;
+    taken.add(key);
+    active.push(skill.trim());
+  }
+  return active;
 }
 
 /** Typed preferences that are not yet set (for elicitation). */
@@ -1382,6 +1842,76 @@ export function setFieldStatus(p: Profile, id: string, status: FieldStatus): Pro
 
 export function setFieldExplored(p: Profile, id: string, explored = true): Profile {
   return { ...p, fields: p.fields.map((f) => (f.id === id ? { ...f, explored } : f)) };
+}
+
+/** Ticks or unticks a role; every ticked role gets one LinkedIn query (technical-plan.md D47). */
+export function setRoleSelected(p: Profile, id: string, selected: boolean): Profile {
+  return { ...p, roles: p.roles.map((r) => (r.id === id ? { ...r, selected } : r)) };
+}
+
+/**
+ * `extra` key discovery sets to `yes` on a field or role its latest run did
+ * not return (technical-plan.md D58). The item keeps its id, so queries that
+ * cite it still resolve; no screen lists it and its role is un-ticked.
+ */
+export const DROPPED_KEY = "Dropped";
+
+/** True for a field or role the latest discovery run did not return (D58). */
+export function isDropped(item: { extra: Extra }): boolean {
+  return item.extra[DROPPED_KEY] === "yes";
+}
+
+/** Roles that belong to a field, in file order; `selectedOnly` keeps the ticked ones. */
+export function rolesForField(p: Profile, fieldId: string, selectedOnly = false): Role[] {
+  return p.roles.filter((r) => r.fieldId === fieldId && (!selectedOnly || r.selected));
+}
+
+/**
+ * Every role the person has ticked, in field order and then role order
+ * (technical-plan.md D47). This is the one definition of "selected" that query
+ * writing and the UI share. A field's status is not consulted: the Roles
+ * screen shows every discovered field as a heading with no marking, so a tick
+ * always means a search. A ticked role whose `Field` names no field in the
+ * profile is left out, because no screen shows it, and so is a dropped field
+ * or role (D58).
+ */
+export function selectedRoles(p: Profile): Role[] {
+  return p.fields
+    .filter((f) => !isDropped(f))
+    .flatMap((f) => rolesForField(p, f.id, true).filter((r) => !isDropped(r)));
+}
+
+/**
+ * Replaces a query's text (the person editing a revised query locally,
+ * technical-plan.md D41). Status and reason are untouched.
+ */
+export function setQueryText(p: Profile, id: string, text: string): Profile {
+  const query = text.replace(/\s+/g, " ").trim();
+  return { ...p, queries: p.queries.map((q) => (q.id === id ? { ...q, query } : q)) };
+}
+
+/**
+ * Files an answer under a free-form preference key (a field's ask, technical-plan.md D43).
+ * An existing key (case-insensitive) is replaced in place; otherwise the pair is
+ * appended. An empty value removes the key.
+ */
+export function addOtherPreference(
+  p: Profile,
+  key: string,
+  value: string,
+  source: PreferenceSource = "stated",
+): Profile {
+  const cleanKey = key.replace(/\s+/g, " ").trim();
+  const cleanValue = value.replace(/\s+/g, " ").trim();
+  if (cleanKey === "") return p;
+  const same = (k: string) => norm(k) === norm(cleanKey);
+  const kept = p.preferences.other.filter((o) => !same(o.key));
+  if (cleanValue === "") return { ...p, preferences: { ...p.preferences, other: kept } };
+  const entry: OtherPreference = { key: cleanKey, value: cleanValue, source };
+  const idx = p.preferences.other.findIndex((o) => same(o.key));
+  const other =
+    idx === -1 ? [...kept, entry] : p.preferences.other.map((o, i) => (i === idx ? entry : o));
+  return { ...p, preferences: { ...p.preferences, other } };
 }
 
 /**
@@ -1445,7 +1975,48 @@ export function moveSkill(p: Profile, skill: string, to: SkillBucket): Profile {
   return { ...p, skills };
 }
 
+/** The spelling already stored for this skill, in any bucket, or the input. */
+function canonicalSkill(p: Profile, skill: string): string {
+  const key = skill.trim().toLowerCase();
+  const all = [...p.skills.confirmed, ...p.skills.inferred, ...p.skills.excluded];
+  return all.find((s) => s.trim().toLowerCase() === key) ?? skill.trim();
+}
+
+/**
+ * The user removes a skill: it moves to `Excluded` from whichever bucket it
+ * is in, so `activeSkills` stops listing it (technical-plan.md D53).
+ */
+export function rejectSkill(p: Profile, skill: string): Profile {
+  if (skill.trim() === "") return p;
+  return moveSkill(p, canonicalSkill(p, skill), "excluded");
+}
+
+/**
+ * The user brings back a skill they removed: it moves to `Inferred`, keeping
+ * the spelling already in the profile, so `activeSkills` lists it again
+ * (technical-plan.md D53).
+ */
+export function restoreSkill(p: Profile, skill: string): Profile {
+  if (skill.trim() === "") return p;
+  return moveSkill(p, canonicalSkill(p, skill), "inferred");
+}
+
 /** Replaces the session notes. */
 export function setSessionNotes(p: Profile, notes: string): Profile {
   return { ...p, sessionNotes: notes };
+}
+
+/**
+ * Records what the person typed on the first screen (technical-plan.md D56),
+ * normalized with `normalizeInputText`. Other Inputs blocks are left alone.
+ */
+export function setInputs(p: Profile, typed: { resume: string; notes: string }): Profile {
+  return {
+    ...p,
+    inputs: {
+      ...p.inputs,
+      resume: normalizeInputText(typed.resume),
+      notes: normalizeInputText(typed.notes),
+    },
+  };
 }

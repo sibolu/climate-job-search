@@ -2,43 +2,45 @@
  * Progressive preference elicitation (PRD stage 1.2, PLAN.md step 1.2).
  *
  * A nontechnical fellow should get value before finishing anything that feels
- * like a form. So this module asks for **one** preference per turn, in the
- * order that matters most for discovery, skips anything already stated or
- * already inferable from the experience cards, and stops as soon as every
- * typed preference in the `profile.md` contract is known.
+ * like a form. So this module asks **one** optional question — which of six
+ * fixed climate areas interest the person, any number of them — and fills the
+ * other preferences from what the cards or the person's own words say
+ * (technical-plan.md D54).
  *
  * Two halves, kept apart on purpose:
  *
- *   * **The policy is pure.** {@link nextQuestion}, {@link applyPillAnswer} and
- *     {@link isElicitationComplete} are deterministic functions of a
- *     {@link Profile}. No I/O, no model call, no Supabase: the caller passes
- *     the "browse industries" chips in as `sectorGroups` (from
- *     `listSectorGroups()` in `reference.ts`). That is what makes the
- *     acceptance check — a scripted transcript that never asks two things at
- *     once and stops once enough is known — a unit test, and it lets the
- *     browser render pills without a round trip.
+ *   * **The policy is pure.** {@link nextQuestion}, {@link applyPillAnswer},
+ *     {@link toggleClimateInterest} and {@link isElicitationComplete} are
+ *     deterministic functions of a {@link Profile}. No I/O, no model call, no
+ *     Supabase: the six areas are a constant ({@link CLIMATE_AREAS}). That is
+ *     what makes the question order and the toggle unit tests, and it lets
+ *     the browser record a pick without a round trip.
  *   * **The model does the reading.** {@link inferPreferences} makes one
  *     structured call after cards exist and fills in what the cards support
  *     with high confidence, tagged `inferred` (the "skip when inferable"
  *     rule). {@link interpretAnswer} turns a free-text reply into a stated
  *     preference and picks up anything else the person volunteered in the same
  *     breath. Both go through `llm.ts` (the only door to the API) and neither
- *     ever overwrites a value the user stated.
+ *     ever overwrites a value the user stated. Neither is how a pill pick is
+ *     recorded, and `inferPreferences` never writes climate interests: a pick
+ *     is always the person's own (technical-plan.md D54).
  *
  * Every write goes through the pure helpers in `profile.ts`; nothing here
  * string-edits markdown. Pills reuse `AnswerPillSchema` from `session.ts`,
  * the one pill shape the chat renders.
  *
- * ## Representing "I don't know yet"
+ * ## Climate interests rank, they never filter
  *
- * The climate-interests question offers a "Not sure yet — show me options"
- * pill. Its answer is recorded as the single stated value
- * {@link OPEN_TO_SUGGESTIONS} (`open to suggestions`): the contract's
- * `climateInterests` is a plain list, so an *empty* list would read as
- * "unknown" and the loop would ask again. Downstream modules treat that value
- * as "no constraint" via {@link isOpenToSuggestions}. Any other interest that
- * equals a `climate_fields.sector_group` is a direct pointer into the
- * reference collection, which is why chip values are the raw group strings.
+ * The interest question is multi-select and optional: zero picks is a valid
+ * answer and nothing downstream waits for one. Discovery uses the picks to
+ * order the fields it lists, never to decide which fields are listed
+ * (technical-plan.md D54). The six pills are {@link CLIMATE_AREAS}; anything
+ * else in the list came from the person's notes and is kept as written.
+ *
+ * {@link OPEN_TO_SUGGESTIONS} (`open to suggestions`) is what "not sure" or
+ * "show me options" typed in the notes box normalises to. Downstream modules
+ * read it as "no area named" via {@link isOpenToSuggestions}, and picking an
+ * area drops it.
  *
  * Prompts live here as plain template strings so they can be edited without
  * touching React (CLAUDE.md). The system prompts are byte-stable — the
@@ -54,7 +56,7 @@ import {
   emptyProfile,
   KNOWN_PREFERENCE_KEYS,
   missingPreferences,
-  serializeProfile,
+  serializeProfileForPrompt,
   setClimateInterests,
   setPreference,
   type PreferenceKey,
@@ -67,31 +69,32 @@ import type { AnswerPill } from "./session";
 // ---------------------------------------------------------------------------
 
 /**
- * The order questions are asked in. Rationale, most decision-relevant first:
+ * The questions asked, in order: one, answered by tapping pills
+ * (technical-plan.md D48, D54).
  *
- *   1. `climateInterests` — it is the axis discovery ranks fields on; without
- *      it every other answer only filters an unknown set. It is also the one
- *      question where "not sure yet" is a good answer (see
- *      {@link OPEN_TO_SUGGESTIONS}), so it never blocks.
- *   2. `seniority` — calibrates the role level; the cards usually make this
- *      inferable, so it is often skipped.
- *   3. `retrainingAppetite` — decides between a sector move, an adjacent role
- *      and a retrain. It is most useful once fields are on the table, so it
- *      goes last; it is rarely inferable, so it is still asked.
+ * `climateInterests` is the axis discovery orders fields on. The question is
+ * multi-select and optional, so it never blocks: with nothing picked,
+ * discovery ranks on fit alone.
+ *
+ * `retrainingAppetite` is deliberately **not** asked (technical-plan.md D54).
+ * It remains a {@link PreferenceKey}: the person can state it in their notes,
+ * {@link inferPreferences} may fill it from the cards, and discovery still
+ * reads it.
+ *
+ * `seniority` is deliberately **not** asked (technical-plan.md D48). Role
+ * titles carry no level, so no later step reads it. It remains a
+ * {@link PreferenceKey} and {@link inferPreferences} may still fill it from
+ * the cards.
  *
  * `location` and `workMode` are deliberately **not** asked (technical-plan.md D36).
  * They are native filters on every major job board, so the app guides the
  * person to the board's own location and remote/hybrid filter
  * (`ALERT_STEPS` in `boards.ts`) rather than spending a conversational turn
  * on them. Both remain {@link PreferenceKey}s: still inferred from the cards
- * by {@link inferPreferences}, still editable in the Profile tab, still
+ * by {@link inferPreferences}, still shown in the profile drawer, still
  * settable from query feedback — only the asking stops.
  */
-export const ELICIT_ORDER: readonly PreferenceKey[] = [
-  "climateInterests",
-  "seniority",
-  "retrainingAppetite",
-];
+export const ELICIT_ORDER: readonly PreferenceKey[] = ["climateInterests"];
 
 /**
  * Display order for the closing summary: every known preference, asked or
@@ -116,9 +119,9 @@ export const PREFERENCE_LABELS: Record<PreferenceKey, string> = {
 };
 
 /**
- * The stated value that records "no particular climate area yet — show me
- * options". A single list item, so the contract's `climateInterests` counts
- * as known and the loop moves on.
+ * The value that records "no particular climate area — show me options". It
+ * is what such a phrase typed in the notes box normalises to: a single list
+ * item that {@link isOpenToSuggestions} reads as "no area named".
  */
 export const OPEN_TO_SUGGESTIONS = "open to suggestions";
 
@@ -135,8 +138,9 @@ function missingAskedPreferences(p: Profile): PreferenceKey[] {
 }
 
 /**
- * Every preference the conversation asks for is known (stated or inferred).
- * `location` and `workMode` are not asked, so they never hold this back.
+ * The one asked preference has a value (stated or inferred). The question is
+ * optional, so this gates nothing; `retrainingAppetite`, `seniority`,
+ * `location` and `workMode` are not asked and never hold it back.
  */
 export function isElicitationComplete(p: Profile): boolean {
   return missingAskedPreferences(p).length === 0;
@@ -153,15 +157,19 @@ export function nextMissingPreference(p: Profile): PreferenceKey | undefined {
 
 /**
  * One question per key. Each is exactly one question sentence — the
- * acceptance test counts question marks — framed by a sentence on why it
- * matters, the way a career coach would ask rather than a form.
+ * acceptance test counts question marks.
+ *
+ * The one asked key ({@link ELICIT_ORDER}) sits inline on a form above its
+ * pills, with no chat and no assistant voice (technical-plan.md D48, D49,
+ * D54): a plain question, then one short sentence saying any number may be
+ * picked. No "I", no instruction to tap or type. The other four are never
+ * asked; their wording stays for {@link interpretAnswer}, which quotes the
+ * question a reply was given to.
  */
 export const QUESTIONS: Record<PreferenceKey, string> = {
   climateInterests:
-    "Let's start with what draws you to climate work, since it shapes everything else I suggest. " +
-    "Is there a part of the climate picture you already lean toward? " +
-    "Tap one below to start, or type your own — a few words is plenty, and \"not sure yet\" " +
-    "is a perfectly good answer.",
+    "Which area of climate work interests you most? " +
+    "Pick as many as you like.",
   location:
     "Now, geography, because it changes which employers are even in reach. " +
     "Where do you want to be based? " +
@@ -176,9 +184,8 @@ export const QUESTIONS: Record<PreferenceKey, string> = {
     "Pick the closest level below — I'll use it to aim at roles at the right level, " +
     "not a step down just because the sector is new to you.",
   retrainingAppetite:
-    "Last one: how much retraining are you up for? " +
-    "Some moves reuse what you already do, others need a certificate or a longer course, " +
-    "and I'd rather show you options that match the time you actually want to spend.",
+    "How much retraining are you open to? " +
+    "The answer sets how far the listed roles can be from the work you do now.",
 };
 
 /**
@@ -191,7 +198,7 @@ interface PillDefinition extends AnswerPill {
   also?: Partial<Record<Exclude<PreferenceKey, "climateInterests">, string>>;
 }
 
-/** Fixed pills per key. The climate-interests chips are built from `sectorGroups`. */
+/** Fixed pills for the single-value keys. The climate-interest pills are {@link CLIMATE_AREAS}. */
 const PILLS: Record<Exclude<PreferenceKey, "climateInterests">, readonly PillDefinition[]> = {
   location: [
     { label: "Open to relocating within my country", value: "open to relocating within my country" },
@@ -224,58 +231,32 @@ const PILLS: Record<Exclude<PreferenceKey, "climateInterests">, readonly PillDef
       label: "Open to a degree or a full retrain (a year or more)",
       value: "high, open to a degree or full retrain",
     },
+    // With no text box, "it depends" needs a pill of its own (technical-plan.md D48).
+    { label: "Not sure yet — it depends on the role", value: "not sure yet, depends on the role" },
   ],
 };
 
-/** The pill that records {@link OPEN_TO_SUGGESTIONS}. */
-export const NOT_SURE_PILL: AnswerPill = {
-  label: "Not sure yet — show me options",
-  value: OPEN_TO_SUGGESTIONS,
-};
-
 /**
- * Chips shown when the reference collection has no sector groups yet (it is
- * filled in Phase 1.3). Broad enough to be honest, few enough to scan.
+ * The six climate areas offered as interest pills, in display order
+ * (technical-plan.md D54). Fixed here rather than read from the reference
+ * collection, whose `sector_group` is coarser than these.
  */
-export const DEFAULT_CLIMATE_AREAS: readonly string[] = [
-  "clean energy & grid",
-  "buildings & transport",
-  "industry & materials",
-  "food & nature",
-  "climate finance & policy",
-  "climate software & data",
+export const CLIMATE_AREAS: readonly string[] = [
+  "Circular Economy",
+  "Built Environment",
+  "Transportation",
+  "Energy",
+  "Food & Agriculture",
+  "Carbon Removal",
 ];
 
-/** At most this many industry chips, plus {@link NOT_SURE_PILL}. */
-export const MAX_INTEREST_CHIPS = 7;
-
-/** `energy/grid/storage` → `Energy / grid / storage`. */
-function humanizeSectorGroup(group: string): string {
-  const parts = group
-    .split("/")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-  const joined = parts.join(" / ");
-  return joined.charAt(0).toUpperCase() + joined.slice(1);
-}
-
-function interestPills(sectorGroups: readonly string[]): AnswerPill[] {
-  const seen = new Set<string>();
-  const groups: string[] = [];
-  for (const raw of sectorGroups) {
-    const group = raw.trim();
-    if (group === "" || seen.has(group)) continue;
-    seen.add(group);
-    groups.push(group);
-    if (groups.length === MAX_INTEREST_CHIPS) break;
-  }
-  const chips = groups.length > 0 ? groups : DEFAULT_CLIMATE_AREAS;
-  return [...chips.map((g) => ({ label: humanizeSectorGroup(g), value: g })), NOT_SURE_PILL];
-}
-
-/** The pills offered for a key; wire shape only (`label`, `value`). */
-export function pillsFor(key: PreferenceKey, ctx: ElicitContext): AnswerPill[] {
-  if (key === "climateInterests") return interestPills(ctx.sectorGroups);
+/**
+ * The pills offered for a key; wire shape only (`label`, `value`). The
+ * climate-interest pills are exactly {@link CLIMATE_AREAS}, label and value
+ * the same.
+ */
+export function pillsFor(key: PreferenceKey): AnswerPill[] {
+  if (key === "climateInterests") return CLIMATE_AREAS.map((area) => ({ label: area, value: area }));
   return PILLS[key].map(({ label, value }) => ({ label, value }));
 }
 
@@ -283,19 +264,13 @@ export function pillsFor(key: PreferenceKey, ctx: ElicitContext): AnswerPill[] {
 // The decision
 // ---------------------------------------------------------------------------
 
-export interface ElicitContext {
-  /** Distinct `climate_fields.sector_group` values, from `listSectorGroups()`. May be empty. */
-  sectorGroups: readonly string[];
-}
-
 export interface ElicitAsk {
   kind: "ask";
   key: PreferenceKey;
   /** Exactly one question sentence, with a line of framing. */
   question: string;
+  /** Every asked question can be answered from these alone (technical-plan.md D48). */
   pills: AnswerPill[];
-  /** The chat input stays open; a pill is a shortcut, never the only way. */
-  allowFreeText: true;
 }
 
 export interface ElicitDone {
@@ -310,10 +285,10 @@ export type ElicitDecision = ElicitAsk | ElicitDone;
  * Pure and deterministic: the one question to ask now, or `done` with a
  * summary. A preference already stated or inferred is never asked.
  */
-export function nextQuestion(p: Profile, ctx: ElicitContext): ElicitDecision {
+export function nextQuestion(p: Profile): ElicitDecision {
   const key = nextMissingPreference(p);
   if (key === undefined) return { kind: "done", summary: doneSummary(p) };
-  return { kind: "ask", key, question: QUESTIONS[key], pills: pillsFor(key, ctx), allowFreeText: true };
+  return { kind: "ask", key, question: QUESTIONS[key], pills: pillsFor(key) };
 }
 
 /** The inferred tag as the summary shows it; the test looks for it. */
@@ -355,15 +330,16 @@ function doneSummary(p: Profile): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Records a pill click as a stated preference, no model call. A pill with a
- * side effect (`also`) settles that second preference too — but only where it
- * is still missing, so a stated value is never overwritten by a shortcut.
- * An unknown pill value is recorded as typed.
+ * Records a pill click as a stated preference, no model call. The
+ * climate-interest question is multi-select, so a click there toggles the
+ * pill ({@link toggleClimateInterest}); every other key holds one value and
+ * the click replaces it. A pill with a side effect (`also`) settles that
+ * second preference too — but only where it is still missing, so a stated
+ * value is never overwritten by a shortcut. An unknown pill value is
+ * recorded as typed.
  */
 export function applyPillAnswer(p: Profile, key: PreferenceKey, pill: AnswerPill): Profile {
-  if (key === "climateInterests") {
-    return setClimateInterests(p, [cleanInterest(pill.value)], "stated");
-  }
+  if (key === "climateInterests") return toggleClimateInterest(p, pill.value);
   let next = setPreference(p, key, cleanValue(pill.value), "stated");
   const definition = PILLS[key].find((d) => d.value === pill.value);
   const missing = new Set(missingPreferences(next));
@@ -372,6 +348,30 @@ export function applyPillAnswer(p: Profile, key: PreferenceKey, pill: AnswerPill
     if (missing.has(k)) next = setPreference(next, k, alsoValue, "stated");
   }
   return next;
+}
+
+/**
+ * One click on a climate-interest pill: adds the value when it is absent and
+ * removes it when it is present (case-insensitive), so any number of areas
+ * can be picked and unpicked (technical-plan.md D54). The result is always
+ * `stated`: the person touched the list. Adding an area drops
+ * {@link OPEN_TO_SUGGESTIONS}, which only ever means "none named"; values
+ * that are not one of {@link CLIMATE_AREAS} (typed in the notes box) are
+ * kept. Removing the last value removes the preference, which is a valid
+ * answer: the question is optional.
+ */
+export function toggleClimateInterest(p: Profile, value: string): Profile {
+  const picked = cleanInterest(value);
+  if (picked === "") return p;
+  const k = picked.toLowerCase();
+  const current = p.preferences.climateInterests?.values ?? [];
+  const present = current.some((v) => cleanInterest(v).toLowerCase() === k);
+  // A pill value is written in the pill's own spelling, however it was typed.
+  const area = CLIMATE_AREAS.find((a) => a.toLowerCase() === k);
+  const next = present
+    ? current.filter((v) => cleanInterest(v).toLowerCase() !== k)
+    : [...current, area ?? picked];
+  return setClimateInterests(p, cleanInterests(next), "stated");
 }
 
 // ---------------------------------------------------------------------------
@@ -477,7 +477,9 @@ export interface ElicitLlmResult {
 /**
  * The profile as the model sees it: preferences, active cards and skills.
  * Fields, roles and queries are noise for this job. Built with the contract's
- * own serializer, so the model reads the same format the user edits.
+ * own serializer, so the model reads the same format the user edits, minus
+ * the `## Inputs` section: what the person typed is never sent
+ * (technical-plan.md D56).
  */
 function profileForModel(p: Profile, { withCards }: { withCards: boolean }): string {
   const reduced: Profile = {
@@ -486,7 +488,7 @@ function profileForModel(p: Profile, { withCards }: { withCards: boolean }): str
     cards: withCards ? activeCards(p) : [],
     skills: withCards ? p.skills : emptyProfile().skills,
   };
-  return serializeProfile(reduced);
+  return serializeProfileForPrompt(reduced);
 }
 
 type TextKey = Exclude<PreferenceKey, "climateInterests">;
@@ -496,29 +498,22 @@ const TEXT_KEYS: readonly TextKey[] = ["location", "workMode", "seniority", "ret
 // inferPreferences — the "skip when inferable" rule
 // ---------------------------------------------------------------------------
 
-export const INFER_SYSTEM = `You read the experience cards of someone exploring a move into climate work and infer only the work preferences the cards clearly support. The person will be asked about anything you leave open, so leaving a preference open is always safe; a wrong inference costs them trust.
+export const INFER_SYSTEM = `You read the experience cards of someone exploring a move into climate work and infer only the work preferences the cards clearly support. Leaving a preference open is always safe, because the person can state it themselves; a wrong inference costs them trust.
 
 Preferences and what counts as evidence:
 - location: the city, region or country the person is based in, only when the cards state it plainly (an employer's location is not the person's).
 - workMode: remote / hybrid / on-site, only when the cards say the person sought or chose that arrangement. That a past job happened to be remote or on-site is not a preference.
 - seniority: the level a hiring manager would read from the cards: years, scope, titles, team size, budget. This is usually inferable; describe the level, not a job title.
 - retrainingAppetite: only with direct evidence, such as a degree, certificate or long course the person undertook to change direction. Rarely inferable.
-- climateInterests: only when several cards show sustained climate-adjacent work in a named area. A single project is not enough.
 
 Rules:
 - confidence "high" means a careful reader of the cards would agree without hesitation. Anything less is "medium", "low" or "none". Only "high" is used.
 - value is a short phrase the person could have written themselves, for example "senior, 12 years, led teams of 8". Never a name, an email or an employer's name.
 - evidence cites card IDs (C1, C3) and says what in them supports the value, in one sentence. Use an empty string when confidence is "none".
-- When nothing supports a preference: value null (or an empty list), confidence "none".`;
+- When nothing supports a preference: value null, confidence "none".`;
 
 const InferenceSchema = z.object({
   value: z.string().nullable(),
-  confidence: z.enum(["high", "medium", "low", "none"]),
-  evidence: z.string(),
-});
-
-const ListInferenceSchema = z.object({
-  values: z.array(z.string()),
   confidence: z.enum(["high", "medium", "low", "none"]),
   evidence: z.string(),
 });
@@ -529,7 +524,6 @@ export const InferredPreferencesSchema = z.object({
   workMode: InferenceSchema,
   seniority: InferenceSchema,
   retrainingAppetite: InferenceSchema,
-  climateInterests: ListInferenceSchema,
 });
 export type InferredPreferences = z.infer<typeof InferredPreferencesSchema>;
 
@@ -547,13 +541,16 @@ export interface InferPreferencesResult extends ElicitLlmResult {
 /**
  * One structured call: what the cards support with high confidence is written
  * as `inferred`, and only where the preference is still missing. A stated
- * value — or an earlier inference — is never overwritten. With no active cards
- * there is nothing to read, so no call is made.
+ * value — or an earlier inference — is never overwritten. Climate interests
+ * are never inferred: a pick is always the person's own
+ * (technical-plan.md D54). With no active cards, or no text preference
+ * missing, there is nothing to read, so no call is made.
  */
 export async function inferPreferences(llm: Llm, args: ElicitLlmArgs): Promise<InferPreferencesResult> {
   const { profile } = args;
   const missing = new Set(missingPreferences(profile));
-  if (activeCards(profile).length === 0 || missing.size === 0) {
+  // Climate interests are never inferred (technical-plan.md D54), so only a missing text key needs a call.
+  if (activeCards(profile).length === 0 || TEXT_KEYS.every((key) => !missing.has(key))) {
     return { profile, metrics: noCall(), updatedKeys: [], inferred: [] };
   }
 
@@ -585,16 +582,6 @@ export async function inferPreferences(llm: Llm, args: ElicitLlmArgs): Promise<I
     next = setPreference(next, key, text, "inferred");
     updatedKeys.push(key);
     inferred.push({ key, value: text, evidence: cleanValue(inference.evidence) });
-  }
-
-  const interests = value.climateInterests;
-  if (missing.has("climateInterests") && interests.confidence === "high") {
-    const values = cleanInterests(interests.values).filter((v) => v !== OPEN_TO_SUGGESTIONS);
-    if (values.length > 0) {
-      next = setClimateInterests(next, values, "inferred");
-      updatedKeys.push("climateInterests");
-      inferred.push({ key: "climateInterests", value: values.join(", "), evidence: cleanValue(interests.evidence) });
-    }
   }
 
   return { profile: next, metrics, updatedKeys, inferred };

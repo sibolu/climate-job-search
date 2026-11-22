@@ -12,24 +12,25 @@
  *              the first elicitation question.
  * - `elicit`   one answer (a pill click needs no model call) → the next
  *              question, or the done summary with a "go" pill.
- * - `discover` ranked fields and roles from cards + reference data + web.
+ * - `discover` ranked fields and roles from cards + reference data (no web; D44).
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
- *              with no field id is answered with a list of fields to pick;
- *              the "generate queries" pill text is routed to `queries`.
- * - `queries`  search queries per board for accepted / unsure fields.
+ *              with no field id is answered with a list of fields to pick.
+ * - `queries`  one LinkedIn search per selected role, for every role with
+ *              `Selected: yes`; a `selectedRoles` input (technical-plan.md D47).
  * - `revise`   one piece of "Tried it" feedback → revised queries and an
  *              explanation.
  *
  * Every model call happens inside the step modules, which all go through
- * `llm.ts`. Errors are mapped to user-facing sentences by {@link turnErrorMessage},
+ * `llm.ts`, and every one carries the turn's abort signal, so a browser that
+ * goes away stops the call in flight (technical-plan.md D45). Errors are mapped to user-facing sentences by {@link turnErrorMessage},
  * which never includes model text or the request.
  */
 
 import { cardsSummary, extractCards } from "./cards";
+import { FIND_ROLES_PILL } from "./screens";
 import { discoverFields, type DiscoverResult } from "./discover";
 import {
   applyPillAnswer,
-  type ElicitContext,
   type ElicitDecision,
   inferPreferences,
   interpretAnswer,
@@ -38,11 +39,11 @@ import {
   pillsFor,
 } from "./elicit";
 import { exploreField } from "./explore";
-import type { Llm } from "./llm";
-import { activeCards, type Field, type MoveType, parseProfile, type Profile, serializeProfile } from "./profile";
+import type { Llm, StructuredRequest, StreamTextRequest } from "./llm";
+import { activeCards, type Field, type MoveType, parseProfile, type Profile, type Query, serializeProfile } from "./profile";
 import { generateQueries, type GenerateQueriesResult, reviseQueries, type ReviseQueriesResult } from "./queries";
 import type { AnswerPill, TurnRequest, TurnResponse } from "./session";
-import { canGenerateQueries, exploreChatText, GENERATE_QUERIES_TEXT } from "./workspace";
+import { exploreChatText } from "./workspace";
 
 // ---------------------------------------------------------------------------
 // Dependencies (injectable for tests; the defaults are the real modules)
@@ -50,8 +51,6 @@ import { canGenerateQueries, exploreChatText, GENERATE_QUERIES_TEXT } from "./wo
 
 export interface TurnDeps {
   llm: () => Llm;
-  /** Distinct `climate_fields.sector_group` values for the interest chips; empty when unavailable. */
-  sectorGroups: () => Promise<string[]>;
   extractCards: typeof extractCards;
   inferPreferences: typeof inferPreferences;
   interpretAnswer: typeof interpretAnswer;
@@ -61,19 +60,11 @@ export interface TurnDeps {
   reviseQueries: typeof reviseQueries;
 }
 
-/** `llm.ts` and `reference.ts` are loaded lazily so tests never touch env or Supabase. */
+/** `llm.ts` is loaded lazily so tests never touch env. */
 export async function defaultDeps(): Promise<TurnDeps> {
-  const [{ llm }, reference] = await Promise.all([import("./llm"), import("./reference")]);
+  const { llm } = await import("./llm");
   return {
     llm,
-    sectorGroups: async () => {
-      try {
-        return await reference.listSectorGroups();
-      } catch (error) {
-        if (error instanceof reference.ReferenceReadError) return [];
-        throw error;
-      }
-    },
     extractCards,
     inferPreferences,
     interpretAnswer,
@@ -99,11 +90,12 @@ export class TurnInputError extends Error {
   }
 }
 
-/** Offered when elicitation is complete; the browser routes "go" to `discover`. */
-export const GO_PILL: AnswerPill = { label: "Find climate fields for me", value: "go" };
-
-/** Offered after explore and discover when the profile has fields to search on. */
-export const GENERATE_QUERIES_PILL: AnswerPill = { label: "Write search queries", value: GENERATE_QUERIES_TEXT };
+/**
+ * Offered when elicitation is complete; the browser routes "go" to `discover`.
+ * The label is the Highlights button's ("Find climate roles"), owned by the
+ * browser-safe `screens.ts` so client and server share one source.
+ */
+export const GO_PILL: AnswerPill = FIND_ROLES_PILL;
 
 export const FIELD_ID_PATTERN = /\bF\d+\b/;
 
@@ -149,8 +141,8 @@ export function discoverMessage(result: DiscoverResult): string {
   const { profile, fields, dropped } = result;
   if (fields.length === 0) {
     return [
-      "I could not find climate fields I can back up with sources for these cards.",
-      "Add a card or two with more detail about what you actually did, or tell me a climate area you care about, and I will try again.",
+      "I could not find climate fields I can tie to these cards.",
+      "More detail on the experience cards about what the work involved gives discovery more to match against.",
     ].join("\n\n");
   }
   const n = fields.length;
@@ -158,29 +150,33 @@ export function discoverMessage(result: DiscoverResult): string {
     `Here ${n === 1 ? "is" : "are"} ${String(n)} climate field${n === 1 ? "" : "s"} where your experience could land, ranked.`,
     ...fields.map((f) => fieldBlock(profile, f)),
   ];
-  const left =
-    dropped.fieldsUncited + dropped.fieldsUnsourced + dropped.rolesUncited + dropped.rolesUnsourced + dropped.fieldsSurplus;
-  if (left > 0) {
-    parts.push(
-      `I left out ${String(left)} suggestion${left === 1 ? "" : "s"} that had no source or did not connect to your experience cards.`,
-    );
-  }
-  parts.push(
-    "Open the Fields tab to accept, reject or mark each one unsure, or pick one below to see titles, employers and example posts.",
-  );
+  // Every kind of drop is counted under its own reason (technical-plan.md D48 for titles).
+  const count = (k: number, noun: string) => `${String(k)} ${noun}${k === 1 ? "" : "s"}`;
+  const uncited = dropped.fieldsUncited + dropped.rolesUncited;
+  const leftOut = [
+    uncited > 0 ? `${count(uncited, "suggestion")} that cited none of your experience cards` : "",
+    dropped.rolesLevelTitled > 0 ? `${count(dropped.rolesLevelTitled, "role")} titled by rank rather than occupation` : "",
+    dropped.fieldsSurplus > 0 ? `${count(dropped.fieldsSurplus, "field")} beyond the number shown` : "",
+  ].filter((reason) => reason !== "");
+  if (leftOut.length > 0) parts.push(`Left out: ${leftOut.join("; ")}.`);
+  parts.push("On the Roles screen, tick the roles you want a LinkedIn search for.");
   return parts.join("\n\n");
 }
 
-/** The chat message after query generation. */
+/** The chat message after query generation: one LinkedIn search per selected role (technical-plan.md D47). */
 export function queriesMessage(result: GenerateQueriesResult): string {
-  const { added, updated } = result;
-  if (added.length === 0 && updated.length === 0) {
-    return "I did not come up with any new queries this time. Accept a field or two on the Fields tab and try again.";
-  }
+  const { written } = result;
+  if (written.length === 0) return "I could not write any searches this time. Try again.";
+  const title = (q: Query) => result.roles.find((r) => r.id === q.roleId)?.title ?? q.roleId;
+  const intro =
+    written.length === 1
+      ? "Here is a LinkedIn search for the role you selected"
+      : `Here are ${String(written.length)} LinkedIn searches, one for each role you selected`;
+  const refreshed = result.updated.length === 0 ? "" : ` (${String(result.updated.length)} replaced an earlier untried search)`;
   const lines = [
-    `I wrote ${String(added.length)} new search quer${added.length === 1 ? "y" : "ies"}${updated.length > 0 ? ` and refreshed ${String(updated.length)}` : ""}.`,
-    ...[...added, ...updated].map((q) => `- **${q.id}** (${q.board}): ${q.query}`),
-    "Open the Queries tab to copy each one, set an email alert, and tell me how it went with \"Tried it\" — that feedback is what improves the next round.",
+    `${intro}${refreshed}:`,
+    ...written.map((q) => `- **${title(q)}** (${q.id}): ${q.query}`),
+    "The Searches screen lists each one to copy into LinkedIn, with the steps to set an email alert.",
   ];
   return lines.join("\n");
 }
@@ -222,7 +218,7 @@ function respond(profile: Profile, parts: readonly string[], pills: readonly Ans
 
 function messageContent(request: TurnRequest): string {
   if (request.input.kind !== "message") {
-    throw new TurnInputError(`The ${request.step} step needs a message, not query feedback.`);
+    throw new TurnInputError(`The ${request.step} step needs a message.`);
   }
   return request.input.content;
 }
@@ -231,12 +227,26 @@ function messageContent(request: TurnRequest): string {
 // The dispatcher
 // ---------------------------------------------------------------------------
 
+/**
+ * The same `Llm` with `signal` on every request, so each step module's calls
+ * stop when the turn is abandoned without the modules knowing about it.
+ */
+export function withSignal(llm: Llm, signal: AbortSignal | undefined): Llm {
+  if (signal === undefined) return llm;
+  return {
+    streamText: (request: StreamTextRequest) => llm.streamText({ ...request, signal }),
+    structured: (request) => llm.structured({ ...request, signal } as StructuredRequest<typeof request.schema>),
+  };
+}
+
 export async function runTurn(
   request: TurnRequest,
   deps?: TurnDeps,
   onProgress: Progress = () => undefined,
+  signal?: AbortSignal,
 ): Promise<TurnResponse> {
-  const d = deps ?? (await defaultDeps());
+  const base = deps ?? (await defaultDeps());
+  const d: TurnDeps = { ...base, llm: () => withSignal(base.llm(), signal) };
   const { sessionId } = request;
   const { profile, warnings } = parseProfile(request.profileMd);
   const note = warningsNote(warnings);
@@ -251,20 +261,18 @@ export async function runTurn(
       }
       onProgress("Checking what your experience already says about your preferences…");
       const inferred = await d.inferPreferences(d.llm(), { sessionId, profile: extracted.profile });
-      const ctx: ElicitContext = { sectorGroups: await d.sectorGroups() };
-      const decision = nextQuestion(inferred.profile, ctx);
+      const decision = nextQuestion(inferred.profile);
       return respond(inferred.profile, [cardsSummary(inferred.profile), decisionText(decision), ...note], decisionPills(decision));
     }
 
     case "elicit": {
       const answer = messageContent(request);
-      const ctx: ElicitContext = { sectorGroups: await d.sectorGroups() };
       const key = nextMissingPreference(profile);
       if (key === undefined) {
-        const done = nextQuestion(profile, ctx);
+        const done = nextQuestion(profile);
         return respond(profile, [decisionText(done), ...note], decisionPills(done));
       }
-      const pill = pillsFor(key, ctx).find((p) => p.value === answer.trim());
+      const pill = pillsFor(key).find((p) => p.value === answer.trim());
       let next: Profile;
       let answered = true;
       if (pill !== undefined) {
@@ -275,45 +283,42 @@ export async function runTurn(
         next = result.profile;
         answered = result.answered;
       }
-      const decision = nextQuestion(next, ctx);
-      const prefix = answered ? [] : ["I did not catch an answer to that one, so here it is again — a rough answer is fine, or pick \"Not sure\"."];
+      const decision = nextQuestion(next);
+      const prefix = answered ? [] : ["I did not catch an answer to that one, so here it is again."];
       return respond(next, [...prefix, decisionText(decision), ...note], decisionPills(decision));
     }
 
     case "discover": {
       messageContent(request);
-      onProgress("Matching your experience against climate fields and checking sources — this can take a few minutes…");
-      const result = await d.discoverFields({ sessionId, profile });
-      const pills = [...explorePills(result.profile)];
-      if (canGenerateQueries(result.profile)) pills.push(GENERATE_QUERIES_PILL);
-      return respond(result.profile, [discoverMessage(result), ...note], pills);
+      onProgress("Matching your experience against climate fields — this can take a minute or two…");
+      const result = await d.discoverFields({ sessionId, profile }, { llm: d.llm() });
+      return respond(result.profile, [discoverMessage(result), ...note], explorePills(result.profile));
     }
 
     case "explore": {
       const text = messageContent(request);
-      if (text.trim() === GENERATE_QUERIES_TEXT) return runTurn({ ...request, step: "queries" }, d, onProgress);
       const fieldId = fieldIdIn(text);
       const field = fieldId === undefined ? undefined : profile.fields.find((f) => f.id === fieldId);
       if (field === undefined) {
         const pills = explorePills(profile);
-        if (canGenerateQueries(profile)) pills.push(GENERATE_QUERIES_PILL);
         const ask =
           profile.fields.length === 0
-            ? "There are no fields on file yet. Say \"go\" and I will look for climate fields that fit your experience."
-            : "Which field should I look into? Pick one below, or use the Fields tab.";
+            ? "There are no fields on the profile yet; discovery has to run first."
+            : "Which field should be explored? Name it by id, such as F1.";
         return respond(profile, [ask, ...note], profile.fields.length === 0 ? [GO_PILL] : pills);
       }
       onProgress(`Looking into ${field.name}: titles, employers, example posts…`);
-      const result = await d.exploreField({ sessionId, profile, fieldId: field.id });
+      const result = await d.exploreField({ sessionId, profile, fieldId: field.id }, { llm: d.llm() });
       const pills = explorePills(result.profile).filter((p) => p.value !== exploreChatText(field));
-      if (canGenerateQueries(result.profile)) pills.unshift(GENERATE_QUERIES_PILL);
       return respond(result.profile, [result.message, ...note], pills);
     }
 
     case "queries": {
-      messageContent(request);
-      onProgress("Writing search queries for your accepted fields…");
-      const result = await d.generateQueries({ sessionId, profile });
+      if (request.input.kind !== "selectedRoles") {
+        throw new TurnInputError("The queries step writes searches for the selected roles; it takes no message.");
+      }
+      onProgress("Writing a LinkedIn search for each role you selected…");
+      const result = await d.generateQueries({ sessionId, profile }, { llm: d.llm() });
       return respond(result.profile, [queriesMessage(result), ...note]);
     }
 
@@ -322,7 +327,7 @@ export async function runTurn(
         throw new TurnInputError("The revise step needs \"Tried it\" feedback on a query.");
       }
       onProgress("Revising your queries from that feedback…");
-      const result = await d.reviseQueries({ sessionId, profile, feedback: request.input.feedback });
+      const result = await d.reviseQueries({ sessionId, profile, feedback: request.input.feedback }, { llm: d.llm() });
       return respond(result.profile, [reviseMessage(result), ...note]);
     }
   }
@@ -352,10 +357,16 @@ export function turnErrorMessage(error: unknown): string {
       return "The model declined to work on that. Try rephrasing, or remove anything that is not about your work.";
     case "LlmTruncatedError":
       return "The answer was cut off before it finished. Try again.";
+    case "LlmTimeoutError":
+      return "That took more than three minutes, so I stopped it. Try again; if it keeps happening, exclude a highlight or two.";
+    case "LlmCancelledError":
+      return "That request was stopped before it finished. Try again.";
     case "LlmPauseLimitError":
       return "That search ran too long. Try again; it usually completes on a second attempt.";
     case "LlmOutputError":
       return "The model returned something I could not read. Try again.";
+    case "QueriesOutputError":
+      return "The searches did not come back complete for every selected role. Try again.";
     case "LlmConfigError":
     case "LlmToolPolicyError":
     case "LlmSessionIdError":

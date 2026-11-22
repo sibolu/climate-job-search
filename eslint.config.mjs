@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Worker worktrees (Agent tool, isolation: worktree) are full checkouts.
     ".claude/**",
+    // The design handoff ships a prototype runtime (support.js) that is read
+    // as a spec, never imported (technical-plan.md D37).
+    "docs/**",
   ]),
 ]);
 

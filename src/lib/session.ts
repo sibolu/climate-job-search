@@ -81,7 +81,7 @@ export const SessionStateSchema = z.object({
 });
 export type SessionState = z.infer<typeof SessionStateSchema>;
 
-/** "Tried it" feedback on one query, from the Queries tab. */
+/** Feedback on one query. Nothing in the browser sends it in the alpha (technical-plan.md D51). */
 export const QueryFeedbackSchema = z.object({
   queryId: z.string().regex(/^Q\d+$/),
   verdict: z.enum(["good", "bad"]),
@@ -89,10 +89,15 @@ export const QueryFeedbackSchema = z.object({
 });
 export type QueryFeedback = z.infer<typeof QueryFeedbackSchema>;
 
-/** The new thing the user did this turn: typed a message, or filed feedback. */
+/** The new thing the user did this turn: typed a message, filed feedback, or asked for searches. */
 export const TurnInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message"), content: z.string().min(1).max(MAX_MESSAGE_CHARS) }),
   z.object({ kind: z.literal("feedback"), feedback: QueryFeedbackSchema }),
+  /**
+   * Write one LinkedIn search per selected role (technical-plan.md D47). No
+   * payload: the server reads `Selected: yes` from the profile it is sent.
+   */
+  z.object({ kind: z.literal("selectedRoles") }),
 ]);
 export type TurnInput = z.infer<typeof TurnInputSchema>;
 

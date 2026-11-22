@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { Card, Field, Profile, Query } from "./profile";
-import { activeCards, emptyProfile, parseProfile, serializeProfile } from "./profile";
+import { activeCards, emptyProfile, parseProfile, serializeProfile, activeSkills } from "./profile";
 import type { QueryFeedback } from "./session";
 import {
+  MAX_MESSAGE_CHARS,
+  MAX_PROFILE_MD_CHARS,
   buildTurnRequest,
   clearSession,
   exportSession,
@@ -19,18 +21,21 @@ import {
   appendUserMessage,
   applyQueryFeedback,
   applyTurnResponse,
-  canGenerateQueries,
-  confirmProfileSkill,
+  buildSelectedRolesTurnInput,
+  canWriteQueries,
   EXPORT_FILENAME,
   exploreChatText,
   feedbackChatText,
-  GENERATE_QUERIES_TEXT,
   MAX_FEEDBACK_REASON,
   nextStep,
   normalizeFeedbackReason,
   profileView,
+  liveQueryForRole,
+  recordStartInputs,
   rejectProfileSkill,
+  restoreProfileSkill,
   rolesForField,
+  selectedRoles,
   setProfileFieldStatus,
   toggleCardExcluded,
   unassignedRoles,
@@ -57,6 +62,10 @@ function field(id: string): Field {
     name: "Grid software",
     status: "candidate",
     explored: false,
+    sector: "",
+    summary: "",
+    chips: [],
+    evidence: [],
     fit: "Your pipeline work in C1 transfers directly.",
     uncertain: "Unclear how much power-systems depth is expected.",
     sources: ["https://example.org/grid"],
@@ -124,14 +133,19 @@ describe("profile edits through session state", () => {
     expect(activeCards(profileView(restored).profile)).toHaveLength(2);
   });
 
-  it("confirms and rejects inferred skills", () => {
-    const confirmed = profileView(confirmProfileSkill(base, "Python")).profile.skills;
-    expect(confirmed.confirmed).toContain("Python");
-    expect(confirmed.inferred).not.toContain("Python");
+  it("removes an inferred skill and restores it", () => {
+    // Untouched inferred skills are in use (technical-plan.md D53).
+    expect(activeSkills(profileView(base).profile)).toEqual(["Python", "stakeholder comms"]);
 
-    const rejected = profileView(rejectProfileSkill(base, "stakeholder comms")).profile.skills;
-    expect(rejected.excluded).toContain("stakeholder comms");
-    expect(rejected.inferred).not.toContain("stakeholder comms");
+    const removedState = rejectProfileSkill(base, "stakeholder comms");
+    const removed = profileView(removedState).profile;
+    expect(removed.skills.excluded).toContain("stakeholder comms");
+    expect(removed.skills.inferred).not.toContain("stakeholder comms");
+    expect(activeSkills(removed)).toEqual(["Python"]);
+
+    const restored = profileView(restoreProfileSkill(removedState, "Stakeholder Comms")).profile;
+    expect(restored.skills.excluded).toEqual([]);
+    expect(activeSkills(restored)).toEqual(["Python", "stakeholder comms"]);
   });
 
   it("keeps the stored markdown canonical after an edit", () => {
@@ -146,23 +160,20 @@ describe("profile edits through session state", () => {
 });
 
 describe("turn bookkeeping", () => {
-  it("appends the user message and then the assistant answer", () => {
+  it("replaces the profile and keeps no assistant message (D49)", () => {
     const afterUser = appendUserMessage(newSessionState(), "here is my resume");
     const afterTurn = applyTurnResponse(afterUser, {
       message: "I made three cards.",
       profileMd: serializeProfile({ ...emptyProfile(), cards: [card("C1")] }),
       pills: [{ label: "Looks right", value: "looks right" }],
     });
-    expect(afterTurn.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
-    expect(afterTurn.messages[1]?.pills).toHaveLength(1);
+    expect(afterTurn.messages.map((m) => m.role)).toEqual(["user"]);
     expect(profileView(afterTurn).profile.cards).toHaveLength(1);
   });
 
-  it("leaves the profile untouched when the turn returns none", () => {
+  it("leaves the state untouched when the turn returns no profile", () => {
     const before = stateWith({ ...emptyProfile(), cards: [card("C1")] });
-    const after = applyTurnResponse(before, { message: "Tell me more." });
-    expect(after.profileMd).toBe(before.profileMd);
-    expect(after.messages[0]?.pills).toBeUndefined();
+    expect(applyTurnResponse(before, { message: "Tell me more." })).toBe(before);
   });
 });
 
@@ -211,7 +222,7 @@ describe("acceptance: reload, export round-trip, start over", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Fields and Queries tabs (step 2.4)
+// Fields, roles and searches
 // ---------------------------------------------------------------------------
 
 function query(id: string, overrides: Partial<Query> = {}): Query {
@@ -220,6 +231,7 @@ function query(id: string, overrides: Partial<Query> = {}): Query {
     board: "linkedin",
     query: '"grid software" AND (engineer OR developer)',
     fieldIds: ["F1"],
+    roleId: "",
     status: "untried",
     reason: "",
     extra: {},
@@ -249,6 +261,7 @@ describe("fields tab helpers", () => {
         fieldId: "F1",
         companies: ["Acme"],
         why: "",
+        selected: false,
         sources: [],
         extra: {},
       },
@@ -258,6 +271,7 @@ describe("fields tab helpers", () => {
         fieldId: "F9",
         companies: [],
         why: "",
+        selected: false,
         sources: [],
         extra: {},
       },
@@ -281,15 +295,55 @@ describe("fields tab helpers", () => {
     expect(exploreChatText(field("F1"))).toBe("Explore F1: Grid software");
   });
 
-  it("offers query generation only once a field is accepted or unsure", () => {
-    expect(canGenerateQueries(profile)).toBe(false);
-    const withStatus = (status: Field["status"]) => ({
+  it("offers searches once any role under a field is ticked", () => {
+    const withStatus = (status: Field["status"], selected: boolean) => ({
       ...profile,
       fields: [{ ...field("F1"), status }],
+      roles: profile.roles.map((r) => ({ ...r, selected })),
     });
-    expect(canGenerateQueries(withStatus("rejected"))).toBe(false);
-    expect(canGenerateQueries(withStatus("unsure"))).toBe(true);
-    expect(canGenerateQueries(withStatus("accepted"))).toBe(true);
+    expect(canWriteQueries(profile)).toBe(false);
+    expect(canWriteQueries(withStatus("accepted", false))).toBe(false);
+    // A field's status is not consulted; R2's field (F9) is not in the profile, so R2 does not count.
+    expect(canWriteQueries(withStatus("rejected", true))).toBe(true);
+    expect(canWriteQueries(withStatus("candidate", true))).toBe(true);
+    expect(canWriteQueries(withStatus("accepted", true))).toBe(true);
+    expect(selectedRoles(withStatus("accepted", true)).map((r) => r.id)).toEqual(["R1"]);
+    expect(rolesForField(withStatus("accepted", true), "F1", true).map((r) => r.id)).toEqual(["R1"]);
+  });
+
+  it("lists selected roles in field order, then role order", () => {
+    const role = (id: string, fieldId: string, selected: boolean) => ({ ...profile.roles[0]!, id, fieldId, selected });
+    const p: Profile = {
+      ...profile,
+      roles: [role("R1", "F2", true), role("R2", "F1", true), role("R3", "F1", false), role("R4", "F1", true), role("R5", "F2", true)],
+    };
+    expect(selectedRoles(p).map((r) => r.id)).toEqual(["R2", "R4", "R1", "R5"]);
+    expect(selectedRoles(profile)).toEqual([]);
+  });
+
+  it("builds the selectedRoles turn input, which carries no payload", () => {
+    expect(buildSelectedRolesTurnInput()).toEqual({ kind: "selectedRoles" });
+  });
+
+  it("picks a role's live query: LinkedIn, not retired, untried or judged, newest wins", () => {
+    const p: Profile = {
+      ...profile,
+      queries: [
+        query("Q1", { roleId: "R1", status: "bad", reason: "agency jobs" }),
+        query("Q2", { roleId: "R2" }),
+        query("Q3", { roleId: "R1" }),
+        query("Q4", { roleId: "R1", extra: { Retired: "yes" } }),
+        query("Q5", { roleId: "R1", board: "indeed" }),
+        query("Q6"),
+      ],
+    };
+    expect(liveQueryForRole(p, "R1")?.id).toBe("Q3");
+    expect(liveQueryForRole(p, "R2")?.id).toBe("Q2");
+    // A judged query is still live when nothing newer replaced it.
+    expect(liveQueryForRole({ ...p, queries: p.queries.slice(0, 2) }, "R1")?.id).toBe("Q1");
+    expect(liveQueryForRole(p, "R9")).toBeUndefined();
+    // A query written before searches were per role has no role and belongs to none.
+    expect(liveQueryForRole(p, "")).toBeUndefined();
   });
 });
 
@@ -346,6 +400,46 @@ describe("query feedback", () => {
     const long = "x".repeat(MAX_FEEDBACK_REASON + 100);
     expect(normalizeFeedbackReason(long)).toHaveLength(MAX_FEEDBACK_REASON);
     expect(normalizeFeedbackReason("  hi  ")).toBe("hi");
-    expect(GENERATE_QUERIES_TEXT.length).toBeGreaterThan(0);
+  });
+});
+
+describe("recordStartInputs (technical-plan.md D56)", () => {
+  it("writes what was typed into the profile and leaves the rest alone", () => {
+    const base = stateWith({ ...emptyProfile(), cards: [card("C1")] });
+    const once = recordStartInputs(base, "Resume line\r\n## Skills\r\n", "remote only");
+    expect(profileView(once).warnings).toEqual([]);
+    expect(profileView(once).profile.inputs).toEqual({
+      resume: "Resume line\n## Skills",
+      notes: "remote only",
+      extra: {},
+    });
+    expect(profileView(once).profile.cards).toEqual(profileView(base).profile.cards);
+    expect(profileView(once).profile.skills).toEqual(profileView(base).profile.skills);
+
+    const twice = recordStartInputs(once, "second paste", "");
+    expect(profileView(twice).profile.inputs).toEqual({ resume: "second paste", notes: "", extra: {} });
+  });
+
+  it("records nothing when the two inputs together are longer than a message can be", () => {
+    const base = newSessionState();
+    const atLimit = recordStartInputs(base, "x".repeat(MAX_MESSAGE_CHARS - 4), "note");
+    expect(profileView(atLimit).profile.inputs.resume).toHaveLength(MAX_MESSAGE_CHARS - 4);
+    expect(recordStartInputs(base, "x".repeat(MAX_MESSAGE_CHARS - 3), "note")).toBe(base);
+    // An earlier recording is kept, not cleared, when a later paste is too long.
+    expect(recordStartInputs(atLimit, "x".repeat(MAX_MESSAGE_CHARS + 1), "")).toBe(atLimit);
+  });
+
+  it("never takes the profile past its cap", () => {
+    // The quoting's worst case: every line one character long, so each doubles.
+    const worst = `${"a\n".repeat(MAX_MESSAGE_CHARS / 2 - 1)}a`;
+    expect(worst.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS);
+    const recorded = recordStartInputs(newSessionState(), worst, "");
+    expect(profileView(recorded).profile.inputs.resume).toBe(worst);
+    expect(recorded.profileMd.length).toBeLessThanOrEqual(MAX_PROFILE_MD_CHARS);
+
+    const nearlyFull = stateWith({ ...emptyProfile(), sessionNotes: "n".repeat(MAX_PROFILE_MD_CHARS - 1000) });
+    expect(nearlyFull.profileMd.length).toBeLessThanOrEqual(MAX_PROFILE_MD_CHARS);
+    expect(recordStartInputs(nearlyFull, "x".repeat(2000), "")).toBe(nearlyFull);
+    expect(profileView(recordStartInputs(nearlyFull, "short", "")).profile.inputs.resume).toBe("short");
   });
 });

@@ -11,21 +11,32 @@ import {
   MAX_INFERRED_SKILLS,
   MAX_SKILLS_PER_CARD,
   MIN_CARDS,
+  applyNotedPreferences,
   buildExtractMessage,
   buildReviseMessage,
   cardsSummary,
-  confirmSkill,
   editCard,
   extractCards,
   mergeInferredSkills,
   normalizeDrafts,
   normalizeSkills,
-  rejectSkill,
   renderCardsForPrompt,
   reviseCards,
 } from "./cards";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
-import { type Profile, emptyProfile, setCardExcluded, upsertCard } from "./profile";
+import {
+  type Profile,
+  emptyProfile,
+  setCardExcluded,
+  setInputs,
+  setPreference,
+  upsertCard,
+  activeSkills,
+  moveSkill,
+  rejectSkill,
+  restoreSkill,
+} from "./profile";
+import { NOTES_LABEL, composeStartText } from "./screens";
 import { MAX_MESSAGE_CHARS } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -64,9 +75,19 @@ function fakeLlm(values: readonly unknown[]): FakeLlm {
 
 const SESSION_ID = "a".repeat(32);
 
+const NO_NOTES = {
+  seniority: null,
+  retrainingAppetite: null,
+  location: null,
+  workMode: null,
+  climateInterests: [],
+  other: [],
+};
+
 function draft(n: number, skills: string[] = ["field production", "scheduling"]) {
   return {
     title: `Role ${String(n)}`,
+    years: null,
     situation: `Situation ${String(n)}`,
     actions: `Actions ${String(n)}`,
     results: `Results ${String(n)}`,
@@ -78,6 +99,7 @@ function threeCards() {
   return {
     cards: [draft(1), draft(2, ["editing"]), draft(3, ["budgeting", "client handoff"])],
     inferredSkills: ["storytelling"],
+    notedPreferences: NO_NOTES,
   };
 }
 
@@ -99,7 +121,8 @@ describe("CARDS_SYSTEM_PROMPT", () => {
   it("is a byte-stable constant with no per-call content", () => {
     expect(CARDS_SYSTEM_PROMPT).toBe(CARDS_SYSTEM_PROMPT);
     expect(CARDS_SYSTEM_PROMPT).toContain("Situation:");
-    expect(CARDS_SYSTEM_PROMPT).toContain("2 to 5 short noun phrases");
+    expect(CARDS_SYSTEM_PROMPT).toContain("2 to 5 areas of expertise");
+    expect(CARDS_SYSTEM_PROMPT).toContain("never more than 6");
     // No placeholders left unrendered, no dates, no session ids.
     expect(CARDS_SYSTEM_PROMPT).not.toMatch(/\$\{|undefined|NaN/);
   });
@@ -152,8 +175,8 @@ describe("mergeInferredSkills", () => {
     expect(p.skills.confirmed).toEqual([]);
   });
 
-  it("never re-adds a skill the user confirmed or rejected", () => {
-    let p = confirmSkill(emptyProfile(), "Editing");
+  it("never re-adds a skill already in Confirmed or one the user removed", () => {
+    let p = moveSkill(emptyProfile(), "Editing", "confirmed");
     p = rejectSkill(p, "Networking");
     p = mergeInferredSkills(p, ["editing", "networking", "colour grading"]);
     expect(p.skills.confirmed).toEqual(["Editing"]);
@@ -255,7 +278,7 @@ describe("extractCards", () => {
       sessionId: SESSION_ID,
       text: "resume",
     });
-    const second = await extractCards(fakeLlm([{ cards: [draft(9)], inferredSkills: [] }]), {
+    const second = await extractCards(fakeLlm([{ cards: [draft(9)], inferredSkills: [], notedPreferences: NO_NOTES }]), {
       sessionId: SESSION_ID,
       text: "more resume",
       profile: first.profile,
@@ -267,11 +290,74 @@ describe("extractCards", () => {
 
   it("drops unusable cards rather than storing an empty one", async () => {
     const { profile } = await extractCards(
-      fakeLlm([{ cards: [draft(1), { ...draft(2), actions: "" }, draft(3)], inferredSkills: [] }]),
+      fakeLlm([{ cards: [draft(1), { ...draft(2), actions: "" }, draft(3)], inferredSkills: [], notedPreferences: NO_NOTES }]),
       { sessionId: SESSION_ID, text: "resume" },
     );
     expect(profile.cards).toHaveLength(2);
     for (const card of profile.cards) expect(card.actions).not.toBe("");
+  });
+});
+
+describe("years", () => {
+  it("stores the period when given and leaves it absent when null", async () => {
+    const { profile } = await extractCards(
+      fakeLlm([{ cards: [{ ...draft(1), years: " 2019–2022 " }, draft(2), draft(3)], inferredSkills: [], notedPreferences: NO_NOTES }]),
+      { sessionId: SESSION_ID, text: "resume" },
+    );
+    expect(profile.cards[0]!.years).toBe("2019–2022");
+    expect("years" in profile.cards[1]!).toBe(false);
+  });
+
+  it("is editable and clearable through editCard", async () => {
+    const { profile } = await extractCards(fakeLlm([threeCards()]), { sessionId: SESSION_ID, text: "resume" });
+    const set = editCard(profile, "C1", { years: " 2020–2021 " });
+    expect(set.cards[0]!.years).toBe("2020–2021");
+    const cleared = editCard(set, "C1", { years: "" });
+    expect("years" in cleared.cards[0]!).toBe(false);
+  });
+});
+
+describe("notes → preferences", () => {
+  it("the cards prompt names the notes block the Start screen writes", () => {
+    expect(buildExtractMessage(composeStartText("r", "n"), emptyProfile())).toContain(`${NOTES_LABEL}\nn\n</pasted_text>`);
+  });
+
+  it("writes noted preferences as stated, clipped, without overwriting what is there", async () => {
+    const existing = setPreference(emptyProfile(), "location", "Portland", "inferred");
+    const result = await extractCards(
+      fakeLlm([
+        {
+          ...threeCards(),
+          notedPreferences: {
+            seniority: " senior IC ",
+            retrainingAppetite: "x".repeat(300),
+            location: "Berlin",
+            workMode: null,
+            climateInterests: ["soil", " Soil ", "water"],
+            other: [
+              { key: "Travel", value: "up to 20%" },
+              { key: "travel", value: "never" },
+              { key: "", value: "dropped" },
+            ],
+          },
+        },
+      ]),
+      { sessionId: SESSION_ID, text: "resume", profile: existing },
+    );
+    const p = result.profile.preferences;
+    expect(p.seniority).toEqual({ value: "senior IC", source: "stated" });
+    expect(p.retrainingAppetite?.value).toHaveLength(200);
+    expect(p.location).toEqual({ value: "Portland", source: "inferred" });
+    expect(p.workMode).toBeUndefined();
+    expect(p.climateInterests).toEqual({ values: ["soil", "water"], source: "stated" });
+    expect(p.other).toEqual([{ key: "Travel", value: "up to 20%", source: "stated" }]);
+    expect(result.noted).toEqual(["seniority", "retrainingAppetite", "climateInterests", "Travel"]);
+  });
+
+  it("writes nothing when the notes block is absent", () => {
+    const { profile, noted } = applyNotedPreferences(emptyProfile(), NO_NOTES);
+    expect(profile).toEqual(emptyProfile());
+    expect(noted).toEqual([]);
   });
 });
 
@@ -411,8 +497,8 @@ describe("reviseCards", () => {
     expect(profile).toBe(before);
   });
 
-  it("never moves a user-confirmed skill back to inferred", async () => {
-    const before = confirmSkill(await seeded(), "editing");
+  it("never moves a skill in Confirmed back to inferred", async () => {
+    const before = moveSkill(await seeded(), "editing", "confirmed");
     const { profile } = await reviseCards(
       fakeLlm([
         {
@@ -431,23 +517,31 @@ describe("reviseCards", () => {
   });
 });
 
-describe("confirmSkill / rejectSkill", () => {
-  it("moves between buckets keeping the stored spelling, and ignores blanks", () => {
-    const base = mergeInferredSkills(emptyProfile(), ["Field Production"]);
-    const confirmed = confirmSkill(base, "field production");
-    expect(confirmed.skills.confirmed).toEqual(["Field Production"]);
-    expect(confirmed.skills.inferred).toEqual([]);
+describe("rejectSkill / restoreSkill", () => {
+  it("removes a skill and brings it back, keeping the stored spelling, and ignores blanks", () => {
+    const base = mergeInferredSkills(emptyProfile(), ["Field Production", "editing"]);
+    // Untouched inferred skills are in use (technical-plan.md D53).
+    expect(activeSkills(base)).toEqual(["Field Production", "editing"]);
 
-    const rejected = rejectSkill(confirmed, "FIELD PRODUCTION");
-    expect(rejected.skills.excluded).toEqual(["Field Production"]);
-    expect(rejected.skills.confirmed).toEqual([]);
+    const removed = rejectSkill(base, "FIELD PRODUCTION");
+    expect(removed.skills.excluded).toEqual(["Field Production"]);
+    expect(removed.skills.inferred).toEqual(["editing"]);
+    expect(activeSkills(removed)).toEqual(["editing"]);
 
-    expect(confirmSkill(base, "   ")).toBe(base);
+    const restored = restoreSkill(removed, "field production");
+    expect(restored.skills.excluded).toEqual([]);
+    expect(restored.skills.confirmed).toEqual([]);
+    expect(activeSkills(restored)).toEqual(["editing", "Field Production"]);
+
     expect(rejectSkill(base, "")).toBe(base);
+    expect(restoreSkill(base, "   ")).toBe(base);
   });
 
-  it("adds a skill the user typed that was never inferred", () => {
-    expect(confirmSkill(emptyProfile(), "grant writing").skills.confirmed).toEqual(["grant writing"]);
+  it("removes a skill that sits in Confirmed too", () => {
+    const p = rejectSkill(moveSkill(emptyProfile(), "grant writing", "confirmed"), "Grant Writing");
+    expect(p.skills.confirmed).toEqual([]);
+    expect(p.skills.excluded).toEqual(["grant writing"]);
+    expect(activeSkills(p)).toEqual([]);
   });
 });
 
@@ -490,9 +584,29 @@ describe("cardsSummary", () => {
     expect(summary).not.toContain("C3:");
     expect(summary).toContain("2 experience cards");
     expect(summary).toContain("storytelling");
+    // No confirm step (technical-plan.md D53): skills in use are listed, a removed one is not.
+    expect(summary).not.toMatch(/confirm/i);
+    const withExtra = mergeInferredSkills(profile, ["zebra husbandry"]);
+    expect(cardsSummary(withExtra)).toContain("zebra husbandry");
+    expect(cardsSummary(rejectSkill(withExtra, "Zebra Husbandry"))).not.toContain("zebra husbandry");
   });
 
   it("asks for more text when there is nothing to show", () => {
     expect(cardsSummary(emptyProfile())).toContain("could not pull any experience cards");
+  });
+});
+
+describe("what the person typed (technical-plan.md D56)", () => {
+  it("the cards step reads the message text, not the stored inputs, and returns them unchanged", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-7f3a";
+    const typed = setInputs(emptyProfile(), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+    const llm = fakeLlm([threeCards()]);
+    const result = await extractCards(llm, { sessionId: SESSION_ID, text: "the text in the message", profile: typed });
+
+    const prompt = JSON.stringify([llm.requests[0]?.system, llm.requests[0]?.messages]);
+    expect(prompt).toContain("the text in the message");
+    expect(prompt).not.toContain(MARKER);
+    expect(result.cards.length).toBeGreaterThan(0);
+    expect(result.profile.inputs).toEqual(typed.inputs);
   });
 });

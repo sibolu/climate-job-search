@@ -5,14 +5,18 @@
  * It reads a plain-text resume, runs it through `extractCards` (one live
  * `cards` call through `src/lib/llm.ts`), prints the resulting `profile.md` to
  * stdout and a one-line usage/cost summary to stderr, and exits non-zero if
- * any card is missing Situation, Actions, Results or has no skills.
+ * any card is missing Situation, Actions, Results or has no skills. Each
+ * card's years and any preferences read from a trailing `Notes:` block are
+ * printed to stderr (technical-plan.md D39).
  *
  *   pnpm try:cards src/lib/__fixtures__/resumes/videographer.txt
  *   pnpm try:cards ~/resume.txt out/profile.md
  *
- * It prints no credentials and never echoes the pasted text back: the resume
- * appears only inside the request, and what comes out is the profile the app
- * would store in the browser. Needs `ANTHROPIC_API_KEY`; the anonymous
+ * It prints no credentials. What comes out is the profile the app would store
+ * in the browser, and that now includes the pasted text itself under
+ * `## Inputs` (technical-plan.md D56): the whole file is recorded as the
+ * resume, the way Start records it, so treat the output like the resume it
+ * was made from. Needs `ANTHROPIC_API_KEY`; the anonymous
  * `llm_usage` row needs the local Supabase stack, and a failed insert is a
  * warning, not an error, so the script still works without it.
  */
@@ -20,10 +24,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
-import { CardsInputError, extractCards } from "../src/lib/cards";
+import { CardsInputError, MAX_SKILL_WORDS, extractCards } from "../src/lib/cards";
 import { llm } from "../src/lib/llm";
-import { serializeProfile } from "../src/lib/profile";
-import { newSessionId } from "../src/lib/session";
+import { parseProfile, serializeProfile } from "../src/lib/profile";
+import { newSessionId, newSessionState } from "../src/lib/session";
+import { recordStartInputs } from "../src/lib/workspace";
 
 const USAGE = "usage: pnpm try:cards <path-to-resume.txt> [profile.md-out]";
 
@@ -48,7 +53,9 @@ async function main(): Promise<void> {
   }
 
   const started = Date.now();
-  const result = await extractCards(llm(), { sessionId: newSessionId(), text }).catch(
+  // The browser records what was typed when Start is pressed, before the turn.
+  const { profile } = parseProfile(recordStartInputs(newSessionState(), text, "").profileMd);
+  const result = await extractCards(llm(), { sessionId: newSessionId(), text, profile }).catch(
     (error: unknown) => {
       if (error instanceof CardsInputError) fail(error.message);
       throw error;
@@ -72,6 +79,21 @@ async function main(): Promise<void> {
       `${String(Math.round((Date.now() - started) / 100) / 10)}s\n`,
   );
 
+  for (const card of result.cards) {
+    process.stderr.write(`${card.id} ${card.title} — years: ${card.years ?? "(none)"}\n`);
+    process.stderr.write(`  skills: ${card.skills.join(" | ")}\n`);
+  }
+  process.stderr.write(`inferred skills: ${result.profile.skills.inferred.join(" | ") || "(none)"}\n`);
+  const prefs = result.profile.preferences;
+  const noted = result.noted.map((key) => {
+    if (key === "climateInterests") return `climateInterests=${(prefs.climateInterests?.values ?? []).join(", ")}`;
+    if (key === "location" || key === "workMode" || key === "seniority" || key === "retrainingAppetite") {
+      return `${key}=${prefs[key]?.value ?? ""}`;
+    }
+    return `${key}=${prefs.other.find((o) => o.key === key)?.value ?? ""}`;
+  });
+  process.stderr.write(`notes → preferences: ${noted.length === 0 ? "(none)" : noted.join("; ")}\n`);
+
   // The acceptance rule, checked here so the exit code carries it.
   const problems: string[] = [];
   if (result.cards.length < 3 || result.cards.length > 6) {
@@ -84,8 +106,15 @@ async function main(): Promise<void> {
     if (missing.length > 0) problems.push(`${card.id} is missing ${missing.join(", ")}`);
     if (card.skills.length === 0) problems.push(`${card.id} has no skills`);
   }
+  // Areas of expertise are short noun phrases (technical-plan.md D48). Whether a
+  // phrase names an expertise is read by eye from the lines printed above.
+  const printed = new Set([...result.cards.flatMap((card) => card.skills), ...result.profile.skills.inferred]);
+  const wordy = [...printed].filter((skill) => skill.trim().split(/\s+/).length > MAX_SKILL_WORDS);
+  if (wordy.length > 0) {
+    problems.push(`${String(wordy.length)} skills run over ${String(MAX_SKILL_WORDS)} words`);
+  }
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
-  process.stderr.write("PASS: every card has situation, actions, results and >=1 skill\n");
+  process.stderr.write(`PASS: every card has situation, actions, results and >=1 skill; no skill runs over ${String(MAX_SKILL_WORDS)} words\n`);
 }
 
 main().catch((error: unknown) => {

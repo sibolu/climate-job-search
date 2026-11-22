@@ -5,7 +5,10 @@
  * It is deliberately tiny (a structured "say hello", no web tools, medium
  * effort) because what it proves is the wiring, not the model: the API key
  * works, `structured()` parses, and the anon key can insert a usage row that
- * the service role can read back.
+ * the service role can read back. It runs as a `queries`-step call, so it
+ * also proves the per-step model (technical-plan.md D46, D52): the row's
+ * `model` must be `MODEL_BY_STEP.queries` (`claude-opus-5-5`), or it exits
+ * non-zero.
  *
  * Without `ANTHROPIC_API_KEY` it prints a skip message and exits 0, so it is
  * safe to run on a machine that has no key. The key is the only credential
@@ -19,7 +22,7 @@ import process from "node:process";
 
 import { z } from "zod";
 
-import { MODEL, createLlm, supabaseUsageSink } from "../src/lib/llm";
+import { MODEL_BY_STEP, createLlm, supabaseUsageSink } from "../src/lib/llm";
 import { newSessionId } from "../src/lib/session";
 import { serviceClient } from "../src/lib/supabase";
 
@@ -41,6 +44,8 @@ const SMOKE_MAX_TOKENS = 4_096;
 const SESSION_ID = newSessionId();
 const READBACK_ATTEMPTS = 10;
 const READBACK_DELAY_MS = 500;
+const SMOKE_STEP = "queries";
+const EXPECTED_MODEL = MODEL_BY_STEP[SMOKE_STEP];
 
 const GreetingSchema = z.object({
   greeting: z.string(),
@@ -57,10 +62,10 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  console.log(`Calling ${MODEL} (step: elicit, session: ${SESSION_ID})…`);
+  console.log(`Calling ${EXPECTED_MODEL} (step: ${SMOKE_STEP}, session: ${SESSION_ID})…`);
   const llm = createLlm({ usageSink: supabaseUsageSink() });
   const result = await llm.structured({
-    step: "elicit",
+    step: SMOKE_STEP,
     sessionId: SESSION_ID,
     system: SMOKE_SYSTEM_PROMPT,
     messages: [{ role: "user", content: SMOKE_USER_PROMPT }],
@@ -79,9 +84,9 @@ async function main(): Promise<number> {
   for (let attempt = 1; attempt <= READBACK_ATTEMPTS; attempt++) {
     const { data, error } = await db
       .from("llm_usage")
+      // One literal, so supabase-js can type the row (a `+` concatenation cannot be).
       .select(
-        "step, model, input_tokens, output_tokens, cache_read_input_tokens, " +
-          "cache_creation_input_tokens, cost_usd, duration_ms",
+        "step, model, input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cost_usd, duration_ms",
       )
       .eq("session_id", SESSION_ID);
     if (error !== null) {
@@ -91,7 +96,12 @@ async function main(): Promise<number> {
     if (data.length > 0) {
       console.log(`llm_usage row(s) for this session: ${data.length}`);
       for (const row of data) console.log(JSON.stringify(row));
-      return data.length === 1 ? 0 : 1;
+      if (data.length !== 1) return 1;
+      if (data[0]?.model !== EXPECTED_MODEL) {
+        console.error(`Expected model ${EXPECTED_MODEL}, row says ${String(data[0]?.model)}`);
+        return 1;
+      }
+      return 0;
     }
     await sleep(READBACK_DELAY_MS);
   }

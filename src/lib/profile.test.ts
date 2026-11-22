@@ -6,6 +6,11 @@ import { describe, expect, it } from "vitest";
 import {
   ProfileSchema,
   activeCards,
+  addOtherPreference,
+  rolesForField,
+  selectedRoles,
+  setQueryText,
+  setRoleSelected,
   citedCardIds,
   emptyProfile,
   missingPreferences,
@@ -14,11 +19,14 @@ import {
   nextFieldId,
   nextQueryId,
   nextRoleId,
+  normalizeInputText,
   normalizeProfile,
   parseProfile,
   serializeProfile,
+  serializeProfileForPrompt,
   setCardExcluded,
   setClimateInterests,
+  setInputs,
   setFieldExplored,
   setFieldStatus,
   setPreference,
@@ -28,6 +36,7 @@ import {
   upsertQuery,
   upsertRole,
   type Profile,
+  activeSkills,
 } from "./profile";
 
 const FIXTURES = ["videographer", "web-designer", "data-scientist"] as const;
@@ -82,6 +91,19 @@ describe("fixtures round-trip", () => {
         expect(p.queries.every((q) => q.fieldIds.every((id) => p.fields.some((f) => f.id === id)))).toBe(true);
         expect(p.sessionNotes).not.toBe("");
         expect(p.extraSections).toEqual([]);
+      });
+
+      it("carries the exploration-first keys (technical-plan.md D39, D40)", () => {
+        const p = first.profile;
+        expect(p.cards.some((c) => c.years !== undefined)).toBe(true);
+        expect(p.fields.every((f) => f.sector !== "" && f.fitLevel !== undefined && f.summary !== "")).toBe(true);
+        expect(p.fields.every((f) => f.chips.length >= 1 && f.chips.length <= 4)).toBe(true);
+        expect(p.fields.every((f) => f.evidence.length > 0 && f.evidence.every((e) => /^C\d+$/.test(e.cardId) && e.why !== ""))).toBe(true);
+        expect(p.fields.every((f) => f.evidence.every((e) => p.cards.some((c) => c.id === e.cardId)))).toBe(true);
+        expect(p.fields.some((f) => f.ask !== undefined && f.ask.question !== "" && f.ask.key !== "")).toBe(true);
+        expect(p.fields.some((f) => f.ask === undefined)).toBe(true);
+        expect(p.roles.some((r) => r.selected)).toBe(true);
+        expect(p.roles.some((r) => !r.selected)).toBe(true);
       });
     });
   }
@@ -295,7 +317,7 @@ describe("tolerant parsing", () => {
         { id: "C1", title: "T", situation: "", actions: "", results: "", skills: ["Python, R", "SQL"], excluded: false, extra: {} },
       ],
       fields: [
-        { id: "F1", name: "N", status: "unsure", explored: true, move: "retraining", fit: "line one\nline two", uncertain: "", sources: ["https://a.example/x,y", "https://b.example"], extra: {} },
+        { id: "F1", name: "N", status: "unsure", explored: true, move: "retraining", sector: "", summary: "", chips: [], evidence: [], fit: "line one\nline two", uncertain: "", sources: ["https://a.example/x,y", "https://b.example"], extra: {} },
       ],
       sessionNotes: "# not a title\n## not a section\nplain",
       extraSections: [{ heading: "Extra", body: "## also not a section" }],
@@ -335,6 +357,68 @@ describe("tolerant parsing", () => {
 
     expect(profile.preferences.location?.value).toContain("x");
     expect(elapsed).toBeLessThan(500);
+  });
+});
+
+describe("exploration-first keys", () => {
+  it("reads the Ask block, a question on the label line, and warns on an unknown part", () => {
+    const md = [
+      "## Fields",
+      "### F1: A",
+      "- **Ask:** Is remote ok?",
+      "  - Key: Remote",
+      "  - Placeholder: e.g. yes",
+      "### F2: B",
+      "- **Ask:**",
+      "  - Question: Only the question",
+      "### F3: C",
+      "- **Ask:**",
+      "  - Question: q",
+      "  - Mystery: m",
+      "### F4: D",
+      "- **Ask:**",
+    ].join("\n");
+    const { profile, warnings } = parseProfile(md);
+    expect(profile.fields[0].ask).toEqual({ question: "Is remote ok?", key: "Remote", placeholder: "e.g. yes" });
+    expect(profile.fields[1].ask).toEqual({ question: "Only the question", key: "", placeholder: "" });
+    expect(profile.fields[2].ask).toEqual({ question: "q Mystery: m", key: "", placeholder: "" });
+    expect(profile.fields[3].ask).toBeUndefined();
+    expect(warnings).toEqual([expect.stringContaining("unknown Ask part")]);
+    const again = parseProfile(serializeProfile(profile));
+    expect(again.warnings).toEqual([]);
+    expect(again.profile.fields.map((f) => f.ask)).toEqual(profile.fields.map((f) => f.ask));
+  });
+
+  it("reads evidence lines, keeps one without a card id, and round-trips", () => {
+    const md = ["## Fields", "### F1: A", "- **Evidence:**", "  - c2: Shot the series.", "  - C3:", "  - no id here"].join("\n");
+    const { profile, warnings } = parseProfile(md);
+    expect(warnings).toEqual([]);
+    expect(profile.fields[0].evidence).toEqual([
+      { cardId: "C2", why: "Shot the series." },
+      { cardId: "C3", why: "" },
+      { cardId: "", why: "no id here" },
+    ]);
+    expect(parseProfile(serializeProfile(profile)).profile).toEqual(profile);
+  });
+
+  it("fit level: aliases, blank, and an invalid value with a warning", () => {
+    const md = ["## Fields", "### F1: A", "- **Fit level:** Strong fit", "### F2: B", "- **Level:**", "### F3: C", "- **Fit level:** 87%"].join("\n");
+    const { profile, warnings } = parseProfile(md);
+    expect(profile.fields.map((f) => f.fitLevel)).toEqual(["strong", undefined, undefined]);
+    expect(warnings).toEqual([expect.stringContaining("F3")]);
+  });
+
+  it("years on a card and selected on a role default to absent and false", () => {
+    const md = ["## Experience Cards", "### C1: T", "- **Years:**", "### C2: U", "- **Period:** since 2020", "## Role Shortlist", "### R1: R", "- **Field:** F1", "### R2: S", "- **Ticked:** yes"].join("\n");
+    const { profile, warnings } = parseProfile(md);
+    expect(warnings).toEqual([]);
+    expect(profile.cards.map((c) => c.years)).toEqual([undefined, "since 2020"]);
+    expect(profile.roles.map((r) => r.selected)).toEqual([false, true]);
+    const out = serializeProfile(profile);
+    expect(out).toContain("- **Years:**\n");
+    expect(out).toContain("- **Years:** since 2020");
+    expect(out).toContain("- **Selected:** yes");
+    expect(parseProfile(out).profile).toEqual(profile);
   });
 });
 
@@ -388,6 +472,94 @@ describe("climate interests", () => {
   });
 });
 
+describe("a query's role (technical-plan.md D47)", () => {
+  const md = [
+    "## Queries",
+    "",
+    '### Q1: "video producer" AND (solar OR "energy storage")',
+    "- **Board:** linkedin",
+    "- **Fields:** F1",
+    "- **Role:** r3",
+    "- **Status:** untried",
+    "- **Rationale:** title plus field terms",
+    "",
+    "### Q2: videographer solar",
+    "- **Board:** indeed",
+    "- **Fields:** F1",
+    "- **Status:** untried",
+  ].join("\n");
+
+  it("parses Role as a known key, uppercased, and leaves it empty when absent", () => {
+    const { profile, warnings } = parseProfile(md);
+    expect(warnings).toEqual([]);
+    expect(profile.queries.map((q) => q.roleId)).toEqual(["R3", ""]);
+    // Role is no longer an unknown key; a real unknown key still survives beside it.
+    expect(profile.queries[0]?.extra).toEqual({ Rationale: "title plus field terms" });
+    expect(profile.queries[0]?.fieldIds).toEqual(["F1"]);
+  });
+
+  it("serializes Role right after Fields and omits the line when the role is unknown", () => {
+    const out = serializeProfile(parseProfile(md).profile);
+    expect(out).toContain("- **Fields:** F1\n- **Role:** R3\n- **Status:** untried");
+    expect(out.match(/\*\*Role:\*\*/g)).toHaveLength(1);
+    expect(out).toContain("- **Changed:**\n- **Rationale:** title plus field terms");
+  });
+
+  it("round-trips: parse → serialize is idempotent and ids are not renumbered", () => {
+    const first = parseProfile(md).profile;
+    const once = serializeProfile(first);
+    const second = parseProfile(once);
+    expect(second.warnings).toEqual([]);
+    expect(second.profile).toEqual(first);
+    expect(serializeProfile(second.profile)).toBe(once);
+    expect(second.profile.queries.map((q) => q.id)).toEqual(["Q1", "Q2"]);
+  });
+
+  it("accepts the `Role id` spelling and survives upsertQuery", () => {
+    const { profile } = parseProfile(md.replace("- **Role:** r3", "- **Role id:** R4"));
+    expect(profile.queries[0]?.roleId).toBe("R4");
+    const next = upsertQuery(profile, { board: "linkedin", query: "q", fieldIds: ["F2"], roleId: "R5", status: "untried", reason: "", extra: {} });
+    expect(next.queries.at(-1)).toMatchObject({ id: "Q3", roleId: "R5" });
+    expect(serializeProfile(next)).toContain("### Q3: q\n- **Board:** linkedin\n- **Fields:** F2\n- **Role:** R5");
+  });
+
+  it("every fixture carries a query with a Role and one without, each naming a real role", () => {
+    for (const name of FIXTURES) {
+      const p = parseProfile(fixture(name)).profile;
+      const withRole = p.queries.filter((q) => q.roleId !== "");
+      expect(withRole.length).toBeGreaterThanOrEqual(1);
+      expect(p.queries.some((q) => q.roleId === "")).toBe(true);
+      for (const q of withRole) {
+        const role = p.roles.find((r) => r.id === q.roleId);
+        expect(role).toBeDefined();
+        expect(q.fieldIds).toEqual([role?.fieldId]);
+      }
+    }
+  });
+});
+
+describe("selectedRoles", () => {
+  const base = parseProfile(fixture("data-scientist")).profile;
+
+  it("lists ticked roles in field order then role order, whatever the field's status, skipping unknown fields", () => {
+    const all = base.roles.reduce((p, r) => setRoleSelected(p, r.id, true), base);
+    const fieldOrder = all.fields.map((f) => f.id);
+    const got = selectedRoles(all);
+    expect(got.length).toBeGreaterThan(0);
+    expect(got.every((r) => r.selected && fieldOrder.includes(r.fieldId))).toBe(true);
+    expect(got.map((r) => fieldOrder.indexOf(r.fieldId))).toEqual([...got.map((r) => fieldOrder.indexOf(r.fieldId))].sort((a, b) => a - b));
+    // Reversing the role list does not change the field order of the result.
+    const reversed = selectedRoles({ ...all, roles: [...all.roles].reverse() });
+    expect(reversed.map((r) => r.fieldId)).toEqual(got.map((r) => r.fieldId));
+    // A field's status does not matter; a ticked role under a field that does not exist is left out.
+    const first = got[0];
+    expect(selectedRoles(setFieldStatus(all, first?.fieldId ?? "", "rejected")).some((r) => r.fieldId === first?.fieldId)).toBe(true);
+    const orphan = upsertRole(all, { title: "Orphan", fieldId: "F99", companies: [], why: "", selected: true, sources: [], extra: {} });
+    expect(selectedRoles(orphan).some((r) => r.title === "Orphan")).toBe(false);
+    expect(selectedRoles(emptyProfile())).toEqual([]);
+  });
+});
+
 describe("helpers", () => {
   const base = parseProfile(fixture("videographer")).profile;
 
@@ -407,9 +579,9 @@ describe("helpers", () => {
     const replaced = upsertCard(added, { ...added.cards[0], title: "Renamed" });
     expect(replaced.cards.map((c) => c.title)[0]).toBe("Renamed");
     expect(replaced.cards).toHaveLength(4);
-    expect(upsertField(base, { name: "F", status: "candidate", explored: false, fit: "", uncertain: "", sources: [], extra: {} }).fields.at(-1)?.id).toBe("F5");
-    expect(upsertRole(base, { title: "R", fieldId: "F1", companies: [], why: "", sources: [], extra: {} }).roles.at(-1)?.id).toBe("R3");
-    expect(upsertQuery(base, { board: "other", query: "q", fieldIds: [], status: "untried", reason: "", extra: {} }).queries.at(-1)?.id).toBe("Q4");
+    expect(upsertField(base, { name: "F", status: "candidate", explored: false, sector: "", summary: "", chips: [], evidence: [], fit: "", uncertain: "", sources: [], extra: {} }).fields.at(-1)?.id).toBe("F5");
+    expect(upsertRole(base, { title: "R", fieldId: "F1", companies: [], why: "", selected: false, sources: [], extra: {} }).roles.at(-1)?.id).toBe("R3");
+    expect(upsertQuery(base, { board: "other", query: "q", fieldIds: [], roleId: "", status: "untried", reason: "", extra: {} }).queries.at(-1)?.id).toBe("Q4");
     expect(base.cards).toHaveLength(3); // pure: input untouched
   });
 
@@ -433,6 +605,39 @@ describe("helpers", () => {
     expect(moveSkill(p, "Client Management", "excluded").skills.confirmed).not.toContain("Client Management");
   });
 
+  describe("activeSkills (technical-plan.md D53)", () => {
+    const active = (confirmed: string[], inferred: string[], excluded: string[]) =>
+      activeSkills({ ...emptyProfile(), skills: { confirmed, inferred, excluded, extra: {} } });
+
+    it("lists confirmed then inferred, each in file order", () => {
+      expect(active(["b", "a"], ["d", "c"], [])).toEqual(["b", "a", "d", "c"]);
+      expect(active([], ["only inferred"], [])).toEqual(["only inferred"]);
+      expect(active([], [], [])).toEqual([]);
+    });
+
+    it("dedupes case-insensitively and the first spelling wins", () => {
+      expect(active(["Energy Modeling"], ["energy modeling ", "HVAC design", "hvac DESIGN"], [])).toEqual([
+        "Energy Modeling",
+        "HVAC design",
+      ]);
+      expect(active([" ", "x"], ["", "X"], [])).toEqual(["x"]);
+    });
+
+    it("drops removed skills from both buckets, case-insensitively", () => {
+      expect(active(["Python"], ["MLOps", "policy analysis"], ["python", " MLOPS "])).toEqual(["policy analysis"]);
+      expect(active([], [], ["x"])).toEqual([]);
+    });
+
+    it("follows a removal and its reversal without changing the profile it is given", () => {
+      const start = { ...emptyProfile(), skills: { confirmed: ["a"], inferred: ["b"], excluded: [], extra: {} } };
+      const removed = moveSkill(start, "B", "excluded");
+      expect(activeSkills(removed)).toEqual(["a"]);
+      expect(activeSkills(moveSkill(removed, "b", "inferred"))).toEqual(["a", "b"]);
+      expect(activeSkills(start)).toEqual(["a", "b"]);
+      expect(start.skills).toEqual({ confirmed: ["a"], inferred: ["b"], excluded: [], extra: {} });
+    });
+  });
+
   it("citedCardIds extracts and dedupes", () => {
     expect(citedCardIds("Uses C1 and C3, see C1 again; not CX or C")).toEqual(["C1", "C3"]);
     expect(citedCardIds("")).toEqual([]);
@@ -450,8 +655,189 @@ describe("helpers", () => {
     expect(serializeProfile(p)).toContain("- **Location:** Seattle (inferred)");
   });
 
+  it("setRoleSelected and rolesForField", () => {
+    const p = setRoleSelected(base, "R2", true);
+    expect(p.roles.find((r) => r.id === "R2")?.selected).toBe(true);
+    expect(base.roles.find((r) => r.id === "R2")?.selected).toBe(false);
+    expect(setRoleSelected(base, "R99", true)).toEqual(base);
+    expect(rolesForField(p, "F2").map((r) => r.id)).toEqual(["R2"]);
+    expect(rolesForField(p, "F2", true).map((r) => r.id)).toEqual(["R2"]);
+    expect(rolesForField(setRoleSelected(p, "R2", false), "F2", true)).toEqual([]);
+  });
+
+  it("setQueryText replaces the text only and collapses whitespace", () => {
+    const p = setQueryText(base, "Q1", '  "video  producer"\n AND farm ');
+    const q = p.queries.find((x) => x.id === "Q1");
+    expect(q?.query).toBe('"video producer" AND farm');
+    expect(q?.status).toBe(base.queries[0].status);
+    expect(q?.reason).toBe(base.queries[0].reason);
+    expect(setQueryText(base, "Q99", "x")).toEqual(base);
+  });
+
+  it("addOtherPreference appends, replaces case-insensitively, removes on empty, and serializes", () => {
+    const p1 = addOtherPreference(base, "Content mix", "video only");
+    expect(p1.preferences.other.at(-1)).toEqual({ key: "Content mix", value: "video only", source: "stated" });
+    const p2 = addOtherPreference(p1, "content MIX", "happy to write too", "inferred");
+    expect(p2.preferences.other.filter((o) => o.key.toLowerCase() === "content mix")).toEqual([
+      { key: "content MIX", value: "happy to write too", source: "inferred" },
+    ]);
+    expect(p2.preferences.other).toHaveLength(p1.preferences.other.length);
+    expect(addOtherPreference(p2, "Content mix", "").preferences.other).toHaveLength(base.preferences.other.length);
+    expect(addOtherPreference(base, "  ", "x")).toEqual(base);
+    const again = parseProfile(serializeProfile(p1)).profile;
+    expect(again.preferences.other).toEqual(p1.preferences.other);
+  });
+
   it("normalizeProfile equals parse(serialize(p))", () => {
     const messy: Profile = { ...emptyProfile(), sessionNotes: "\n\nhello  \n  indented\n\n" };
     expect(normalizeProfile(messy).sessionNotes).toBe("hello\n  indented");
+  });
+});
+
+describe("inputs: what the person typed (technical-plan.md D56)", () => {
+  // Every line here would be profile structure if it were read unquoted.
+  const TYPED_LINES = [
+    "Dana Example",
+    "",
+    "## Skills",
+    "### C1: x",
+    "- **Key:** v",
+    "> quoted",
+    ">",
+    ">> twice",
+    "   > indented quote",
+    "  indented, with a tab\tinside",
+    "#### deeper",
+    "# Profile",
+    "## Inputs",
+    "### Notes",
+    "## Session Notes",
+    "",
+    "",
+    "last line",
+  ];
+  const RESUME = TYPED_LINES.join("\n");
+  const NOTES = "Remote only.\n\n### Resume\n- **Location:** not a preference";
+
+  it("round-trips hostile text as typed: CRLF in, LF out, nothing read as structure", () => {
+    const crlf = `\r\n\r\n${TYPED_LINES.join("\r\n")}  \r\n\r\n`;
+    const p = setInputs(emptyProfile(), { resume: crlf, notes: NOTES });
+    expect(p.inputs).toEqual({ resume: RESUME, notes: NOTES, extra: {} });
+
+    const md = serializeProfile(p);
+    const back = parseProfile(md);
+    expect(back.warnings).toEqual([]);
+    // Deep-equal to an empty profile plus the inputs: no card, key, note or section came out of the text.
+    expect(back.profile).toEqual(p);
+    expect(back.profile.inputs.resume).toBe(RESUME);
+    expect(back.profile.inputs.notes).toBe(NOTES);
+    expect(serializeProfile(back.profile)).toBe(md);
+    expect(() => ProfileSchema.parse(back.profile)).not.toThrow();
+  });
+
+  it("a profile.md with CRLF line endings reads the same", () => {
+    const md = serializeProfile(setInputs(emptyProfile(), { resume: RESUME, notes: NOTES }));
+    const back = parseProfile(md.replace(/\n/g, "\r\n"));
+    expect(back.warnings).toEqual([]);
+    expect(back.profile.inputs).toEqual({ resume: RESUME, notes: NOTES, extra: {} });
+    expect(serializeProfile(back.profile)).toBe(md);
+  });
+
+  it("writes each line as a quote, a blank line as a bare >, and leaves an empty input out", () => {
+    const md = serializeProfile(setInputs(emptyProfile(), { resume: "a\n\n> b\n## Skills", notes: "  " }));
+    expect(md).toContain("## Queries\n\n## Inputs\n\n### Resume\n> a\n>\n> > b\n> ## Skills\n\n## Session Notes\n");
+    expect(md).not.toContain("### Notes");
+    expect(serializeProfile(emptyProfile())).toContain("## Queries\n\n## Inputs\n\n## Session Notes\n");
+    expect(parseProfile(serializeProfile(emptyProfile())).profile).toEqual(emptyProfile());
+  });
+
+  it("normalizes newlines, trailing whitespace and outer blank lines, and nothing else", () => {
+    expect(normalizeInputText("\r\n a \r\rb\t\n\n\tc\t\r\n \r\n")).toBe(" a\n\nb\n\n\tc");
+    expect(normalizeInputText(" \n\t\n")).toBe("");
+  });
+
+  it("sits beside a full profile without changing the rest of it", () => {
+    for (const name of FIXTURES) {
+      const base = parseProfile(fixture(name)).profile;
+      const typed = setInputs(base, { resume: RESUME, notes: NOTES });
+      const back = parseProfile(serializeProfile(typed));
+      expect(back.warnings).toEqual([]);
+      expect(back.profile).toEqual(typed);
+      expect(serializeProfile(setInputs(back.profile, { resume: "", notes: "" }))).toBe(fixture(name));
+    }
+  });
+
+  it("keeps an unknown ### block through a round trip, and setInputs leaves it alone", () => {
+    const md = serializeProfile(setInputs(emptyProfile(), { resume: "r", notes: "n" })).replace(
+      "## Session Notes",
+      "### Cover letter\n> Dear team,\n>\n> ### C9: not a card\n\n### Empty one\n\n## Session Notes",
+    );
+    const first = parseProfile(md);
+    expect(first.warnings).toEqual([]);
+    expect(first.profile.inputs.extra).toEqual({
+      "Cover letter": "Dear team,\n\n### C9: not a card",
+      "Empty one": "",
+    });
+    expect(first.profile.cards).toEqual([]);
+    expect(serializeProfile(first.profile)).toBe(md);
+
+    const retyped = setInputs(first.profile, { resume: "", notes: "new" });
+    expect(retyped.inputs).toEqual({ resume: "", notes: "new", extra: first.profile.inputs.extra });
+  });
+
+  it("keeps a hand-edited, unquoted line as text, with a warning, and never as structure", () => {
+    const md = [
+      "# Profile",
+      "",
+      "## Inputs",
+      "",
+      "loose line",
+      "### Resume",
+      "> quoted",
+      "- **Skills:** not a key",
+      "#### not a heading",
+      "",
+      "plain",
+      "### C1: not a card",
+      "- **Situation:** still text",
+      "",
+      "## Session Notes",
+      "",
+      "kept",
+      "",
+    ].join("\n");
+    const { profile, warnings } = parseProfile(md);
+    expect(profile.inputs).toEqual({
+      resume: "loose line\nquoted\n- **Skills:** not a key\n#### not a heading\n\nplain",
+      notes: "",
+      extra: { "C1: not a card": "- **Situation:** still text" },
+    });
+    expect({ ...profile, inputs: emptyProfile().inputs }).toEqual({ ...emptyProfile(), sessionNotes: "kept" });
+    expect(warnings).toHaveLength(4);
+    expect(warnings.filter((w) => w.includes("unquoted text"))).toHaveLength(2);
+    expect(warnings.some((w) => w.includes('before a "###" heading'))).toBe(true);
+    expect(warnings.some((w) => w.includes("Duplicate"))).toBe(true);
+
+    const once = serializeProfile(profile);
+    expect(once).toContain("> - **Skills:** not a key\n> #### not a heading\n>\n> plain\n");
+    const again = parseProfile(once);
+    expect(again.warnings).toEqual([]);
+    expect(again.profile).toEqual(profile);
+  });
+
+  it("an unquoted ## line still ends the section, so hand-pasted text has to keep its quotes", () => {
+    const { profile } = parseProfile("## Inputs\n\n### Resume\n> a\n## Skills\n- **Confirmed:** welding\n");
+    expect(profile.inputs.resume).toBe("a");
+    expect(profile.skills.confirmed).toEqual(["welding"]);
+  });
+
+  it("serializeProfileForPrompt is the same text without the section", () => {
+    const base = parseProfile(fixture("videographer")).profile;
+    const typed = setInputs(base, { resume: RESUME, notes: NOTES });
+    const forPrompt = serializeProfileForPrompt(typed);
+    expect(forPrompt).toBe(serializeProfile(base).replace("## Inputs\n\n", ""));
+    expect(forPrompt).not.toContain("Dana Example");
+    expect(forPrompt).not.toContain("Inputs");
+    expect(parseProfile(forPrompt).profile).toEqual(base);
   });
 });

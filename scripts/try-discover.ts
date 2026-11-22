@@ -1,15 +1,29 @@
 /**
- * `pnpm try:discover <profile.md> [profile.md-out]` — the Phase 1.4
- * acceptance check, and the Gate 1 script to run on a real profile.
+ * `pnpm try:discover <profile.md> [profile.md-out] [--interest=<area>[,<area>...]]`
+ * — the Phase 1.4 acceptance check, and the Gate 1 script to run on a real
+ * profile.
  *
  * It reads a `profile.md`, runs `discoverFields` (one live `discover` call
- * through `src/lib/llm.ts` with web search, or two if the API refuses
- * structured output alongside server tools), prints the updated `profile.md`
- * to stdout and a usage/cost line to stderr, and exits non-zero if any field
- * or role written this run lacks a card citation or a source.
+ * through `src/lib/llm.ts`, no web tools — technical-plan.md D44), prints the
+ * updated `profile.md` to stdout, a usage/cost line and each field's
+ * exploration-first card (sector, fit level, summary, chips, evidence lines,
+ * ask, sources) to stderr, and exits non-zero if any field or role written
+ * this run lacks a card citation or cites a URL the catalogue does not list,
+ * any field lacks a fit level, a sector or an ask (technical-plan.md D39), or
+ * a role title carries a level word (D48). A card the fit text cites with no
+ * evidence line of its own is a warning, not a failure: `validateOutput`
+ * keeps such a field and no screen renders evidence lines (D50), so failing
+ * on it would hold the script to a rule the product does not have.
+ *
+ * `--interest` records the one answer the app collects before discovery
+ * (technical-plan.md D54), the way the app does: a comma-separated list of
+ * the six climate areas (`CLIMATE_AREAS`), each written with
+ * `toggleClimateInterest`. The list replaces any interests already in the
+ * profile, so a run is repeatable. An unknown area lists the six and exits
+ * before any model call.
  *
  *   pnpm try:discover src/lib/__fixtures__/discover/videographer.md
- *   pnpm try:discover profile.md out/profile.md
+ *   pnpm try:discover profile.md out/profile.md --interest="Energy,Carbon Removal"
  *
  * It never echoes the profile except as the output the app would store in
  * the browser. Needs `ANTHROPIC_API_KEY` and the local Supabase stack (the
@@ -20,11 +34,16 @@ import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
 import { DiscoverInputError, discoverFields, droppedSummary } from "../src/lib/discover";
-import { citedActiveCardIds } from "../src/lib/discover";
-import { parseProfile, serializeProfile } from "../src/lib/profile";
+import { catalogueSourceUrls, citedActiveCardIds, hasLevelWord } from "../src/lib/discover";
+import { CLIMATE_AREAS, toggleClimateInterest } from "../src/lib/elicit";
+import { listFields, listRoles } from "../src/lib/reference";
+import { parseProfile, serializeProfile, setClimateInterests } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
 
-const USAGE = "usage: pnpm try:discover <profile.md> [profile.md-out]";
+const USAGE = "usage: pnpm try:discover <profile.md> [profile.md-out] [--interest=<area>[,<area>...]]";
+
+/** The one question the app asks before discovery (technical-plan.md D54). */
+const INTEREST_FLAG = "--interest";
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
@@ -32,8 +51,11 @@ function fail(message: string): never {
 }
 
 async function main(): Promise<void> {
-  const [input, output] = process.argv.slice(2);
-  if (input === undefined || input === "-h" || input === "--help") fail(USAGE);
+  const args = process.argv.slice(2);
+  const flags = args.filter((a) => a.startsWith("-"));
+  const [input, output] = args.filter((a) => !a.startsWith("-"));
+  const interestFlag = flags.find((f) => f.startsWith(`${INTEREST_FLAG}=`));
+  if (input === undefined || flags.length > 1 || (flags.length === 1 && interestFlag === undefined)) fail(USAGE);
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -47,8 +69,19 @@ async function main(): Promise<void> {
   const parsed = parseProfile(md);
   for (const w of parsed.warnings) process.stderr.write(`warning: ${w}\n`);
 
+  let profile = parsed.profile;
+  if (interestFlag !== undefined) {
+    const areas = [...new Set(interestFlag.slice(INTEREST_FLAG.length + 1).split(",").map((a) => a.trim()))];
+    if (areas.some((a) => !CLIMATE_AREAS.includes(a))) {
+      fail(`${INTEREST_FLAG} takes a comma-separated list of: ${CLIMATE_AREAS.map((a) => `"${a}"`).join(", ")}`);
+    }
+    // The flag is the whole answer: start from no interests, then pick each area as a pill click would.
+    profile = setClimateInterests(profile, []);
+    for (const area of areas) profile = toggleClimateInterest(profile, area);
+  }
+
   const started = Date.now();
-  const result = await discoverFields({ sessionId: newSessionId(), profile: parsed.profile }).catch(
+  const result = await discoverFields({ sessionId: newSessionId(), profile }).catch(
     (error: unknown) => {
       if (error instanceof DiscoverInputError) fail(error.message);
       throw error;
@@ -63,34 +96,59 @@ async function main(): Promise<void> {
     process.stderr.write(`wrote ${output}\n`);
   }
 
-  const cost = result.calls.reduce((s, c) => s + c.costUsd, 0);
-  const tok = result.calls.map(
-    (c) =>
-      `in ${String(c.usage.input)} (cache r${String(c.usage.cacheRead)}/w${String(c.usage.cacheWrite)}) out ${String(c.usage.output)}`,
-  );
+  const c = result.call;
+  const tok = `in ${String(c.usage.input)} (cache r${String(c.usage.cacheRead)}/w${String(c.usage.cacheWrite)}) out ${String(c.usage.output)}`;
   process.stderr.write(
-    `${result.strategy} | ${String(result.fields.length)} fields, ${String(result.roles.length)} roles | ` +
-      `${droppedSummary(result.dropped)} | ${tok.join(" + ")} tok | $${cost.toFixed(4)} | ` +
+    `${String(result.fields.length)} fields, ${String(result.roles.length)} roles | ` +
+      `${droppedSummary(result.dropped)} | ${tok} tok | $${c.costUsd.toFixed(4)} | ` +
       `${String(Math.round((Date.now() - started) / 100) / 10)}s\n`,
   );
-  process.stderr.write(
-    `fields: ${result.fields.map((f) => `${f.id} ${f.name} [${f.move ?? "?"}]`).join("; ")}\n`,
-  );
+  for (const f of result.fields) {
+    const roles = result.roles.filter((r) => r.fieldId === f.id).map((r) => r.title);
+    process.stderr.write(
+      [
+        `\n${f.id} ${f.name} [${f.move ?? "?"}] fit=${f.fitLevel ?? "?"} sector=${f.sector || "?"}`,
+        `  summary: ${f.summary || "?"}`,
+        `  chips: ${f.chips.join(" | ") || "?"}`,
+        ...f.evidence.map((e) => `  evidence ${e.cardId}: ${e.why}`),
+        `  ask: ${f.ask === undefined ? "?" : `${f.ask.question} [${f.ask.key}; e.g. ${f.ask.placeholder}]`}`,
+        `  roles: ${roles.join("; ") || "?"}`,
+        `  sources: ${f.sources.join(" ") || "(none: named from the model's knowledge)"}`,
+      ].join("\n") + "\n",
+    );
+  }
 
   // The acceptance rule, checked here so the exit code carries it.
+  const [catFields, catRoles] = await Promise.all([listFields(), listRoles()]);
+  const catalogue = catalogueSourceUrls(catFields, catRoles);
   const problems: string[] = [];
+  const unevidenced: string[] = [];
   if (result.fields.length < 4) problems.push(`expected >=4 fields, got ${String(result.fields.length)}`);
   for (const f of result.fields) {
     if (citedActiveCardIds(f.fit, result.profile).length === 0) problems.push(`${f.id} cites no card`);
-    if (f.sources.length === 0) problems.push(`${f.id} has no source`);
+    for (const u of f.sources) if (!catalogue.has(u)) problems.push(`${f.id} cites a non-catalogue URL`);
     if (!result.roles.some((r) => r.fieldId === f.id)) problems.push(`${f.id} has no role`);
+    if (f.fitLevel === undefined) problems.push(`${f.id} has no fit level`);
+    if (f.sector.trim() === "") problems.push(`${f.id} has no sector`);
+    if (f.summary.trim() === "") problems.push(`${f.id} has no summary`);
+    if (f.chips.length === 0) problems.push(`${f.id} has no chips`);
+    const evidenced = new Set(f.evidence.map((e) => e.cardId));
+    for (const id of citedActiveCardIds(f.fit, result.profile)) {
+      if (!evidenced.has(id)) unevidenced.push(`${f.id} cites ${id} without an evidence line`);
+    }
+    if (f.ask === undefined) problems.push(`${f.id} has no ask`);
   }
   for (const r of result.roles) {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
-    if (r.sources.length === 0) problems.push(`${r.id} has no source`);
+    // A title names the occupation, never a level (technical-plan.md D48).
+    if (hasLevelWord(r.title)) problems.push(`${r.id} has a level word in its title`);
+    for (const u of r.sources) if (!catalogue.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
   }
+  for (const w of unevidenced) process.stderr.write(`warning: ${w}\n`);
   if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
-  process.stderr.write("PASS: every field and role cites a card and has a source\n");
+  process.stderr.write(
+    "PASS: every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs; no role title carries a level word\n",
+  );
 }
 
 main().catch((error: unknown) => {

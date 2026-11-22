@@ -150,6 +150,12 @@ describe("turn payload", () => {
     expect(buildTurnRequest(s, "revise", { kind: "message", content: "x" }, { keepLastN: 2 }).messages).toHaveLength(2);
   });
 
+  it("accepts a selectedRoles turn, which carries no payload, and no longer accepts a field turn", () => {
+    const req = buildTurnRequest(populated(), "queries", { kind: "selectedRoles" });
+    expect(parseTurnRequest(req)).toEqual({ ok: true, value: req });
+    expect(parseTurnRequest({ ...req, input: { kind: "field", fieldId: "F1" } }).ok).toBe(false);
+  });
+
   it("accepts a feedback turn", () => {
     const req = buildTurnRequest(populated(), "revise", {
       kind: "feedback",

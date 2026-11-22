@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D43, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D58, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -34,11 +34,11 @@ Defaults; a decision in §5 overrides a row here.
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
 | Hosting | Vercel for app and route handlers. Supabase Postgres for the reference collection only | Existing subscriptions |
 | Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
-| LLM | Anthropic TS SDK, `claude-opus-5`, adaptive thinking, streaming route handlers (`maxDuration` 800s) | Skill default; effort per call (chat `medium`, discovery `high`) |
-| Grounding | Supabase reference collection first, then server-side `web_search_20260209` and `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Sources without scraping; hard constraint enforced in code |
-| Session state | `profile.md` text + chat messages + query feedback, in `localStorage`. Sent to the route handler on every turn. Export, import, and "start over" buttons | PRD's "single .md the user keeps"; server is stateless |
+| LLM | Anthropic TS SDK, model per step: `claude-opus-5-5` for every step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on both models. See D44, D45, D52 |
+| Grounding | Supabase reference collection, then the model's own knowledge. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Baseline before a larger roles-and-occupations catalogue; hard constraint still enforced in code |
+| Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
-| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Per-session spend cap and evidence for a later Sonnet 5 decision. See D4 |
+| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
 | Tests | `vitest`; prompt behaviors covered by evals, not unit tests | Unit tests for parsers and pure logic only |
@@ -47,36 +47,64 @@ Defaults; a decision in §5 overrides a row here.
 
 ## 2. UI shape
 
-Exploration-first, from the Claude Design handoff in
-`docs/design_handoff_climate_career_exploration/` (D37). Desktop Chrome,
-~1280px+, light-only. The handoff README is the visual spec: colours,
-type, spacing and interaction states are final; its sample content is not.
+One centred column. The visual spec is still the Claude Design handoff in
+`docs/design_handoff_climate_career_exploration/` (D37): colours, type,
+spacing and interaction states come from its README. Its layout (assistant
+rail, field board, feedback screen) was replaced after the first browser
+run (D49, D50, D51). Desktop Chrome, ~1280px+, light-only.
 
-- **One shell, no top-level tabs.** Header with the product mark and a
-  three-step nav: 1 Highlights, 2 Fields, 3 Searches. A collapsible
-  read-only profile drawer under the header with export, import and
-  "Delete everything". A 352px assistant rail on the right, absent on first
-  run.
-- **First run:** paste a resume or bio, optional notes, Start.
-- **Highlights:** the experience cards as a grid; Edit and Exclude per card.
-  The rail asks the three preference questions with pills. A "Match fields"
-  button starts discovery; it never auto-starts (D38).
-- **Field board:** ranked field cards with move type, a three-level fit
-  label, a blurb and chips; Interesting / Unsure / Not for me on each card.
-  Order is resolved on arrival, not live. A card expands in place to show
-  evidence lines, roles with checkboxes, an uncertainty with an optional
-  question, employers and sources, all from discovery data (D39). The
-  expanded card's CTA writes searches for the ticked roles (D40).
-- **Pending:** the board with a status strip, a skeleton card and a live log
-  in the rail while a turn runs. Elapsed time, real phases, no estimates.
-- **Searches:** per-field groups of query cards, one per board, with copy,
-  "Open <board>", alert steps and Good / Wrong results.
-- **Feedback:** verdict, reason chips, free text, "Send and revise"; the
-  revised query is shown for accept, edit or keep-the-old-one (D41).
-- **Rail:** questions with pills, per-field asks, the working log, errors
-  and warnings, and a "Change an answer" row. No free-text composer (D42).
+- **Header:** a four-item nav (Resume, Highlights, Roles, Searches; no
+  numbers, steps not yet reached disabled, every reached step a link back)
+  and "Your profile", which opens the drawer. No product mark, no rail, no
+  tabs, no composer (D42, D49, D55).
+- **Resume:** before a paste, paste a resume or bio, optional notes, Start;
+  the two are kept in the profile (D56), then `cards` runs. After, the
+  stored text read-only and the app's only "Start over", behind a dialog
+  that offers the profile download first (D55).
+- **Highlights:** "Skills" first: one row of tiles, accepted unless
+  removed, each with a single remove control; removed skills stay visible,
+  struck, with a control to add them back (D53). Then the experience cards,
+  collapsed to title, one-line result and skills (years stay in
+  `profile.md`, not on screen: D57), with Situation /
+  Action / Result behind "Details" and Edit / Exclude per card. Then one
+  optional question, "Which area of climate work interests you most?",
+  answered by toggling any of six area pills with no model call; the picks
+  rank roles, never filter them (D54). Then one button, "Find climate
+  roles", which runs `discover` and never starts on its own (D38); it needs
+  only one included highlight, and while it is disabled its note says so.
+- **Pending:** the status line, elapsed time and the live log in the main
+  column while a turn runs. Real phases, no estimates.
+- **Roles:** one group per discovered field, in rank order. The field is a
+  heading, not a choice: name; one row with the fit label, the move type
+  and a "Based on" disclosure listing each cited highlight's title with
+  its evidence line; the two-sentence summary; the uncertainty (D57). The
+  sector line and the per-field question are not shown. Under it, one
+  row per role: checkbox, title, the one-line why with card ids rendered as
+  card titles, example companies and source links. No field marks, no rank
+  numbers (D50). One sticky button, "Write LinkedIn searches" ("… for N
+  roles" once any is ticked, with "Tick at least one role first." beside
+  it at zero), runs `queries` for every ticked role (D47).
+- **Searches:** one card per ticked role: role title, field name, the
+  query, "Open on LinkedIn" (a link the person clicks; the app never
+  fetches LinkedIn), "Copy", and
+  "Change roles" back to the Roles screen. No verdicts and no feedback
+  screen (D51). A role ticked after the last write shows a note and the
+  write button instead of a card.
+- **Errors and parser warnings** render as a banner at the top of the main
+  column. The assistant message a turn returns is not shown.
+- **Profile drawer:** a read-only summary in plain language (preferences,
+  skills and highlight titles with removed or excluded ones struck through, selected
+  roles, searches). Behind an "Export" disclosure: download `profile.md`,
+  download the session JSON, import, and the raw file (D49).
 
-The chat-led two-pane layout that Phase 2 shipped is retired by Phase 2b.
+Policy lives in pure, unit-tested modules, and the components in
+`src/components/shell/` only render: `screens.ts` decides which screen
+shows, nav gating, the Start text and the Resume page's view, the
+interest question's label, note and pressed pills, the "Find climate
+roles" gate, log lines, role groups, `citationsToTitles`, the write-searches
+label and the search cards;
+`profile-summary.ts` decides what the drawer shows; `workspace.ts` holds
+the profile edits and the turn inputs.
 
 ---
 
@@ -99,14 +127,19 @@ src/
     reference.ts    # typed reads from the Supabase reference tables (0.4)
     cards.ts        # pasted text → experience cards (1.1)
     elicit.ts       # preference elicitation policy and answer pills (1.2)
-    discover.ts     # fields/roles discovery (1.4)
-    explore.ts      # field drill-down, example posts, LinkedIn guidance (2.2)
-    queries.ts      # query generation and revision from feedback (2.3)
+    discover.ts     # fields/roles discovery, no web tools (1.4; D44)
+    explore.ts      # field drill-down, example posts, LinkedIn guidance; no UI path (2.2; D39)
+    queries.ts      # one LinkedIn query per selected role, and revision from feedback (2.3/2b.8; D47)
     boards.ts       # client-safe board labels, alert steps, query extra keys (2.4; D32)
-    workspace.ts    # browser-side step policy and profile edits for the UI (2.1/2.4)
+    workspace.ts    # browser-side step policy, profile edits and turn inputs for the UI (2.1/2.4/2b.8)
+    screens.ts      # pure screen state for the shell: gates, role groups, search cards (2b.4/2b.11/2b.12)
+    profile-summary.ts # readable profile summary for the drawer (2b.11; D49)
     turn-stream.ts  # NDJSON wire codec + sendTurn (2.1)
     turn.ts         # server dispatcher: TurnRequest → TurnResponse (2.5; D31)
-  components/       # Workspace, ChatPane, ProfileTab, FieldsTab, QueriesTab (client)
+  components/shell/ # AppShell, Header, ProfileDrawer, ResumeScreen, StartOverDialog,
+                    # Highlights, Pending, RoleBoard, RoleGroup, Searches, QueryCard
+                    # (2b.4/2b.11/2b.12/2b.17); save-file.ts, the browser download
+                    # helper the drawer and the Start over dialog share (2b.17; D55)
   app/
     api/turn/       # the one turn endpoint (NDJSON stream; 2.5)
     api/enter/      # passcode check
@@ -119,25 +152,27 @@ data/                  # climate_fields.yaml, example_roles.yaml, example_job_po
 scripts/
   seed.ts              # data/*.yaml → Supabase (mirror; service role)
   try-cards.ts         # stage 1.1 live check
-  try-discover.ts      # stage 1.4 live check (web search)
+  try-discover.ts      # stage 1.4 live check (catalogue-only sources)
   try-explore.ts       # stage 2.2 live check (blocked-host assertion)
-  try-queries.ts       # stage 2.3 live check (generate + scripted revise)
+  try-queries.ts       # stage 2b.8 live check (one LinkedIn query per selected role; optional scripted revise)
   check-rls.ts         # asserts the RLS shape against a live stack
   smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
 docs/
-  data-flow.md         # the one high-level flowchart (keep current)
+  data-flow.html       # API calls and profile.md reads/writes (keep current)
   technical-plan.md    # this file
-evals/                 # synthetic profiles, structural checks, feedback-loop eval, baseline arm (3.1, not started)
+evals/                 # synthetic profiles, structural checks, LLM-judge rubric, baseline arm (3.1, not started)
 ```
 
 ---
 
 ## 4. Risks specific to this project
 
-- **Grounding quality is the hypothesis under test.** Web search returns
-  plenty of low-quality career content. Step 1.4's check counts citations,
-  not their quality; the LLM judge in 3.1 is where quality gets measured.
-  Do not skip 3.1.
+- **Grounding quality is the hypothesis under test.** Discovery now runs on
+  the reference collection and the model's own knowledge (D44), so a field
+  outside the collection has no source at all. Step 1.4's check counts
+  citations, not their quality; the LLM judge in 3.1 is where quality gets
+  measured, and it is what decides whether a larger catalogue or bounded
+  search comes back. Do not skip 3.1.
 - **Terms-of-use compliance is code, not policy.** `blocked_domains` in
   `llm.ts` is the enforcement point; 2.2's acceptance check asserts on the
   usage log. Any new fetch path must go through `llm.ts`.
@@ -150,9 +185,10 @@ evals/                 # synthetic profiles, structural checks, feedback-loop ev
   turn. Keep the profile as the compressed memory: after each discovery or
   revision turn the assistant updates profile.md and the UI trims chat
   history to the last N turns.
-- **Vercel function duration.** Discovery and exploration calls with web
-  search can run 1–3 minutes. Route handlers stream and set `maxDuration`
-  to 800s. If a step still times out, split it into search then synthesize.
+- **Vercel function duration.** Discovery runs about 1–2 minutes without
+  web tools. Every model call has a 3-minute deadline (D45), route handlers
+  stream and set `maxDuration` to 800s, and a turn makes at most a few
+  sequential calls.
 - **Builder is a data scientist, app is TypeScript.** Prompts live as plain
   template strings in `src/lib/*.ts`, one per module, so editing a prompt
   never requires touching React.
@@ -167,7 +203,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    collection and anonymous usage rows. Python-on-Vercel rejected (weak
    streaming, cold starts).
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
-   Sonnet 5 for chat turns after Phase 3 using `llm_usage`.
+   Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
+   `claude-opus-5-5`: D44; `queries` and `revise` on `claude-sonnet-5-5`:
+   D46. Superseded by D52: every step on `claude-opus-5-5` again.)
 3. All user state lives in the browser (`localStorage`) and is resent each
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
@@ -191,9 +229,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    and an expiry. Signing and verification use the Web Crypto API so the gate
    stays portable to the Edge runtime.
 9. **`profile.md` format is "labeled-bullet markdown"**, defined once in the
-   header comment of `src/lib/profile.ts`: seven `##` sections in fixed order
+   header comment of `src/lib/profile.ts`: eight `##` sections in fixed order
    (Preferences, Experience Cards, Skills, Fields, Role Shortlist, Queries,
-   Session Notes); items are `### <ID>: <title>` headings with
+   Inputs, Session Notes; Inputs added by D56); items are `### <ID>: <title>` headings with
    `- **Key:** value` lines; lists are comma-separated inline except Sources
    (one URL per indented `-` line). No YAML or JSON blocks, so a nontechnical
    user can read and edit it in a textarea. Preferences are stated unless
@@ -348,7 +386,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     `REQUEST_TIMEOUT_MS = 300_000` and `MAX_RETRIES = 1`, and `llm.test.ts`
     asserts `(MAX_RETRIES + 1) × REQUEST_TIMEOUT_MS < MAX_DURATION_SECONDS ×
     1000`, so a stalled attempt plus its retry cannot outlive the Vercel
-    function and lose the usage row for tokens already billed.
+    function and lose the usage row for tokens already billed. (Now bounded
+    by a per-call deadline: D45.)
 28. **Worker model and worker budget are set by measurement, not by taste
     (2026-09-12).** The Gate 0 session and the Phase 1 session shared one
     five-hour limit window; Phase 1 ran out with steps 1.3 and 1.4 unfinished.
@@ -388,6 +427,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     that cite no active card or carry no non-blocked source are dropped and
     counted, never silently kept. Measured cost: ~$0.50 and ~3 minutes per
     profile at `high` effort, roughly half of it the cached catalogue block.
+    (Web tools, the two-call fallback and the "no source → dropped" rule are
+    retired by D44.)
 
     **An identity key is one thing.** Whatever key an apply-back path dedupes
     on must be the key it matches existing rows on, or two drafts survive
@@ -463,7 +504,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     client disconnect now stops the turn at the next step boundary — the
     route's progress callback throws once the stream is cancelled — but a
     model call already in flight still completes, which is `llm.ts`'s
-    deliberate choice so the usage row stays exact.
+    deliberate choice so the usage row stays exact. (Reversed by D45: the
+    call in flight is now aborted.)
 
 36. **Location and work mode are board filters, not elicitation questions.**
     `ELICIT_ORDER` is now `climateInterests`, `seniority`,
@@ -486,7 +528,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     no inferable location would never leave the elicit step.
 
     Whether these two should nonetheless be asked early for *some* fields is
-    an open product decision, parked in PLAN.md backlog item 4.
+    an open product decision, parked in `docs/backlog.md` §2. (Seniority
+    is no longer asked either: D48.)
 
 37. **Exploration-first UI from the design handoff (2026-09-20).** The
     field board is the product spine; chat is demoted to a right rail; there
@@ -502,7 +545,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     bar (D39). States the handoff has none for: turn errors and parser
     warnings render as a bubble in the rail; the Fields step before
     discovery, and a discovery that returns zero fields, show a "Match
-    fields" button with a one-line note.
+    fields" button with a one-line note. (The rail and the field board are
+    replaced by one column and the Roles screen: D49, D50.)
 
 38. **The flow is sequential and discovery is started by the user.** Start
     runs `cards` (which also infers preferences). The Highlights screen then
@@ -514,7 +558,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     flight at a time stands (D34), so the handoff's concurrent matching,
     field counts ("5 of 6 in", "two more fields") and time estimates are not
     built; the pending screen shows elapsed time and the real progress lines
-    the server streams.
+    the server streams. (Two questions now, inline on Highlights, and the
+    button reads "Find climate roles": D48, D49. Superseded by D54: one
+    optional question, and the button no longer waits for an answer.)
 
 39. **The expanded field card renders from discovery data; explore leaves
     the beta path.** `discover.ts` gains, per field: `fitLevel`
@@ -531,7 +577,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     `try:explore` are kept but no UI path reaches them: the handoff has no
     place for example posts, keywords or day-to-day text. A "Dig deeper"
     button that fills a fourth block is backlog, and PLAN.md's alpha goal
-    now counts expanded fields, not explored ones.
+    now counts expanded fields, not explored ones. (The expanded card is
+    gone; the same discovery data renders as a field heading on the Roles
+    screen: D50. Explore still has no UI path.)
 
 40. **Queries are written per field from the roles the person ticked.**
     Roles get a `Selected: yes | no` key. The expanded card's CTA sends a
@@ -544,7 +592,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     retired. The field's mark (Interesting / Unsure / Not for me, stored as
     the existing `accepted | unsure | rejected` statuses) and its selected
     roles go to the prompt as context, and the Searches screen orders groups
-    Interesting first. Revision (D32) is unchanged.
+    Interesting first. Revision (D32) is unchanged. (Superseded by D47.)
 
 41. **Feedback keeps the good/bad contract; accept-or-keep is a whole-turn
     undo.** The four verdicts map to `good` (Good fit) and `bad` (Partly
@@ -554,6 +602,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     "Accept and use" keeps the returned profile, "Keep the old one" restores
     the snapshot, and editing the revised text is a local `setQueryText`
     edit. Copy timestamps ("copied 6 min ago") are client state only.
+    (Superseded by D51: feedback has no UI path in the alpha. Copy
+    timestamps remain client state.)
 
 42. **No free-text composer in the beta.** The rail holds the preference
     questions, the per-field asks, the working log, errors and warnings, and
@@ -568,19 +618,418 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     UI: the card Edit form, Exclude, the marks, and "Change an answer".
     User control over the profile (PRD) is met by those, and by export. A
     scoped "ask about the open field" step (read-only, no tools) is the
-    first candidate after the pilot starts; it is backlog item 6.
+    first candidate after the pilot starts; it is in `docs/backlog.md` §5.
+    (The rail is gone, D49, and the marks and feedback with it, D50, D51;
+    no composer and the read-only drawer stand.)
 
 43. **A per-field ask writes a preference and does not re-rank.** Answering
     a field's question appends `<key>: <answer>` to the profile's other
     preferences locally, opens the drawer to show it, and flips the field's
     button to "Noted". No model call; the next discovery or revision reads
     it. The handoff's "it sharpens the ranking" is not promised in copy.
+    (The ask is now a text box under the field heading on the Roles screen,
+    with "Save answer"; the no-re-rank rule stands: D50.) (Superseded by
+    D57: the ask is no longer shown; discovery still writes it.)
+
+44. **Opus 5.5 at `medium`, and discovery recalls rather than searches
+    (2026-09-24).** Discovery took 157–252s on Opus 5 at `high` with up to
+    8 searches and 4 fetches, grew with each field key 2b.2 added, and ran
+    into both a 300s non-streamed request timeout and its 16K output cap. One
+    run per variant on the videographer fixture (§6): Opus 5.5 at `medium`
+    with the same tools took 109s and $0.40; with no web at all, 65s and
+    $0.20, with the same six fields and every fit level kept. So:
+    - The model was `claude-opus-5-5` for every call (priced $4 / $20 per
+      MTok, cache read $0.20, 5-minute cache write $5); D46 moved `queries`
+      and `revise` to Sonnet 5.5, and discovery stays on Opus 5.5. Opus 5.5
+      rejects disabled thinking and defaults to `medium`, so every call
+      still sets effort explicitly.
+    - `discover` joins `cards` and `elicit` at `medium`. `queries` and
+      `revise` stayed `high` here: short calls, not re-measured (now
+      `medium` on Sonnet 5.5: D46).
+    - **Discovery has no web tools.** The baseline is how well Opus 5.5
+      does from the reference collection plus what it already knows. A
+      larger catalogue of roles and occupations is the planned next source;
+      unbounded web search is unlikely to return. The two-call fallback
+      (which existed only because server tools and structured output might
+      not combine) and its research prompts are deleted.
+    - **Sources are catalogue URLs only.** With no search, any other URL is
+      one the model remembers, and a remembered URL can be wrong. The
+      validator removes and counts every source the catalogue does not
+      list. A field or role outside the catalogue is kept with no sources —
+      it is named from the model's knowledge — so D30's "no non-blocked
+      source → dropped" rule is retired; the card-citation rule stands.
+    - `explore.ts` keeps its web tools; no UI path reaches it (D39).
+
+    Re-check with the Phase 3 evals (3.1): if recalled fields turn out
+    wrong or generic, the catalogue comes first, then bounded search.
+
+45. **Every model call streams, has a 3-minute deadline, and stops when the
+    browser goes away (2026-09-24).** Supersedes D27's timeout arithmetic and
+    reverses D35's "a call in flight still completes".
+    - `structured()` streams like `streamText()` (`messages.stream()` +
+      `finalMessage()`), so no HTTP timeout sits under a long answer and
+      the SDK can no longer silently restart one at 300s. Both shapes share
+      a 32K output cap.
+    - `CALL_TIMEOUT_MS = 180_000` bounds one logical call — every attempt,
+      retry and `pause_turn` continuation — through one `AbortSignal`;
+      past it the call fails with `LlmTimeoutError` and the user sees a
+      fixed sentence. Measured calls run 15–110s. `REQUEST_TIMEOUT_MS`
+      equals it, and `maxDuration` stays 800s because a turn makes a few
+      sequential calls.
+    - `CallRequest.signal` aborts a call (`LlmCancelledError`). The turn
+      route fires it when the response stream is cancelled or the request's
+      own signal aborts; `runTurn` wraps each step's `Llm` in `withSignal`,
+      so the step modules pass it on without knowing about it. Leaving the
+      page mid-discovery no longer pays for the whole call.
+    - An aborted call still writes its one usage row (D21). The stream's
+      `message_start` gives input and cache tokens, and `message_delta` the
+      running output count; output tokens generated after the last delta
+      are not reported, so an aborted row undercounts output. A call aborted
+      before any response started writes no row.
+
+46. **Model per step: `queries` and `revise` on Sonnet 5.5 at `medium`
+    (2026-11-18).** (Superseded by D52.) Decided after the first browser run. Writing one search
+    string per role is short, constrained work, and Sonnet 5.5 is $2 / $10
+    per MTok against Opus 5.5's $4 / $20. Narrows D44's "Opus 5.5 for every
+    call"; discovery on Opus 5.5 at `medium` with no web tools stands.
+    - `MODEL` becomes `MODEL_BY_STEP` in `llm.ts`: `queries` and `revise` →
+      `claude-sonnet-5-5`; `cards`, `elicit`, `discover` and `explore` stay
+      `claude-opus-5-5`. Change the table, not the call sites.
+    - `EFFORT_BY_STEP.queries` and `.revise` go from `high` to `medium`.
+      Sonnet 5.5 defaults to `high` and Opus 5.5 to `medium`, so effort
+      stays explicit on every call. Adaptive thinking, structured outputs,
+      streaming, the 32K cap and the D45 deadline apply to both models.
+    - `PRICE_PER_MTOK` is keyed by model id. Sonnet 5.5: input $2, output
+      $10, cache read $0.10, 5-minute cache write $2.50. `costUsd` takes
+      the model that ran; an unpriced id throws `LlmConfigError` rather
+      than pricing a call at zero.
+    - The usage row's existing `model` column says which model ran; no
+      column is added. `pnpm smoke:llm` is now a `queries` call and fails
+      unless its row says `claude-sonnet-5-5`.
+
+47. **One LinkedIn query per selected role; the `queries` turn takes no
+    field (2026-11-18).** Decided after the first browser run (2026-11-17):
+    the person chooses roles, not fields (D50), so a search is written for
+    each role they tick; LinkedIn returned accurate results, and the other
+    two boards were not run. Supersedes D40's per-field, three-board
+    generation.
+    - A query carries a `Role` key (`- **Role:** R3`, the role it was
+      written for); `Fields` keeps that role's field.
+    - `QUERY_BOARDS` is `["linkedin"]`. Indeed and Climatebase searches are
+      out of the alpha and in `docs/backlog.md` §3; `boards.ts` keeps their
+      alert steps as data. Queries on other boards written before this
+      decision stay in the file untouched.
+    - The `queries` turn input is `{ kind: "selectedRoles" }` with no
+      payload. `generateQueries({ sessionId, profile })` makes one model
+      call for every role with `Selected: yes` across all fields; a field's
+      status is not consulted. The output schema is built per call and
+      keyed by role id, so exactly one draft comes back per role. The
+      message carries the person's expertise and climate interests and,
+      per field, its sector, summary, fit, chips, the answer to its ask and
+      the searches already judged in it.
+    - Each role's first untried query is replaced in place (same `Q` id),
+      further untried ones for that role are retired as superseded, judged
+      queries are never touched, and queries of roles no longer ticked are
+      left alone. A draft that is empty or repeats a judged query fails the
+      run rather than leaving a role without a search.
+    - `workspace.ts`: `canWriteQueries(profile)` (at least one selected
+      role), `selectedRoles`, `liveQueryForRole`,
+      `buildSelectedRolesTurnInput`. `pnpm try:queries <profile.md>` takes
+      no field id.
+    - `revise` stays dispatchable and tested, restricted to LinkedIn; a
+      revised query keeps the role of the one it replaces (D51).
+
+48. **Seniority is out of the questions and out of role titles; skills are
+    areas of expertise (2026-11-18).** The first run showed role titles
+    headed by a rank ("Director of …") that a career switcher is unlikely
+    to be hired into, level words that narrow a search, and skills written
+    as tool names or STAR verbs that read as noise
+    (`docs/ux-review-2026-11-17.md` §2, §3). Narrows D36 and D38.
+    - `ELICIT_ORDER` is `climateInterests`, `retrainingAppetite`. Both are
+      answered by pills alone; no question invites typed text. `seniority`
+      stays a `PreferenceKey` on the profile and `inferPreferences` may
+      still fill it from the cards, but nothing reads it. (Superseded by
+      D54: one optional, multi-select interest question; retraining is no
+      longer asked.)
+    - Discovery asks for plain occupations. A post-check
+      (`stripLevelWords` in `discover.ts`) strips level modifiers from role
+      titles, dedupes roles within a field after stripping, and drops a
+      role whose title is headed by a rank (Director of…, Head of…, VP…),
+      counted in `dropped.rolesLevelTitled`. The discover prompt says
+      "companies", not "employers"; `Role.companies` is unchanged.
+    - Query text carries no level words either (`queries.ts` uses the
+      level lists `discover.ts` owns); LinkedIn's own experience-level
+      filter does that job.
+    - Card skills are areas of expertise: short domain-level phrases, at
+      most six words, never tool names or STAR verbs. Highlights shows
+      them first, as "Your expertise". (Superseded by D53: headed
+      "Skills", accepted unless removed.)
+    - Seniority as an explicit choice on the Roles screen is in
+      `docs/backlog.md` §1.
+
+49. **One column, no rail; the profile drawer is a readable summary
+    (2026-11-18).** The first run found that the rail held the questions
+    that unlocked progress while the button they unlocked sat about
+    1,900px down the main column, and that the rail was mostly empty after
+    Highlights (`docs/ux-review-2026-11-17.md` §1). The raw `profile.md`
+    in the drawer read as a developer tool (§3). Supersedes D37's rail and
+    D42's rail contents; D42's no-composer and read-only-drawer rules
+    stand.
+    - `Rail.tsx` is deleted. The header carries the nav (1 Highlights,
+      2 Roles, 3 Searches), "Your profile" and "Start over" (confirm, then
+      clear this browser's copy, then first run). (Superseded by D55: four
+      unnumbered items, and "Start over" only on the Resume page.)
+    - Highlights holds the expertise block, collapsed cards with S/A/R
+      behind "Details", the two questions inline (superseded by D54: one
+      optional question), and one "Find climate roles" button. Its label is `FIND_ROLES_PILL` in `screens.ts`, which
+      `turn.ts` re-exports as `GO_PILL`.
+    - Pending, errors and parser warnings render in the main column. The
+      assistant message a turn returns is no longer shown.
+    - Every input has an `InfoTip` saying what it changes. (Superseded by
+      D57: the info icons are deleted.)
+    - The drawer renders `profileSummary()` from `profile-summary.ts`:
+      plain labels, no ids or schema keys. Export (raw `profile.md` and the
+      session JSON), import and the raw file sit behind an "Export"
+      disclosure.
+    - Copy rule from the review: if the user cannot see it elsewhere on
+      screen, the interface does not refer to it.
+
+50. **Roles, not fields, are the unit of choice; fields are headings with
+    no marking (2026-11-18).** In the first run the Interesting / Unsure /
+    Not for me row rendered broken on every card and had no visible
+    effect; the choice that produced searches was ticking roles
+    (`docs/ux-review-2026-11-17.md` §2, §4). Supersedes D39's expanded
+    field card and D40's field marks; D43 stands.
+    - `RoleBoard.tsx` and `RoleGroup.tsx` replace `FieldBoard.tsx` and
+      `FieldCard.tsx`. Each field is a heading (name, sector, fit, summary,
+      "Draws on: <card titles>", uncertainty, and the optional ask as a
+      short text box saved with `addOtherPreference`, no re-rank) with its
+      roles beneath as rows with a checkbox. (Superseded by D57:
+      no sector line and no ask; "Based on" replaces "Draws on".)
+    - Card ids in a role's why are rendered as card titles
+      (`citationsToTitles` in `screens.ts`); prompts still cite by id.
+    - No marks, no rank numbers, no per-field write button. One sticky
+      button, "Write LinkedIn searches for N roles".
+    - Field `Status` and its values stay in the `profile.md` contract;
+      nothing in the UI writes them now.
+    - **Open, to revisit:** how the user tells us whether a field interests
+      them at all, now that the marking row is gone (`docs/backlog.md` §2).
+
+51. **Query feedback and revision have no UI path in the alpha
+    (2026-11-18).** In the first run, rating a search meant choosing twice
+    with different words, and nothing told a revised query apart from the
+    old one (`docs/ux-review-2026-11-17.md` §4, §5). Getting that right is
+    its own design problem, so the alpha ends when the person has run the
+    LinkedIn searches. Supersedes D41.
+    - `Feedback.tsx` and the verdict, revision and snapshot helpers in
+      `screens.ts` are deleted; `View` has no feedback panel.
+    - `revise` is kept on the server like `explore` (D39): dispatchable,
+      tested, restricted to LinkedIn, and reached only by
+      `pnpm try:queries --revise`. The `feedback` turn input and
+      `QueryFeedbackSchema` are unchanged.
+    - The feedback loop (what is rated, where, what a rating may change,
+      how a revision is shown) is its own later milestone,
+      `docs/backlog.md` §4.
+
+52. **Searches (`queries`, `revise`) run on Opus 5.5 at `medium` again
+    (2026-11-20).** Reverses D46. In the 2026-11-19 browser run the
+    searches Sonnet 5.5 wrote paired a role's title with generic climate
+    terms ("green jobs", "climate careers") instead of the field's own
+    vocabulary, so they were too general to be worth the saving.
+    - `MODEL_BY_STEP.queries` and `.revise` → `claude-opus-5-5`; all six
+      steps now run on Opus 5.5. `EFFORT_BY_STEP` is unchanged: `explore`
+      `high`, every other step `medium`, always sent explicitly.
+    - The `ModelId` union and the Sonnet 5.5 row in `PRICE_PER_MTOK` are
+      kept, so a later switch is a one-line table change. `costUsd` still
+      prices each call by the model that ran.
+    - `pnpm smoke:llm` stays a `queries` call and now fails unless its row
+      says `claude-opus-5-5`.
+
+53. **Skills are accepted unless removed (2026-11-20).** Decided after the
+    2026-11-19 browser walkthrough: asking the person to keep or remove
+    each inferred skill read as doubt about their own experience, and an
+    untouched skill was silently dropped. Before this, an inferred skill
+    the person never confirmed reached neither discovery nor the search
+    prompts, so this changes what both see.
+    - `activeSkills(p)` in `profile.ts` (`confirmed` then `inferred`,
+      deduplicated case-insensitively, minus `excluded`) is the one list
+      prompts and screens read: `renderPreferencesForDiscover`, the
+      `# Skills` block and `Areas of expertise` line in `queries.ts`, the
+      Highlights screen and the drawer summary.
+    - The three buckets stay in `profile.md`; no format change and no
+      fixture regeneration.
+    - `confirmSkill` (`cards.ts`) and `confirmProfileSkill` (`workspace.ts`)
+      are deleted; `restoreSkill` / `restoreProfileSkill` are added so a
+      removal can be undone.
+    - Highlights shows one "Skills" row under the note "Inferred from your
+      resume.", each tile with a single ×; removed skills follow as muted,
+      struck tiles with a + to add them back. No ✓ and no info icon;
+      `INFO_TIPS.removeSkill` is deleted. The drawer lists one skills
+      section with removed ones struck.
+    - The copy follows `docs/design-language.md` principle 6 (trust the
+      inference; the reader removes, never confirms) and principle 7
+      ("Skills", not "Your expertise").
+
+54. **One optional, multi-select interest question; no retraining question
+    (2026-11-20).** Decided after the 2026-11-19 browser walkthrough: two
+    required questions held the button back, the retraining pills asked
+    the person to rate themselves before seeing a single role, and the
+    interest pills came from the catalogue's coarse `sector_group`s with a
+    "Not sure yet" escape. Supersedes the two pill-only questions of D48.
+    - The Highlights screen asks one question, "Which area of climate work
+      interests you most?" (`QUESTION_LABELS.climateInterests` in
+      `screens.ts`), under the note `INTEREST_NOTE`, with six fixed
+      `aria-pressed` toggle pills: `CLIMATE_AREAS` in `elicit.ts`, label and
+      value the same. Any number may be picked; there is no "Not sure yet"
+      pill, because picking nothing means "rank on fit alone".
+      `toggleClimateInterest` (pure, case-insensitive) writes a pick
+      locally with no turn; removing the last one deletes the preference.
+      `ELICIT_ORDER` is `["climateInterests"]`.
+    - `findRolesGate` needs only one active highlight; its enabled note is
+      "You can come back and change any of this." (principle 9 in
+      `docs/design-language.md`: reversibility, not duration).
+    - Interests rank, never filter (design-language principle 2).
+      Discovery rule 5 as shipped defines "comparable" fit as fit level
+      `strong` or `some`: every field in a named area at those levels ranks
+      above every field outside; only a `stretch` field in a named area
+      gives way. A named area never removes a field, and the model judges
+      which area a field belongs to from the work, not from the
+      catalogue's coarser `sector_group`.
+    - Live check (2026-11-20, videographer fixture,
+      `--interest="Energy,Carbon Removal"`, $0.24, 80s): six fields, the
+      four in the picked areas first, the two outside fields still listed.
+      A first run with the looser wording interleaved outside fields, which
+      is why "comparable" was defined.
+    - The retraining question is gone. `retrainingAppetite` stays a
+      preference key that discovery reads; it is filled from the notes
+      box, and `inferPreferences` may still infer it from the cards at high
+      confidence. `inferPreferences` no longer writes climate interests, so
+      a pick is always the person's own, and it makes no call when only
+      climate interests are missing.
+    - Discovery's `summary` must not repeat or paraphrase the field's name:
+      it is shown directly under it (2b.18 keeps the summary on the Roles
+      screen).
+    - `try:discover` takes `--interest=<comma-separated areas>`;
+      `--retraining` is gone. `listSectorGroups` is deleted, and the cards
+      turn no longer carries sector groups to the browser
+      (`QuestionContext`, `QuestionView.answer`, `answerRows`,
+      `INFO_TIPS.answer` are deleted from `screens.ts`; `interestPills`
+      renders the six pills with their pressed state).
+
+55. **A four-item nav and a Resume page that holds "Start over"
+    (2026-11-20).** From the 2026-11-19 browser walkthrough.
+    - The nav is Resume · Highlights · Roles · Searches (`NAV_STEPS`,
+      `NAV_LABELS` in `screens.ts`): no numbers, always shown, steps not yet
+      reached disabled, every reached step a link back. This fixes the
+      Highlights item, which landed on Roles once fields existed. The
+      `firstRun` screen is renamed `resume`.
+    - The Resume page (`ResumeScreen.tsx`) has two states, chosen by
+      `resumeView` in `screens.ts`. Before any card: the entry form, both
+      boxes starting from `profile.inputs` (non-empty only when an earlier
+      Start failed), each with one visible label and no placeholder. Once
+      cards exist: the stored resume and notes read-only, or "This profile
+      was saved without its resume text." for a profile saved before D56;
+      editing the resume and reading it again is not built
+      (`docs/backlog.md` §1).
+    - "Start over" lives only on the Resume page, behind a native `<dialog>`
+      (`StartOverDialog.tsx`, `showModal()`, no `window.confirm`) that
+      offers "Download profile" first: the same JSON the drawer's Export
+      writes and Import reads back (`saveSessionExport` in
+      `src/components/shell/save-file.ts`).
+    - The green mark is removed from the header. Re-running discovery from
+      Highlights updates the roles; the note under the button says so.
+
+56. **What the person types is kept in the profile (2026-11-20).** The
+    user's decision: inputs are stored in the profile alongside selections,
+    "so the user can always see what they've input and it lets the user
+    revisit prior pages". This reverses the earlier stance that the pasted
+    text is not kept.
+    - `## Inputs` is the eighth section, between `## Queries` and
+      `## Session Notes`, with `### Resume` and `### Notes`. Every line is
+      written as a `> ` quote (a blank line as a bare `>`), so pasted
+      markdown is never read as profile structure; reading strips exactly
+      one `>` and one space. Unknown `###` blocks under it survive a round
+      trip, so a later input needs no format change.
+    - Normalisation (`normalizeInputText`): CRLF and CR become LF, trailing
+      whitespace per line and outer blank lines are dropped.
+    - The browser writes it when Start is pressed (`recordStartInputs` in
+      `workspace.ts`), before the turn is sent, and sends the turn from
+      that recorded state, so a failed read keeps what was typed. Nothing
+      is recorded when the text exceeds the message cap. The cards step
+      still reads its text from the message.
+    - No prompt reads `inputs`: the raw resume carries contact details, and
+      the cards are what every later step reasons from.
+      `serializeProfileForPrompt` omits the section, and marker tests pin
+      all five prompts (elicit, discover, explore, queries, revise).
+    - It stays in `localStorage` with the rest of the profile and travels in
+      each turn's request body; the server remains stateless and logs no
+      bodies.
+
+57. **Highlights, Roles and Searches say each thing once (2026-11-20).**
+    From the 2026-11-19 walkthrough, and the user's answer that the field
+    summary stays. Applies `docs/design-language.md` principles 3 ("say a
+    thing once per screen"), 10 ("evidence behind a click"), 11 ("do not
+    interrupt a choice with a question") and 12 ("simplify first"); mostly
+    deletions. Supersedes the inline ask of D43 and D50, D50's "Draws on",
+    and D49's info tips.
+    - **Roles:** under a field title only the fit label, the move label,
+      "Based on" and the two-sentence summary remain, then "Not sure yet:".
+      The sector line restated the title and went. The follow-up question
+      (question, textarea, "Save answer", "Change") interrupted a
+      selection screen and went; discovery still writes `Sector` and `Ask`
+      to the profile and `addOtherPreference` stays in `profile.ts`, with
+      their fate in `docs/backlog.md` §2, §4. The summary stays because it
+      says what the work is and why the person fits, which the title does
+      not (discovery is told not to restate the name, D54).
+    - **"Based on" replaces "Draws on":** a disclosure button
+      (`aria-expanded`) on the fit row; expanded, one line per cited
+      highlight, in citation order and deduplicated by card: its title and,
+      where the field has an evidence line for that card, that sentence
+      with card ids rendered as titles. `RoleGroupView.basedOn` in
+      `screens.ts`; `ask`, `askAnswer` and the `onAnswerAsk` prop chain
+      are deleted.
+    - **Footer button:** "Write LinkedIn searches" at zero, with "Tick at
+      least one role first." beside it; "… for N roles" otherwise, with no
+      note, so "N roles ticked" no longer repeats the button's count. Same
+      in the Searches screen's "no search yet" block.
+    - **Highlights:** the lead says what highlights are for ("Every
+      suggested field and role is tied to at least one highlight. Skills
+      sum up what you know across them and shape your searches."); the
+      "N of M highlights used to match roles" note is gone. Years are off
+      the cards, the editor and the drawer summary; `Years` stays on the
+      card in `profile.md`, the cards prompt still fills it and an edit
+      keeps it.
+    - **Searches:** the "Get new matches by email" disclosure is off the
+      search card; `ALERT_STEPS` stays in `boards.ts` as data.
+    - **Info icons** are deleted outright (`InfoTip.tsx`, `INFO_TIPS` and
+      their CSS): each one repeated the page or the button it sat on.
+
+58. **The latest discovery run is the person's list (2026-11-21).** A
+    re-run used to upsert only what it returned, so fields and roles from
+    earlier runs stayed on the Roles screen in their old order, ticks
+    included, and "Write LinkedIn searches" still wrote a search for a role
+    resting on a highlight the person had since excluded (Gate 2b code
+    review). Since D50 no screen can remove a field, so nothing else could
+    clear them.
+    - `applyDiscovery` moves the fields a run returns into that run's rank
+      order and marks every field and role it did not return
+      `- **Dropped:** yes` (`DROPPED_KEY`, `isDropped` in `profile.ts`),
+      un-ticking the role. A field or role the next run returns again loses
+      the mark. Ids are kept, never deleted, so queries that cite them still
+      resolve and no id is reused.
+    - `roleGroups` and `selectedRoles` leave dropped items out, so the Roles
+      and Searches screens, the drawer and query writing all see the latest
+      run only. A run that writes no field leaves the profile as it was.
+    - Revision (`queries.ts`) now reads every field that is not rejected:
+      with no screen marking fields, discovered ones stay `candidate`, and
+      the old accepted-or-unsure filter left revision with no field to add a
+      search for.
 
 ---
 
 ## 6. Verification log
 
-What each gate ran and found, in date order. Gate 3 has not run.
+What each gate ran and found, in date order. Gates 2b and 3 have not run.
 
 ### Phase 1 and Gate 1
 
@@ -674,3 +1123,176 @@ Anthropic's infrastructure, not ours, so it is not SSRF against this app).
 
 The user's own Gate 2 run — the browser pass over the React components and two
 real job-board searches — is still outstanding.
+
+### Phase 2b (pre-gate)
+
+**Phase 2b status (2026-09-20).** All six steps committed on `phase-2b`
+(2b.1 by the orchestrator; 2b.2, 2b.3 and 2b.4 in parallel worktrees, merged
+with one trivial conflict in `turn.test.ts`; 2b.5 and 2b.6 sequential). The
+old tab components are deleted; `src/components/shell/` and `screens.ts`
+replace them. `pnpm test` (346), `pnpm lint`, `pnpm typecheck` and
+`pnpm build` pass.
+
+**Live loop (2026-09-20, step 2b.6).** Run through the try scripts against
+the local stack, videographer resume plus a `Notes:` block:
+
+| Stage | Result | Cost | Time |
+|---|---|---|---|
+| `try:cards` | 4 cards with `Years`; notes became stated seniority, retraining appetite and climate interests | $0.05 | 14s |
+| `try:discover` | 6 fields, 16 roles; every field has fit level, sector, summary, chips, one evidence line per cited card and an ask; 0 dropped | $0.72 | 252s |
+| `try:queries F1` (two roles ticked) | exactly 3 queries, one per board, `Fields: F1`; scripted bad-fit revision replaced the judged board's query | $0.11 | 47s |
+
+About $0.90 for the loop. Gate 2b itself — the user's browser run,
+`/code-review` and `/security-review` — has not run; it must run in a
+separate session (AGENTS.md).
+
+**Discovery latency (2026-09-24, D44).** The user's browser run of
+discovery never finished: no usage row, no server error. It was one long
+non-streamed call, so it met the 300s request timeout and its silent retry.
+Timed on the videographer fixture, one run per variant (~$1.64 total):
+
+| Variant | Time | Cost | Fields / roles | URLs not from the catalogue |
+|---|---|---|---|---|
+| Opus 5, `high`, 8 searches + 4 fetches (before) | 226s | $0.69 | 6 / 17 | 14 |
+| Opus 5.5, `medium`, same tools | 109s | $0.40 | 6 / 13 | 13 |
+| Opus 5.5, `medium`, 3 searches, no fetch | 97s | $0.36 | 6 / 14 | 0 |
+| Opus 5.5, `medium`, no web (shipped) | 65s | $0.20 | 6 / 13 | 1 (recalled) |
+
+None dropped a field and every field kept its fit level. Web fetch was never
+used. One run each, so the numbers are rough; earlier Opus 5 `high` runs
+ranged from 157s to 252s.
+
+
+### Phase 2b revision: the 2b.13 end-to-end run (2026-11-18)
+
+The revised loop (D46–D51) was run live through the try scripts on two
+inputs: the user's own resume from `userdata/` (never committed; this repo is
+public, so only counts, costs and times are recorded for it) and the
+videographer fixture. Each
+pass was `try:cards`, then `try:discover` with the two pill answers written
+by `applyPillAnswer` (new `--interest` and `--retraining` options), then
+`try:queries --tick` on three roles in two fields (new option; it ticks with
+`setRoleSelected`, as the Roles screen does).
+
+| Pass | Step | Result | Cost | Time |
+|---|---|---|---|---|
+| Own resume | `try:cards` | 5 cards, each with situation, actions, results and areas of expertise | $0.069 | 21s |
+| | `try:discover` (interest "not sure yet", no retraining) | 6 fields, 12 roles, nothing dropped, no level word in a title | $0.230 | 96s |
+| | `try:queries --tick R3,R4,R7` | 3 LinkedIn queries, one per ticked role | $0.012 | 4s |
+| Videographer | `try:cards` | 3 cards, same checks | $0.048 | 14s |
+| | `try:discover` (interest nature/food/finance/policy/software, a short course) | 6 fields, 13 roles, nothing dropped, no level word in a title | $0.198 | 62s |
+| | `try:queries --tick R1,R3,R4` | 3 LinkedIn queries, one per ticked role | $0.011 | 4s |
+
+A session costs about $0.31 and two minutes of model time on the own resume
+and about $0.26 and 80 seconds on the fixture; discovery is three quarters of
+both. The whole run cost $0.59, including the one repeated `queries` stage.
+One run per stage, so the numbers are rough.
+
+The fixture's queries from the committed prompt (the own-resume queries were
+read and judged sound, and are not recorded):
+
+- Video and Social Media Producer: `("video producer" OR "social media producer" OR "social video producer") AND ("climate change" OR "climate solutions" OR "climate news" OR "environmental journalism")`
+- Documentary Producer: `("documentary producer" OR "series producer" OR "impact producer") AND ("climate change" OR "environmental justice" OR "climate solutions" OR "energy transition")`
+- Multimedia Producer: `("multimedia producer" OR "video producer" OR "digital content producer") AND ("land trust" OR conservation OR watershed OR "land conservation")`
+
+What the run showed, and what changed:
+
+- **Two fixture queries had no climate subject.** On the first `queries`
+  run, both roles under "Climate communications and media" got a field group
+  made of medium words only (newsroom, journalism, explainer; documentary,
+  broadcast), so the search would have returned the same job at any employer.
+  The prompt bans "climate" as a lone field term and gave the model nothing
+  to use when climate is the field's own subject. Step 2 of
+  `QUERIES_SYSTEM_PROMPT` now says a field term names what the employer works
+  on, never the job's craft or medium, and that such a field takes specific
+  phrases ("climate change", "energy transition"). The stage was rerun once
+  on both inputs; the three queries above are from that rerun. The own-resume
+  queries were sound both times.
+- **`try:discover`'s evidence check was stricter than the product.** An
+  earlier run on the own resume failed on "F4 cites C2 without an evidence
+  line". It did not recur in either pass. `validateOutput` keeps such a field
+  and no screen renders evidence lines, so the script now prints it as a
+  warning instead of failing.
+- **Tidied in the same step, not found by the run:** the two question texts
+  read as form questions; `queries.ts` takes its level words from
+  `discover.ts` (`levelPhrasesIn` replaces `levelWordsIn`, and "intern" is no
+  longer on the list); the stored turn messages name the Roles and Searches
+  screens and count roles dropped for a rank title.
+
+No query carried a level word and no title tripped the level check in either
+pass. The UI steps 2b.11–2b.12 were verified by unit tests, lint, typecheck
+and build only; the browser check is left to gate G2b.4.
+
+### Phase 2b revision: the 2b.19 end-to-end run (2026-11-20)
+
+The loop as it stands after 2b.14–2b.18 (D52–D57) was run live through the
+try scripts on the same two inputs as 2b.13: the `userdata/` resume (never
+committed; only counts, costs and times are recorded for it) and the
+videographer fixture. Each pass was `try:cards`, then `try:discover` with two
+interest areas written by `--interest` (D54), then `try:queries --tick` on
+four roles in four fields. Every step ran on `claude-opus-5-5` at `medium`
+effort (`MODEL_BY_STEP`, `EFFORT_BY_STEP`; D52 for `queries`). All six
+scripts exited 0 on the first model call; nothing was rerun and no script
+or prompt was changed.
+
+| Pass | Step | Result | Tokens (in / cache write / out) | Cost | Time |
+|---|---|---|---|---|---|
+| `userdata/` resume | `try:cards` | 5 cards, 20 inferred skills | 1,573 / 3,053 / 2,282 | $0.0672 | 19.4s |
+| | `try:discover --interest="Energy,Transportation"` | 6 fields, 12 roles, nothing dropped, no level word in a title | 15,616 / 3,452 / 8,803 | $0.2558 | 79.8s |
+| | `try:queries --tick` (4 roles, 4 fields) | 4 LinkedIn queries, one per ticked role | 2,015 / 2,171 / 581 | $0.0305 | 8.4s |
+| | **Total** | | | **$0.3535** | **107.6s** |
+| Videographer | `try:cards` | 3 cards, 16 inferred skills | 1,014 / 3,053 / 1,232 | $0.0440 | 11.9s |
+| | `try:discover --interest="Food & Agriculture,Energy"` | 6 fields, 14 roles, nothing dropped, no level word in a title | 14,711 / 3,452 / 6,525 | $0.2066 | 61.6s |
+| | `try:queries --tick R1,R4,R10,R12` | 4 LinkedIn queries, one per ticked role | 1,839 / 2,171 / 896 | $0.0361 | 10.6s |
+| | **Total** | | | **$0.2867** | **84.1s** |
+
+The whole run cost $0.64. No call read from the cache (each stage ran once
+per input, in parallel across the two inputs). Discovery is still about
+three quarters of a session. A `queries` call on Opus 5.5 costs about three
+times what it did on Sonnet 5.5 in 2b.13 ($0.031–0.036 against
+$0.011–0.012), which is two to three cents a session. One run per stage, so
+the numbers are rough.
+
+The checks, on both inputs:
+
+- **Inputs survive (D56).** The cards output has `## Inputs` with a
+  `### Resume` block, and the section is byte-identical (same hash) in the
+  cards, discover and queries outputs.
+- **Skills (D53).** The `Inferred` skills line is non-empty in both cards
+  outputs. That the prompts read `activeSkills` is covered by unit tests,
+  not by this run.
+- **Interest order (D54).** Fields in the picked areas come first and a
+  field outside them is still listed. Fixture: regenerative agriculture and
+  agtech (strong), clean energy brand and content video (strong) and
+  alternative proteins (some) rank above land, water and conservation
+  nonprofit storytelling (strong), climate communications and media
+  (strong) and climate policy and advocacy (some). `userdata/` resume: five
+  fields in the picked areas, then one outside. A `some` field inside a
+  picked area ranks above a `strong` field outside it, as D54 says.
+- **Summaries (D54).** All twelve `Summary` lines open with what the person
+  would do ("You would film growers and agronomists on working farms…");
+  none repeats or paraphrases its field's name.
+- **Level words.** No title tripped the level check and no query phrase
+  carried a level word.
+- **One warning, not a failure:** on the `userdata/` resume, discovery wrote
+  one field whose fit text cites a card with no evidence line of its own,
+  the same case 2b.13 turned into a warning.
+
+**Search quality: all eight queries pass.** Every query pairs the role's
+title variants with terms that name what employers in its field work on;
+none has a climate half made only of generic terms ("green jobs", "climate
+careers", "sustainability"), the Sonnet 5.5 failure that D52 reversed. The
+four `userdata/` queries were read and judged the same way and are not
+recorded. The fixture's four:
+
+- Video Producer, regenerative agriculture and agtech: `("video producer" OR videographer OR "content producer") AND ("regenerative agriculture" OR agtech OR "soil health" OR farmers)`
+- Video Content Creator, clean energy brand and content video: `("video content creator" OR "content creator" OR "social video producer") AND (solar OR "heat pumps" OR "home energy" OR "energy storage")`
+- Multimedia Storyteller, land, water and conservation nonprofit storytelling: `("multimedia storyteller" OR "multimedia producer" OR "digital storyteller") AND (conservation OR "land trust" OR watershed OR "river restoration")`
+- Documentary Producer, climate communications and media: `("documentary producer" OR "documentary filmmaker" OR "video journalist") AND ("climate change" OR "climate solutions" OR "environmental journalism")`
+
+The last is the least specific of the eight. Climate is that field's own
+subject, so its terms are the subject phrases the 2b.13 prompt change asks
+for, and it passes; it is the query to watch if the check is tightened.
+Queries were judged by reading them: no job board was opened or searched.
+The UI steps 2b.15–2b.18 were not exercised by this run; the try scripts
+cover the model stages and the profile, not the screens.

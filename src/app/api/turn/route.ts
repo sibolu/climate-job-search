@@ -23,9 +23,9 @@ const HEARTBEAT_MS = 15_000;
 
 /**
  * Thrown out of the progress callback once the client is gone, so a multi-call
- * step stops before it starts the next model call. A request already in flight
- * still runs to completion — that is `llm.ts`'s deliberate choice, so the
- * usage row stays exact (see its `streamText` comment).
+ * step stops before it starts the next model call. A model call already in
+ * flight is stopped by the abort signal `runTurn` passes to `llm.ts`
+ * (technical-plan.md D45).
  */
 class TurnDisconnectedError extends Error {
   constructor() {
@@ -50,6 +50,14 @@ export async function POST(request: Request): Promise<Response> {
   // write checks it: enqueueing on a closed controller throws, and the
   // heartbeat's throw would land in a timer callback with nobody to catch it.
   let closed = false;
+  // Fires when the browser goes away, by either route Next reports it: the
+  // response stream is cancelled, or the request's own signal aborts.
+  const abort = new AbortController();
+  const disconnect = () => {
+    closed = true;
+    abort.abort();
+  };
+  request.signal.addEventListener("abort", disconnect, { once: true });
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const write = (event: TurnEvent) => {
@@ -58,19 +66,27 @@ export async function POST(request: Request): Promise<Response> {
       };
       const heartbeat = setInterval(() => write({ type: "delta", text: "" }), HEARTBEAT_MS);
       try {
-        const response = await runTurn(turn, undefined, (text) => {
-          if (closed) throw new TurnDisconnectedError();
-          write({ type: "delta", text: `${text}\n` });
-        });
+        const response = await runTurn(
+          turn,
+          undefined,
+          (text) => {
+            if (closed) throw new TurnDisconnectedError();
+            write({ type: "delta", text: `${text}\n` });
+          },
+          abort.signal,
+        );
         write({ type: "final", response });
       } catch (error) {
-        if (!(error instanceof TurnDisconnectedError)) {
+        // Nobody is listening once the client is gone; the aborted call's
+        // usage row is already written.
+        if (!(error instanceof TurnDisconnectedError) && !abort.signal.aborted) {
           // Class name and step only: never the message, which could quote input.
           console.warn(`turn step=${turn.step} failed: ${error instanceof Error ? error.name : typeof error}`);
           write({ type: "error", message: turnErrorMessage(error) });
         }
       } finally {
         clearInterval(heartbeat);
+        request.signal.removeEventListener("abort", disconnect);
         if (!closed) {
           closed = true;
           controller.close();
@@ -78,7 +94,7 @@ export async function POST(request: Request): Promise<Response> {
       }
     },
     cancel() {
-      closed = true;
+      disconnect();
     },
   });
 

@@ -72,15 +72,6 @@ export async function getField(id: string): Promise<ClimateFieldRow | null> {
   return result.data;
 }
 
-/** The distinct `sector_group` values, sorted. Drives the "browse industries" chips. */
-export async function listSectorGroups(): Promise<string[]> {
-  const rows = unwrap(
-    "listSectorGroups",
-    await anonClient().from("climate_fields").select("sector_group"),
-  );
-  return [...new Set(rows.map((row) => row.sector_group))].sort((a, b) => a.localeCompare(b));
-}
-
 // ---------------------------------------------------------------------------
 // Roles and example posts
 // ---------------------------------------------------------------------------

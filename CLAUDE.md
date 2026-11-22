@@ -12,9 +12,15 @@ environment, the hard constraints, and the rules each module enforces.
   comments cite them as `technical-plan.md D31`. Append a new decision there
   in the same commit as the change; never renumber. Do not rely on Claude's
   private memory for anything another contributor would need.
-- **Keep `docs/data-flow.md` current.** One high-level flowchart of what
-  talks to what. Update it only when a step, a data store or a source of
-  ground truth is added or removed. No implementation details.
+- **Read `docs/design-language.md` before changing anything in
+  `src/components/shell/` or any user-facing string.** It holds the copy and
+  layout principles with the examples that produced them; add a principle in
+  the same commit as the decision that produced it.
+- **Keep `docs/data-flow.html` current.** Two flows (paste → fields and
+  roles, ticked roles → LinkedIn searches): one box per Anthropic API call with links to its
+  prompt, and which `profile.md` sections each call or click reads and
+  writes. Update it when an API call, a profile-writing click, a data store
+  or a source of ground truth is added or removed, or a prompt moves.
 - **Prompts** live as plain template strings in `src/lib/*.ts`, one module
   each, so they can be edited without touching React.
 - **Never read a whole file** (`profile.ts` is 49KB, `docs/technical-plan.md`
@@ -35,7 +41,8 @@ environment, the hard constraints, and the rules each module enforces.
 - **User control over the profile.** Users can correct inferred skills and
   exclude experiences. One person's information is never used as an example
   for another without consent.
-- **No user data stored server-side.** Route handlers are stateless. Profile,
+- **No user data stored server-side.** Route handlers are stateless. The
+  profile (the pasted resume and notes included, kept under `## Inputs`),
   chat, and query feedback live in the browser's `localStorage` and are resent
   each turn. The only server-side write is the anonymous `llm_usage` row
   (random session id, model, tokens, cost, duration, step name — no content,
@@ -61,10 +68,10 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm seed` | `data/*.yaml` → Supabase reference tables (mirror, service role) |
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
-| `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md, non-zero if a card lacks S/A/R or a skill |
-| `pnpm try:discover <profile.md> [out.md]` | Stage 1.4 live: profile + reference data + web search → ranked fields and roles; non-zero if any lacks a card citation or a source |
+| `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md (the pasted text kept under `## Inputs`, D56), non-zero if a card lacks S/A/R or an area of expertise, or any expertise phrase runs over six words (D48) |
+| `pnpm try:discover <profile.md> [out.md] [--interest=<area>[,<area>…]]` | Stage 1.4 live: profile + reference data, no web (D44) → ranked fields and roles; non-zero if any lacks a card citation or cites a URL the catalogue does not list, or a role title carries a level word (D48); a cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
-| `pnpm try:queries <profile.md> [out.md]` | Stage 2.3 live: generate queries, then revise from a scripted "bad fit" feedback |
+| `pnpm try:queries <profile.md> [out.md] [--tick R1,R4] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--tick` ticks those roles first, as the Roles screen would; `--revise` then revises from a scripted "bad fit" feedback |
 
 `pnpm test`, `pnpm lint`, and `pnpm build` must all pass before a step is
 committed. `next typegen` runs first in `typecheck` because Next generates the
@@ -74,6 +81,43 @@ Unit tests cover parsers and pure logic only (docs/technical-plan.md §1). Promp
 covered by the evals in `evals/` (Phase 3), not by unit tests. Test files are
 `src/**/*.test.ts`; `vitest.config.ts` excludes `.next/` so build output is
 never collected.
+
+## Looking at the UI (Playwright MCP)
+
+Agents can see the running app through the Playwright MCP server in a
+throwaway browser. **Use it only when the user explicitly asks** (AGENTS.md,
+"Context and turn budget"). Each contributor registers it once, local scope
+(private, not committed). Run it from the repo root so `$PWD` expands to
+the repo:
+
+```bash
+claude mcp add playwright --scope local -- \
+  npx -y @playwright/mcp@latest --isolated --headless \
+  --allowed-origins "http://localhost:3000" \
+  --output-dir "$PWD/.playwright-mcp"
+```
+
+- `--isolated` is required: the profile lives in memory and is discarded,
+  so no cookies or sign-ins persist. Without it the profile is saved under
+  `~/Library/Caches/ms-playwright/`. Never drive the user's own Chrome
+  (Claude in Chrome) for this app.
+- `--allowed-origins` keeps the browser on the dev server. Playwright says it
+  is not a security boundary; the isolation comes from `--isolated`.
+- `--output-dir` keeps every artifact (screenshots, snapshots, console logs)
+  in `.playwright-mcp/` in the repo, which is gitignored: local only, never
+  scattered outside the repo. Pass screenshot `filename`s as bare names so
+  they land there too; delete the folder whenever you like.
+- Set a local-only `APP_PASSCODE` in `.env.local`: the agent types it into
+  the gate and it lands in the transcript.
+- Flow: `pnpm dev` → `/enter` → passcode → screen. Prefer
+  `browser_snapshot` (text) for structure and repeated labels;
+  take a screenshot only to judge layout. Close the browser and stop
+  `pnpm dev` afterwards. Any turn the browser triggers is a live, billed
+  Claude call.
+- `/ux-review [resume]` (`.claude/skills/ux-review/`) runs the full visual
+  review: a test profile built from a gitignored resume in `userdata/`,
+  one screenshot per screen, and a dated `docs/ux-review-<date>.md`. It
+  only runs when a user types it.
 
 ## Environment variables
 
@@ -186,16 +230,32 @@ const { text, usage, costUsd } = await final;   // settles once the call ends, w
 const { value } = await llm().structured({ step: "cards", sessionId, system, messages, schema });
 ```
 
-- **`createLlm({ client, usageSink, now })`** is the injectable form used by
+- **`createLlm({ client, usageSink, now, callTimeoutMs })`** is the injectable form used by
   tests; `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
-- **Model and thinking**: `claude-opus-5` with adaptive thinking on every call
-  (docs/technical-plan.md D2). `budget_tokens` is rejected by this model; depth is
-  `output_config.effort`.
-- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md §1): chat-like steps `cards`
-  and `elicit` are `medium`; `discover`, `explore`, `queries` and `revise` are
-  `high`. Change the table, not the call sites.
-- **Structured outputs** use `client.messages.create()` with
+- **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D52):
+  all six steps (`cards`, `elicit`, `discover`, `explore`, `queries`,
+  `revise`) run on `claude-opus-5-5`. `ModelId` and `PRICE_PER_MTOK` still
+  carry `claude-sonnet-5-5`, so a later switch is a one-line table change.
+  Adaptive thinking on every call (`budget_tokens` and disabled thinking are
+  rejected by Opus 5.5). `PRICE_PER_MTOK` is keyed by model id and `costUsd` prices each
+  call by the model that ran; an unpriced id throws `LlmConfigError`. The
+  usage row's `model` column records which model ran.
+- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44, D52):
+  `explore` is `high`; every other step is `medium`. Effort is always sent
+  explicitly: defaults differ by model (Sonnet 5.5 `high`, Opus 5.5
+  `medium`), so no default is relied on. Change the tables, not the call sites.
+- **Every call streams** (`client.messages.stream()` + `finalMessage()`), both
+  shapes, with a 32K output cap. **One deadline bounds a logical call**:
+  `CALL_TIMEOUT_MS` (3 min, every retry and continuation included) aborts it
+  with `LlmTimeoutError`. A request's `signal` aborts it with
+  `LlmCancelledError`; `runTurn` wraps every step's `Llm` with `withSignal`,
+  and the turn route fires it when the browser disconnects. An aborted call
+  still writes its usage row with the input it was billed (docs/technical-plan.md D45).
+- **Discovery has no web tools** (docs/technical-plan.md D44). Its sources are
+  restricted to URLs the reference catalogue lists; a field named from the
+  model's own knowledge is kept with no sources.
+- **Structured outputs** send
   `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
   the rest of the app uses (docs/technical-plan.md D12). The wrapper records usage and
   checks the stop reason first, then parses the final text block with the
@@ -242,16 +302,36 @@ dispatches and returns the assistant message, pills, and the **whole**
 canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 `delta`s, a heartbeat every 15s, then one `final` or one `error`.
 
-- Message conventions the server parses live in one place each:
-  `exploreChatText(field)` / `GENERATE_QUERIES_TEXT` in `workspace.ts`,
-  `GO_PILL` in `turn.ts`. Change the text there, never inline.
+- The browser names what it wants through `TurnInput`: `message` (the
+  pasted text on Start, and "Find climate roles"; the interest pills are
+  local edits and send no turn, D54), `selectedRoles` (write one LinkedIn search per selected role; no
+  payload, the server reads `Selected: yes` from the profile it is sent,
+  technical-plan.md D47) and `feedback` (revise; still dispatched, but
+  nothing in the browser sends it). The one remaining text convention, `exploreChatText`
+  in `workspace.ts`, serves the `explore` step that only scripts reach (D39);
+  the "Find climate roles" pill is `FIND_ROLES_PILL` in `screens.ts`, which
+  `turn.ts` re-exports as `GO_PILL`. Change text there, never inline.
 - User-facing error text comes only from `turnErrorMessage`; the route logs
   the error class and step, never the message or the body.
 - `maxDuration` in a route file must be a numeric literal and the file may
   export nothing but segment config and handlers (Next 16 build check);
   `route.test.ts` pins the literal to `MAX_DURATION_SECONDS`.
 - Client components import only browser-safe modules: `profile.ts`,
-  `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`.
+  `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`, `elicit.ts`
+  (its `llm` import is type-only), `screens.ts` and `profile-summary.ts`.
+  `cards.ts` is server-only.
+- The UI is `src/components/shell/` (technical-plan.md §2, D37, D42, D43,
+  D47–D51, D53–D57): one centred column under a four-item nav (Resume,
+  Highlights, Roles, Searches), no rail, no tabs, no composer, and no
+  feedback screen; the only "Start over" is on the Resume page, behind
+  `StartOverDialog.tsx`. `save-file.ts` in that folder is the component-side
+  download helper (profile and session JSON). Pure screen logic (which
+  screen, nav gating, the Start text and Resume page view, the one interest
+  question's label, note and pills, the "Find climate roles" gate, log
+  lines, role groups, card ids rendered as titles, the write-searches label,
+  search cards) is in `src/lib/screens.ts`, and the drawer's readable summary
+  in `src/lib/profile-summary.ts`, both with unit tests; components hold no
+  policy.
 
 ## Passcode gate
 
@@ -296,6 +376,12 @@ One shared passcode, no accounts (docs/technical-plan.md §1 "Access", D5).
 - `session.ts` owns what the browser stores and sends: the profile text is
   the source of truth, `sessionId` is random and anonymous, and no field may
   carry identity. Route handlers validate bodies with `parseTurnRequest`.
+- The profile has eight sections; the eighth, `## Inputs` (D56), holds the
+  pasted resume and notes as typed. It is written only through `setInputs`,
+  which the browser calls via `recordStartInputs` in `workspace.ts` on Start,
+  before the cards turn is sent. No prompt reads it:
+  `serializeProfileForPrompt` leaves the section out, and the cards step
+  reads its text from the turn's message.
 
 ## Repo layout
 

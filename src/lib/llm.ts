@@ -19,17 +19,29 @@
  *     a `console.warn`.
  *   * **Cost telemetry is comparable.** One row per logical call (a
  *     `pause_turn` continuation is part of the same logical call and its
- *     tokens are summed), priced from {@link PRICE_PER_MTOK}.
+ *     tokens are summed), priced from {@link PRICE_PER_MTOK} for the model
+ *     that ran (technical-plan.md D46).
  *
  * Server-only: {@link createLlm} throws in a browser. The API key is a
  * server-only env var and route handlers are the only callers.
  *
- * SDK notes (checked against the `claude-api` skill on 2026-09-12,
+ * SDK notes (checked against the `claude-api` skill on 2026-09-24,
  * `@anthropic-ai/sdk` 0.125.0):
- *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call;
- *     `budget_tokens` is rejected by `claude-opus-5`.
+ *   * The model is chosen per step (see {@link MODEL_BY_STEP},
+ *     technical-plan.md D52): every step runs on Opus 5.5 today, and the
+ *     table can name any priced {@link ModelId}. Everything below holds for
+ *     every model in the union.
+ *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, both
+ *     models; `budget_tokens` and disabled thinking are rejected by
+ *     `claude-opus-5-5`.
  *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
- *   * Structured outputs use `client.messages.create()` with
+ *     Defaults differ by model (Opus 5.5 defaults to `medium`), so every
+ *     call sets it explicitly; no default is relied on.
+ *   * Every call streams (`client.messages.stream()` + `finalMessage()`), so
+ *     no HTTP timeout sits under a long answer, and one deadline
+ *     ({@link CALL_TIMEOUT_MS}) plus the caller's abort signal bound it
+ *     (technical-plan.md D45).
+ *   * Structured outputs send
  *     `output_config.format = zodOutputFormat(schema)` — no beta header. The
  *     SDK's `messages.parse()` is deliberately NOT used: it JSON-parses every
  *     text block before we can look at `stop_reason` or `usage`, so a
@@ -38,7 +50,8 @@
  *     Parsing happens here instead, after the row is recorded and the stop
  *     reason is checked, and failures report zod issue paths/codes only.
  *   * Web search / web fetch are the `_20260209` dynamic-filtering variants,
- *     which `claude-opus-5` supports on the non-beta endpoint.
+ *     on the non-beta endpoint. Only `explore` (script-only) still uses them;
+ *     discovery runs without web tools (technical-plan.md D44).
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -53,50 +66,74 @@ import { anonClient } from "./supabase";
 // Model, effort and limits
 // ---------------------------------------------------------------------------
 
-/** One model everywhere (technical-plan.md D2). Re-evaluate Sonnet 5 after Phase 3. */
-export const MODEL = "claude-opus-5";
+/** The models this app calls. {@link PRICE_PER_MTOK} must price every one. */
+export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5";
+
+/**
+ * Model per call type (technical-plan.md D2, D44, D52). Every step runs on
+ * Opus 5.5: the cheaper model wrote searches that were too general (D52
+ * reverses D46). The table stays so a later switch is a one-line change
+ * here, not at the call sites.
+ */
+export const MODEL_BY_STEP: Record<StepName, ModelId> = {
+  cards: "claude-opus-5-5",
+  elicit: "claude-opus-5-5",
+  discover: "claude-opus-5-5",
+  explore: "claude-opus-5-5",
+  queries: "claude-opus-5-5",
+  revise: "claude-opus-5-5",
+};
 
 /** Effort levels this app uses. The SDK also accepts `xhigh`; we do not. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /**
- * Depth per call type (technical-plan.md §1: chat `medium`, discovery `high`). Chat-like
- * steps answer from what the user just said; discovery steps reason over the
- * reference collection and the web and are worth the extra tokens.
+ * Depth per call type (technical-plan.md §1, D44, D52). Chat-like steps,
+ * discovery and the query steps run at `medium`: on Opus 5.5, `medium`
+ * discovery took half the time of Opus 5 at `high` with output that looked
+ * about as good. `explore` (script-only) stays `high`.
  */
 export const EFFORT_BY_STEP: Record<StepName, Effort> = {
   cards: "medium",
   elicit: "medium",
-  discover: "high",
+  discover: "medium",
   explore: "high",
-  queries: "high",
-  revise: "high",
+  queries: "medium",
+  revise: "medium",
 };
 
 /**
- * `maxDuration` for the route handlers that call this module. Discovery and
- * exploration turns with web search run 1–3 minutes (technical-plan.md §4).
+ * `maxDuration` for the route handlers that call this module. A turn makes at
+ * most a few sequential calls, each bounded by {@link CALL_TIMEOUT_MS}
+ * (technical-plan.md §4, D45).
  */
 export const MAX_DURATION_SECONDS = 800;
 
 /** How many `pause_turn` resumes one logical call may make before giving up. */
 export const MAX_PAUSE_TURN_CONTINUATIONS = 5;
 
-/** Streaming turns get room; the model stops when it is done, not at the cap. */
-export const DEFAULT_MAX_TOKENS_STREAM = 32_000;
-
-/** Structured calls are not streamed, so keep them under the HTTP timeout. */
-export const DEFAULT_MAX_TOKENS_STRUCTURED = 16_000;
+/**
+ * Output cap for every call. Every call streams, so a large cap costs nothing
+ * unless it is used; discovery at 16K came within 250 tokens of it.
+ */
+export const DEFAULT_MAX_TOKENS = 32_000;
 
 /**
- * Per-attempt HTTP timeout (TypeScript SDK timeouts are milliseconds). Sized
- * for a 1–3 minute discovery turn with headroom. The SDK retries a timed-out
- * attempt, so one logical call can take up to
- * `(MAX_RETRIES + 1) * REQUEST_TIMEOUT_MS`; `llm.test.ts` asserts that stays
- * under {@link MAX_DURATION_SECONDS}, otherwise Vercel would kill the function
- * mid-retry and the usage row would never be written.
+ * Wall-clock limit on one logical call — every attempt, retry and
+ * `pause_turn` continuation included (technical-plan.md D45). Past it the
+ * request is aborted and the call fails with {@link LlmTimeoutError}. Measured
+ * calls run 15–110s; three minutes leaves headroom without letting a stuck
+ * call bill for five.
  */
-export const REQUEST_TIMEOUT_MS = 300_000;
+export const CALL_TIMEOUT_MS = 180_000;
+
+/**
+ * Per-attempt SDK timeout (milliseconds). For a streamed request it covers
+ * the wait for response headers; {@link CALL_TIMEOUT_MS} is the real bound.
+ * `llm.test.ts` asserts `(MAX_RETRIES + 1) * REQUEST_TIMEOUT_MS` stays under
+ * {@link MAX_DURATION_SECONDS}, so Vercel never kills the function mid-retry.
+ */
+export const REQUEST_TIMEOUT_MS = CALL_TIMEOUT_MS;
 
 /**
  * One retry (the SDK default is 2) so two timed-out attempts still fit in
@@ -122,7 +159,7 @@ export const MAX_RETRIES = 1;
  */
 export const BLOCKED_DOMAINS = BLOCKED_SOURCE_DOMAINS;
 
-/** Server-tool type strings for `claude-opus-5` (dynamic filtering variants). */
+/** Server-tool type strings for Opus 5 and later (dynamic filtering variants). */
 export const WEB_SEARCH_TOOL_TYPE = "web_search_20260209";
 export const WEB_FETCH_TOOL_TYPE = "web_fetch_20260209";
 
@@ -197,18 +234,29 @@ export function assertToolsAllowed(tools: readonly LlmTool[]): void {
 // Pricing
 // ---------------------------------------------------------------------------
 
+/** USD per million tokens for one model. */
+export interface ModelPrice {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
 /**
- * USD per million tokens for `claude-opus-5`, from the `claude-api` skill's
- * model table and prompt-caching economics (checked 2026-09-12): input $5,
- * output $25, cache read 0.1× input, 5-minute cache write 1.25× input. Update
- * both this table and the date when the skill's numbers change.
+ * USD per million tokens, keyed by the model that ran (technical-plan.md D46,
+ * D52).
+ * Cache write is the 5-minute rate, 1.25× input.
+ *   * `claude-opus-5-5`, from the `claude-api` skill's model table (checked
+ *     2026-09-24): input $4, output $20, cache read $0.20.
+ *   * The second priced model (2026-11-18): input $2, output $10, cache read
+ *     $0.10. No step runs on it now (D52); its row stays so a later switch
+ *     is a one-line {@link MODEL_BY_STEP} change.
+ * Update both the numbers and the date when the skill's numbers change.
  */
-export const PRICE_PER_MTOK = {
-  input: 5,
-  output: 25,
-  cacheRead: 0.5,
-  cacheWrite: 6.25,
-} as const;
+export const PRICE_PER_MTOK: Readonly<Record<ModelId, Readonly<ModelPrice>>> = {
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+};
 
 /** Token counters, summed across the continuations of one logical call. */
 export interface TokenCounts {
@@ -232,17 +280,34 @@ export function addUsage(counts: TokenCounts, usage: Anthropic.Usage | undefined
   };
 }
 
+export function sumTokenCounts(a: TokenCounts, b: TokenCounts): TokenCounts {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+  };
+}
+
 function hasAnyUsage(counts: TokenCounts): boolean {
   return counts.input + counts.output + counts.cacheRead + counts.cacheWrite > 0;
 }
 
-/** Cost of one logical call, rounded to the `numeric(10, 6)` column. */
-export function costUsd(counts: TokenCounts): number {
+/**
+ * Cost of one logical call on `model`, rounded to the `numeric(10, 6)` column.
+ * An unpriced model id throws {@link LlmConfigError} rather than pricing the
+ * call at zero (technical-plan.md D46).
+ */
+export function costUsd(model: ModelId, counts: TokenCounts): number {
+  const price = Object.hasOwn(PRICE_PER_MTOK, model) ? PRICE_PER_MTOK[model] : undefined;
+  if (price === undefined) {
+    throw new LlmConfigError(`No price for model ${String(model)}; add it to PRICE_PER_MTOK.`);
+  }
   const dollars =
-    (counts.input * PRICE_PER_MTOK.input +
-      counts.output * PRICE_PER_MTOK.output +
-      counts.cacheRead * PRICE_PER_MTOK.cacheRead +
-      counts.cacheWrite * PRICE_PER_MTOK.cacheWrite) /
+    (counts.input * price.input +
+      counts.output * price.output +
+      counts.cacheRead * price.cacheRead +
+      counts.cacheWrite * price.cacheWrite) /
     1_000_000;
   return Math.round(dollars * 1e6) / 1e6;
 }
@@ -295,6 +360,26 @@ export class LlmPauseLimitError extends LlmError {
       `The ${step} turn still paused after ${continuations} continuations; giving up rather ` +
         "than looping. Narrow the prompt or lower max_uses on the web tools.",
     );
+    this.step = step;
+  }
+}
+
+/** The call ran past {@link CALL_TIMEOUT_MS} and was aborted. */
+export class LlmTimeoutError extends LlmError {
+  readonly step: StepName;
+
+  constructor(step: StepName, timeoutMs: number) {
+    super(`The ${step} call ran past ${String(Math.round(timeoutMs / 1000))}s and was stopped.`);
+    this.step = step;
+  }
+}
+
+/** The caller's abort signal fired (the browser went away) and the call was stopped. */
+export class LlmCancelledError extends LlmError {
+  readonly step: StepName;
+
+  constructor(step: StepName) {
+    super(`The ${step} call was cancelled by its caller.`);
     this.step = step;
   }
 }
@@ -452,12 +537,12 @@ export interface LlmStream extends AsyncIterable<Anthropic.MessageStreamEvent> {
 }
 
 /**
- * The two SDK calls this module makes, as an interface so tests can pass a
- * fake. {@link anthropicClient} is the real implementation.
+ * The one SDK call this module makes, as an interface so tests can pass a
+ * fake. {@link anthropicClient} is the real implementation. `signal` aborts
+ * the request; the SDK then throws `APIUserAbortError`.
  */
 export interface LlmClient {
-  stream(params: Anthropic.MessageCreateParamsNonStreaming): LlmStream;
-  create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  stream(params: Anthropic.MessageCreateParamsNonStreaming, options: { signal: AbortSignal }): LlmStream;
 }
 
 /**
@@ -480,8 +565,7 @@ function defaultAnthropic(): Anthropic {
 /** Adapts the Anthropic SDK to {@link LlmClient}. */
 export function anthropicClient(anthropic: Anthropic = defaultAnthropic()): LlmClient {
   return {
-    stream: (params) => anthropic.messages.stream(params),
-    create: (params) => anthropic.messages.create(params),
+    stream: (params, { signal }) => anthropic.messages.stream(params, { signal }),
   };
 }
 
@@ -508,6 +592,11 @@ export interface CallRequest {
   /** Server tools, from {@link webTools}. Client-side tools are not supported. */
   tools?: readonly LlmTool[];
   maxTokens?: number;
+  /**
+   * Aborts the call when it fires — the turn route passes one that fires when
+   * the browser disconnects. The call then rejects with {@link LlmCancelledError}.
+   */
+  signal?: AbortSignal;
 }
 
 export type StreamTextRequest = CallRequest;
@@ -551,8 +640,9 @@ export interface StreamText {
   /**
    * Text deltas as they arrive. Single consumer. Drain it, stop early
    * (`break` out of `for await`, or `ReadableStream.cancel`), or never touch
-   * it — the API call runs to completion regardless and {@link final} settles
-   * either way. Throws the call's error if the call fails while draining.
+   * it — the API call runs to completion regardless (only the request's
+   * `signal` or the deadline stops it) and {@link final} settles either way.
+   * Throws the call's error if the call fails while draining.
    */
   textDeltas: AsyncIterable<string>;
   /**
@@ -572,6 +662,8 @@ export interface CreateLlmOptions {
   usageSink?: UsageSink;
   /** Clock, injectable so tests can assert on `duration_ms`. */
   now?: () => number;
+  /** Per-call deadline; defaults to {@link CALL_TIMEOUT_MS}. Tests shorten it. */
+  callTimeoutMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -591,11 +683,12 @@ function requestParams(
 ): Anthropic.MessageCreateParamsNonStreaming {
   const tools = request.tools === undefined ? undefined : [...request.tools];
   return {
-    model: MODEL,
+    model: MODEL_BY_STEP[request.step],
     max_tokens: maxTokens,
     system: systemBlocks(request.system),
     messages,
-    // Adaptive thinking on every call; `budget_tokens` is rejected by Opus 5.
+    // Adaptive thinking on every call, both models; Opus 5.5 rejects
+    // `budget_tokens` and "disabled".
     thinking: { type: "adaptive" },
     output_config: {
       effort: EFFORT_BY_STEP[request.step],
@@ -613,12 +706,12 @@ function usageRow(
   return {
     session_id: request.sessionId,
     step: request.step,
-    model: MODEL,
+    model: MODEL_BY_STEP[request.step],
     input_tokens: counts.input,
     output_tokens: counts.output,
     cache_read_input_tokens: counts.cacheRead,
     cache_creation_input_tokens: counts.cacheWrite,
-    cost_usd: costUsd(counts),
+    cost_usd: costUsd(MODEL_BY_STEP[request.step], counts),
     duration_ms: Math.max(0, Math.round(durationMs)),
   };
 }
@@ -705,8 +798,16 @@ class DeltaQueue<T> implements AsyncIterable<T> {
   }
 }
 
-/** Performs one HTTP request and returns its final message. */
-type Turn = (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
+/**
+ * Performs one streamed request and returns its final message. `seen` is
+ * updated with the usage the stream has reported so far, so a request that
+ * is aborted or fails mid-stream still accounts for the input it was billed.
+ */
+type Turn = (
+  params: Anthropic.MessageCreateParamsNonStreaming,
+  signal: AbortSignal,
+  seen: { counts: TokenCounts },
+) => Promise<Anthropic.Message>;
 
 interface RunOutcome {
   message: Anthropic.Message;
@@ -747,6 +848,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
   }
 
   const now = options.now ?? (() => Date.now());
+  const callTimeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
   const usageSink = options.usageSink ?? supabaseUsageSink();
   let cachedClient = options.client;
   const client = (): LlmClient => {
@@ -756,10 +858,11 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
 
   /**
    * The one runner behind both call shapes. Owns, in order: the session-id
-   * and tool-policy checks (before any request), the `pause_turn`
-   * continuation loop, token accumulation, duration, the single
-   * `recordUsage` per logical call, and the terminal stop-reason check.
-   * `turn` is the only thing that differs between streaming and structured.
+   * and tool-policy checks (before any request), the deadline and the
+   * caller's abort signal, the `pause_turn` continuation loop, token
+   * accumulation, duration, the single `recordUsage` per logical call, and
+   * the terminal stop-reason check. `turn` is the only thing that differs
+   * between the two call shapes.
    */
   async function runCall(
     request: CallRequest,
@@ -770,6 +873,8 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
     if (!isSessionId(request.sessionId)) throw new LlmSessionIdError(request.step);
     if (request.tools !== undefined) assertToolsAllowed(request.tools);
 
+    const deadline = AbortSignal.timeout(callTimeoutMs);
+    const signal = request.signal === undefined ? deadline : AbortSignal.any([request.signal, deadline]);
     const startedAt = now();
     const messages = [...request.messages];
     /** Every response this call produced, continuations included. */
@@ -785,7 +890,16 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
 
     try {
       for (;;) {
-        const message = await turn(requestParams(request, messages, maxTokens, format));
+        if (signal.aborted) throw signal.reason;
+        const seen = { counts: zeroTokenCounts() };
+        let message: Anthropic.Message;
+        try {
+          message = await turn(requestParams(request, messages, maxTokens, format), signal, seen);
+        } catch (error) {
+          // What the stream reported before it stopped was still billed.
+          counts = sumTokenCounts(counts, seen.counts);
+          throw error;
+        }
         counts = addUsage(counts, message.usage);
         responses.push(message);
 
@@ -810,7 +924,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
           messages: responses,
           metrics: {
             usage: counts,
-            costUsd: costUsd(counts),
+            costUsd: costUsd(MODEL_BY_STEP[request.step], counts),
             durationMs,
             continuations,
             stopReason: message.stop_reason,
@@ -818,37 +932,57 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
         };
       }
     } catch (error) {
-      // An SDK error after a completed continuation still cost tokens; keep
-      // the telemetry complete. Nothing is written if no response arrived.
+      // An SDK error after a completed continuation, or an abort mid-stream,
+      // still cost tokens; keep the telemetry complete. Output tokens of an
+      // aborted response are undercounted: the API reports them only at the
+      // end. Nothing is written if no response had started.
       if (hasAnyUsage(counts)) recordOnce(now() - startedAt);
+      if (deadline.aborted) throw new LlmTimeoutError(request.step, callTimeoutMs);
+      if (request.signal?.aborted === true) throw new LlmCancelledError(request.step);
       throw error;
     }
   }
 
+  /**
+   * One streamed request. Records the usage the stream reports as it goes
+   * (`message_start` carries input and cache counts, `message_delta` the
+   * running output count) and hands text deltas to `onText`.
+   */
+  async function streamTurn(
+    params: Anthropic.MessageCreateParamsNonStreaming,
+    signal: AbortSignal,
+    seen: { counts: TokenCounts },
+    onText?: (text: string) => void,
+  ): Promise<Anthropic.Message> {
+    const stream = client().stream(params, { signal });
+    for await (const event of stream) {
+      if (event.type === "message_start") {
+        seen.counts = addUsage(zeroTokenCounts(), event.message.usage);
+      } else if (event.type === "message_delta") {
+        seen.counts = { ...seen.counts, output: event.usage.output_tokens };
+      } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        onText?.(event.delta.text);
+      }
+    }
+    return stream.finalMessage();
+  }
+
   function streamText(request: StreamTextRequest): StreamText {
-    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STREAM;
+    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS;
     const deltas = new DeltaQueue<string>();
     let text = "";
 
-    const turn: Turn = async (params) => {
-      const stream = client().stream(params);
-      for await (const event of stream) {
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          text += event.delta.text;
-          deltas.push(event.delta.text);
-        }
-      }
-      return stream.finalMessage();
-    };
+    const turn: Turn = (params, signal, seen) =>
+      streamTurn(params, signal, seen, (delta) => {
+        text += delta;
+        deltas.push(delta);
+      });
 
     // The request starts now, not when `textDeltas` is first pulled, and it
-    // runs to completion even if the consumer stops listening. Design choice:
-    // COMPLETE rather than abort on early consumer exit. The API reports
-    // output tokens only in the final `message_delta`, so aborting would lose
-    // the cost of everything generated so far and turn "one row per logical
-    // call" into a special case; completing keeps the row exact and lets
-    // `final` still resolve with the full text. The price is at most one
-    // response's worth of tokens after a disconnect.
+    // runs to completion even if the consumer stops listening: a consumer
+    // that stops reading is not a reason to stop paying attention to the
+    // row. Stopping the call is what `request.signal` is for (the browser
+    // went away) and what the deadline does (technical-plan.md D45).
     const final = runCall(request, maxTokens, turn).then(
       ({ message, messages, metrics }) => {
         deltas.close();
@@ -896,14 +1030,14 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
   async function structured<S extends z.ZodType>(
     request: StructuredRequest<S>,
   ): Promise<StructuredResult<z.infer<S>>> {
-    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS_STRUCTURED;
+    const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS;
     // `zodOutputFormat` is used for its JSON schema only; the parser it
     // attaches is what `messages.parse()` would run, and we do not call that.
     const format = zodOutputFormat(request.schema);
     const { message, messages, metrics } = await runCall(
       request,
       maxTokens,
-      (params) => client().create(params),
+      (params, signal, seen) => streamTurn(params, signal, seen),
       format,
     );
     return { ...metrics, value: parseStructuredOutput(request, message), message, messages };
