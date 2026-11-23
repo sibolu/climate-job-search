@@ -1025,6 +1025,23 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       the old accepted-or-unsure filter left revision with no field to add a
       search for.
 
+59. **The research link check is a dev-only fetch path (2026-11-23).**
+    Phase 2c requires every URL in `docs/research/` to resolve and none to
+    sit on a blocked domain. `pnpm research:check-links`
+    (`scripts/check-research-links.ts`, pure parts in
+    `src/lib/research-links.ts`) is the one fetch path outside
+    `src/lib/llm.ts`, allowed because it is a script no route can reach
+    and it reads nothing but a status code and a redirect's `Location`.
+    - A blocked URL (`isBlockedSourceHost`, the same list as D13 and D25) is
+      never requested and fails the check. Redirects are followed by hand,
+      each hop's host checked before it is requested, so a redirect onto a
+      blocked host fails without reaching it.
+    - HEAD first, one GET retry with the body cancelled unread; a generic
+      user agent; 45s per URL (Eurostat pages take ~30s); 8 at a time.
+    - 2xx/3xx pass. 401, 403 and 429 are reported as "refused" (the site
+      answered but declines automated checks) and do not fail the run; the
+      gate report lists them. Anything else fails.
+
 ---
 
 ## 6. Verification log

@@ -15,9 +15,12 @@ in each phase's table. Every phase also starts with your kickoff prompt
 
 ## Waiting on you
 
-- **Phase 2c:** kick off the reference data research in a fresh session
+- **G2c.1:** read `docs/research/sources/recommendation.md` and pick the
+  backbone sources; the one open choice is whether Climate Finance and
+  Corporate Sustainability get one more survey worker, are kept unsurveyed,
+  or are cut. Then kick off the rest of the phase
   (`Execute Phase 2c per PLAN.md. Commit each step on branch phase-2c. Stop
-  at the gate.`). It stops at G2c.1 for you to pick the backbone sources.
+  at the gate.`); it stops at G2c.2.
 
 ## Goal
 
@@ -234,8 +237,8 @@ the researched data.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/research/sources/`; every URL resolves and none is on a blocked domain (checked by script) | `[TODO]` |
-| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation | Choices recorded here | `[TODO]` |
+| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/research/sources/`; every URL resolves and none is on a blocked domain (checked by script) | `[DONE]` (2026-11-23: 31 scorecards in five files; `pnpm research:check-links` passes with 10 sites refusing automated checks (D59); 10 claims spot-checked, 4 corrected; recommendation in `docs/research/sources/recommendation.md`) |
+| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation (`docs/research/sources/recommendation.md`) | Choices recorded here | `[TODO]` |
 | 2c.2 | Pilot two areas end to end, Energy (best data) and Carbon Removal (worst): fields, a field × function matrix of roles, top companies, real titles from a bounded career-page read. Appends the career-page decision to `docs/technical-plan.md` §5 | Claude (Sonnet gathers, Opus reconciles) | Both areas written up under `docs/research/areas/` in one agreed format; empty matrix cells say "none found" or "not looked" | `[TODO]` |
 | G2c.2 | Review the pilot format before the fan-out | **`YOU`** | Format approved or corrected | `[TODO]` |
 | 2c.3 | Remaining areas in the approved format, one worker per area | Claude (Sonnet gathers, Opus reconciles) | Every area written up; link check passes | `[TODO]` |
