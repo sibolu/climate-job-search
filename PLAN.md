@@ -15,6 +15,10 @@ in each phase's table. Every phase also starts with your kickoff prompt
 
 ## Waiting on you
 
+- **Phase 2c:** kick off the reference data research in a fresh session
+  (`Execute Phase 2c per PLAN.md. Commit each step on branch phase-2c. Stop
+  at the gate.`). It stops at G2c.1 for you to pick the backbone sources.
+
 ## Goal
 
 An alpha that 5–8 Climatebase fellows can try on a hosted URL. **Alpha done**
@@ -83,7 +87,7 @@ Phase 2b existed.
 Post-phase changes: location and work mode became board filters rather
 than chat questions (D36); the chat stays readable during slow turns.
 
-### Phase 2b — Exploration-first UI `[IN PROGRESS]`
+### Phase 2b — Exploration-first UI `[DONE]`
 
 Rebuild the UI on the Claude Design handoff in
 `docs/design_handoff_climate_career_exploration/` (D37–D43). The field board
@@ -119,7 +123,7 @@ second walkthrough (2026-11-19): less on every screen, by the principles in
 | 2b.19 | Integration. Live loop through the try scripts on the `userdata/` resume and the videographer fixture: `try:cards` → `try:discover --interest=…` → `try:queries --tick`. **Search quality check:** every query pairs the role's title variants with terms specific to its field; a query whose climate half is only generic terms ("green jobs", "climate careers", "sustainability") fails the check. The reference failure, from Sonnet 5.5, for the field "climate talent and job matching platforms": `("data science manager" OR "manager of data science" OR "analytics manager") AND ("green jobs" OR "climate careers" OR "workforce development" OR "talent marketplace")`. If Opus 5.5 with the skills now in the prompt (2b.15) still writes queries like it, the worker reports three examples and patches nothing; the orchestrator then briefs a separate Fable worker on the `queries.ts` prompt (its own commit and decision, before this step's) and the check is run again. **Docs:** `docs/technical-plan.md` §2 rewritten for the four-item nav, the Resume page, the one question and the simplified Roles and Searches screens, plus a §6 verification entry with cost per run; `docs/data-flow.html` (profile-writing clicks: skill remove / add back and interest toggle added, the per-field answer click removed; `inferPreferences` no longer writes climate interests; Start writes `Inputs`, which no call reads); CLAUDE.md "turn endpoint" paragraph (one question, the shell description, the browser-safe module list), the `profile.md` section and the sentence on what lives in `localStorage` checked against the code; each example in `docs/design-language.md` checked against the screen it describes; `docs/backlog.md` cross-checked against what 2b.14–2b.18 left out | Claude (Fable) runs the loop and the search check, then Claude (Opus) reconciles the docs | Loop runs locally end to end on both inputs; every query passes the search quality check, after a prompt fix if one was needed; every doc named here agrees with the code; tests, lint, build pass | `[DONE]` |
 | G2b.5 | Third browser run with your resume: Resume → Highlights (remove a skill, add it back, exclude a highlight, pick two areas) → Roles (open a "Based on", tick roles) → Searches → open two on LinkedIn; use each top-bar item to go back, and try "Start over" with the download. **Carried from G2b.4:** open "Your profile" after each step and note what the cards, the interest picks, discovery and the searches each wrote, and anything that looks wrong | **`YOU`** | You reach the Searches screen with no error, two LinkedIn runs return specific, relevant results, and the profile check is written up (a few lines is enough) | `[DONE]` (2026-11-21: third run found no issues) |
 | G2b.2 | `/code-review` and `/security-review` (the turn input shape, the abort path and the model-per-step table changed) | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2b` | `[DONE]` |
-| G2b.3 | Merge PR #5 | **`YOU`** | `phase-2b` merged to `main` | `[TODO]` |
+| G2b.3 | Merge PR #5 | **`YOU`** | `phase-2b` merged to `main` | `[DONE]` |
 Order: 2b.1 first; 2b.2, 2b.3 and 2b.4 in parallel (2b.4 builds against the
 2b.1 fixtures); 2b.5 after 2b.3 and 2b.4; 2b.6 last. 2b.1–2b.6 landed
 2026-09-20 and the loop ran live through the try scripts (about $0.90,
@@ -190,6 +194,58 @@ LinkedIn runs; the seniority question is dropped, not just seniority in
 titles. **Revisit later:** how the user tells us whether a field interests
 them at all, now that the Interesting / Unsure / Not for me row is gone
 (`docs/backlog.md` §2).
+
+### Phase 2c — Reference data research `[IN PROGRESS]`
+
+Replaces the placeholder reference collection in `data/*.yaml` with
+researched industry and occupation data. The placeholder files are ignored
+throughout: no worker reads them as a starting point. Agreed 2026-11-23.
+
+**Scope.** US plus EU. Professional career switchers only (trades are in
+`docs/backlog.md` §2). Adaptation and resilience are tagged inside each
+area, not an area of their own.
+
+**Areas (ten).** The six `CLIMATE_AREAS` (Circular Economy, Built
+Environment, Transportation, Energy, Food & Agriculture, Carbon Removal)
+plus four added for the research: Climate Finance (including climate risk,
+insurance and carbon markets); Industry & Materials (steel, cement,
+chemicals, hydrogen, industrial heat); Nature & Water (conservation,
+forestry, oceans, water systems); Corporate Sustainability & Climate
+Services (carbon accounting, disclosure, climate data and software, policy
+and advocacy). An area that proves thin is cut at G2c.1. Which of the four
+become pills in the UI is decided outside this phase.
+
+**Rules for every worker.**
+- Research output goes to `docs/research/`, never straight into `data/`.
+- Every row carries its geography (US, EU or both) and a retrieval date.
+- Every claim carries a URL. A script checks that each URL resolves and is
+  not on a blocked domain before a gate; an Opus worker spot-checks a
+  sample of claims against their sources.
+- Company career pages may be read in a bounded way: at most 10 companies
+  per field, recording title, function and URL only, no posting text.
+- Companies are chosen by fixed criteria, set in the 2c.2 brief and reused
+  unchanged in 2c.3: US and EU; a mix of startups, scale-ups, incumbents
+  and nonprofits; a public careers page; named on at least one published
+  list.
+- LinkedIn's Green Skills Report is not used.
+
+**Sequencing.** 2c runs before 3.1, so the evaluation judges discovery on
+the researched data.
+
+| Step | What | Who | Done when | Status |
+|---|---|---|---|---|
+| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/research/sources/`; every URL resolves and none is on a blocked domain (checked by script) | `[TODO]` |
+| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation | Choices recorded here | `[TODO]` |
+| 2c.2 | Pilot two areas end to end, Energy (best data) and Carbon Removal (worst): fields, a field × function matrix of roles, top companies, real titles from a bounded career-page read. Appends the career-page decision to `docs/technical-plan.md` §5 | Claude (Sonnet gathers, Opus reconciles) | Both areas written up under `docs/research/areas/` in one agreed format; empty matrix cells say "none found" or "not looked" | `[TODO]` |
+| G2c.2 | Review the pilot format before the fan-out | **`YOU`** | Format approved or corrected | `[TODO]` |
+| 2c.3 | Remaining areas in the approved format, one worker per area | Claude (Sonnet gathers, Opus reconciles) | Every area written up; link check passes | `[TODO]` |
+| 2c.4 | Synthesis: one consolidated reference set and a schema recommendation (occupation codes on roles, a companies table, or the current three files unchanged) | Claude (Fable) | `docs/research/synthesis.md` | `[TODO]` |
+| G2c.3 | Approve the reference set and decide the schema | **`YOU`** | Decision recorded in `docs/technical-plan.md` §5 | `[TODO]` |
+| 2c.5 | Implement the first round of research into `data/*.yaml` (and the schema, if it changes) | Claude (Opus) | `pnpm seed` and `pnpm db:check-rls` pass; `try:discover` cites only catalogue URLs | `[TODO]` |
+
+2c.5 is a fit for the `Workflow` tool (a deterministic fan-out with a
+schema per area); it runs that way only if you opt in ("use a workflow for
+step 2c.5"). The schema decision is deliberately left to G2c.3.
 
 ### Phase 3 — Evaluation and pilot readiness `[TODO]`
 

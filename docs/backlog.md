@@ -60,6 +60,13 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 
 ## 2. Discovery, fields and roles
 
+- **Trades and field roles in the reference data.** The Phase 2c research
+  covers professional career switchers only. Installers, technicians,
+  electricians and other trades are left out, although public green-jobs
+  data is dominated by them. Adding them means a second pass over the same
+  sources with the `field-technician` function kept in.
+  *(decided 2026-11-23)*
+
 - **Field-level interest.** The Interesting / Unsure / Not for me row is
   gone (2b.12); fields are headings only. Decide how, and whether, the user
   tells us a whole field is or is not for them: a dismiss on the heading, an
