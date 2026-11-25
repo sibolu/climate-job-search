@@ -12,7 +12,8 @@
  *              the first elicitation question.
  * - `elicit`   one answer (a pill click needs no model call) → the next
  *              question, or the done summary with a "go" pill.
- * - `discover` ranked fields and roles from cards + reference data (no web; D44).
+ * - `discover` ranked fields and roles from the cards and the model's own
+ *              knowledge: no reference catalogue, no web (D44, D61).
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
  *              with no field id is answered with a list of fields to pick.
  * - `queries`  one LinkedIn search per selected role, for every role with
@@ -291,6 +292,7 @@ export async function runTurn(
     case "discover": {
       messageContent(request);
       onProgress("Matching your experience against climate fields — this can take a minute or two…");
+      // No `catalogue` option: memory mode, so nothing here reads the reference tables (technical-plan.md D61).
       const result = await d.discoverFields({ sessionId, profile }, { llm: d.llm() });
       return respond(result.profile, [discoverMessage(result), ...note], explorePills(result.profile));
     }
@@ -371,8 +373,6 @@ export function turnErrorMessage(error: unknown): string {
     case "LlmToolPolicyError":
     case "LlmSessionIdError":
       return "The server is misconfigured for model calls. Tell the person running this pilot.";
-    case "ReferenceReadError":
-      return "The reference collection is unavailable right now. Try again in a minute.";
     case "APIConnectionError":
     case "APIConnectionTimeoutError":
       return "I could not reach the model service. Check your connection and try again.";
