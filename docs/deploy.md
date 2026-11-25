@@ -20,8 +20,8 @@ shell.
 ## First deploy
 
 1. **You: create the Supabase production project.** A new project, separate
-   from any existing one in the account. Note its project ref, URL, anon key,
-   service-role key and database password; keep them in a password manager.
+   from any existing one in the account. Note its project ref, URL, publishable key,
+   secret key and database password; keep them in a password manager.
 2. **You: create the Vercel project** from the GitHub repo (framework Next.js,
    build command `next build`, the default). In Settings:
    - Node.js version **24.x** (the repo has no `engines` field or `.nvmrc`, so
@@ -46,10 +46,10 @@ shell.
    | `PASSCODE_COOKIE_SECRET` | server-only | `openssl rand -base64 32`, generated once for production |
    | `ANTHROPIC_API_KEY` | server-only | A key from an Anthropic organisation with 30-day data retention (not zero data retention): the `discover` step runs on `claude-fable-5-2`, which needs it; the other steps run on `claude-opus-5-5` |
    | `NEXT_PUBLIC_SUPABASE_URL` | public | `https://<project-ref>.supabase.co` |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | The production anon key |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | The production publishable key |
    | `ENABLE_EXPERIMENTAL_COREPACK` | build | `1` |
 
-   **Do not set `SUPABASE_SERVICE_ROLE_KEY` in Vercel.** It bypasses RLS and
+   **Do not set `SUPABASE_SECRET_KEY` in Vercel.** It bypasses RLS and
    only the scripts use it (`seed.ts`, `check-rls.ts`, `smoke-llm.ts`); no app
    code reads it. Never give a server-only variable a `NEXT_PUBLIC_` prefix.
    `NEXT_PUBLIC_*` values are baked in at build time, so changing them needs a
@@ -76,11 +76,11 @@ shell.
    silently come from the local stack through `pnpm db:check-rls`):
 
    ```bash
-   read -rs SRK   # paste the production service-role key, not echoed
+   read -rs SK   # paste the production secret key, not echoed
    NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co \
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key> \
-   SUPABASE_SERVICE_ROLE_KEY="$SRK" \
-     pnpm exec tsx scripts/check-rls.ts; unset SRK
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-key> \
+   SUPABASE_SECRET_KEY="$SK" \
+     pnpm exec tsx scripts/check-rls.ts; unset SK
    ```
 
    It exits non-zero on any violation. It writes probe rows only to
@@ -105,8 +105,8 @@ out at once, also replace `PASSCODE_COOKIE_SECRET` with a fresh
 
 ## Reading `llm_usage`
 
-The anon key can insert rows but not read them, so read in the Supabase
-dashboard's SQL editor (or with the service-role key from a shell). Rows hold
+The publishable key can insert rows but not read them, so read in the Supabase
+dashboard's SQL editor (or with the secret key from a shell). Rows hold
 counters only; there is no prompt, reply or resume text to find.
 
 ```sql

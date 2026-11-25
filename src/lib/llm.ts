@@ -491,7 +491,7 @@ export function memoryUsageSink(): UsageSink & { rows: UsageRow[] } {
 }
 
 /**
- * The real sink: an anonymous insert through the anon key, which RLS allows to
+ * The real sink: an anonymous insert through the publishable key, which RLS allows to
  * INSERT `llm_usage` and nothing else.
  */
 export function supabaseUsageSink(): UsageSink {

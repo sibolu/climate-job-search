@@ -132,8 +132,8 @@ and must never be imported into a client component.
 | `PASSCODE_COOKIE_SECRET` | server-only | HMAC key that signs the session cookie |
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Anon key: select-only on reference tables, insert-only on `llm_usage` |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`); bypasses RLS |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | Publishable key: select-only on reference tables, insert-only on `llm_usage` |
+| `SUPABASE_SECRET_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`); bypasses RLS |
 
 ## Supabase: the reference collection and `llm_usage`
 
@@ -155,9 +155,9 @@ pnpm db:check-rls    # prove anon can read reference data and nothing else
 ```
 
 `pnpm db:start` prints the local URL and keys (`supabase status -o env` prints
-them again): copy `API_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY` into
-`.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-and `SUPABASE_SERVICE_ROLE_KEY`. They are fixed local-only dev keys, so they
+them again): copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into
+`.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+and `SUPABASE_SECRET_KEY`. They are fixed local-only dev keys, so they
 are not secrets, but `.env.local` stays gitignored anyway.
 
 **The only server-side write is the anonymous `llm_usage` row.** The reference
@@ -296,7 +296,7 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   `console.warn` with the error *code* only. Keep it that way.
 - **Usage rows** are one per logical call (a `pause_turn` continuation is part
   of the same call and its tokens are summed), priced from `PRICE_PER_MTOK`,
-  written fire-and-forget through the anon key. `UsageRow` has a fixed key
+  written fire-and-forget through the publishable key. `UsageRow` has a fixed key
   list (`USAGE_ROW_KEYS`) guarded at compile time and in the tests: it holds
   counters only, and no content field may ever be added.
 
@@ -306,8 +306,8 @@ pnpm smoke:llm   # one live structured call, then reads its llm_usage row back
 
 Without `ANTHROPIC_API_KEY` the smoke script prints a skip message and exits 0.
 With a key it needs the local Supabase stack running and
-`SUPABASE_SERVICE_ROLE_KEY` set, because the read-back uses the service role —
-the anon key deliberately cannot read `llm_usage`.
+`SUPABASE_SECRET_KEY` set, because the read-back uses the service role —
+the publishable key deliberately cannot read `llm_usage`.
 
 ## The turn endpoint (`src/lib/turn.ts`, `src/app/api/turn/route.ts`)
 

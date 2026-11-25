@@ -1,16 +1,18 @@
 /**
- * Supabase clients. Two of them, and only two.
+ * Supabase clients. Two of them, and only two. The names follow the Postgres
+ * role each key runs as, not the key's name (technical-plan.md D63).
  *
- * - {@link anonClient} — the anon key. Select-only on the three reference
- *   tables, insert-only on `llm_usage`, nothing else (see
- *   `supabase/migrations/*_rls_policies.sql`). Safe in the browser; that is
- *   the whole point of the RLS shape.
- * - {@link serviceClient} — the service role key. Bypasses RLS, so it is
- *   restricted to the repo's three scripts: `scripts/seed.ts`,
- *   `scripts/check-rls.ts` and `scripts/smoke-llm.ts` (which reads back the
- *   usage row the anon key cannot read). It throws if it is ever reached from
- *   a browser bundle. Both clients read `NEXT_PUBLIC_SUPABASE_URL`, so a
- *   script and the app can never be pointed at different databases.
+ * - {@link anonClient} — the publishable key, which runs as the `anon` role.
+ *   Select-only on the three reference tables, insert-only on `llm_usage`,
+ *   nothing else (see `supabase/migrations/*_rls_policies.sql`). Safe in the
+ *   browser; that is the whole point of the RLS shape.
+ * - {@link serviceClient} — the secret key, which runs as the `service_role`
+ *   role. Bypasses RLS, so it is restricted to the repo's three scripts:
+ *   `scripts/seed.ts`, `scripts/check-rls.ts` and `scripts/smoke-llm.ts`
+ *   (which reads back the usage row the publishable key cannot read). It
+ *   throws if it is ever reached from a browser bundle. Both clients read
+ *   `NEXT_PUBLIC_SUPABASE_URL`, so a script and the app can never be pointed
+ *   at different databases.
  *
  * Supabase holds the reference collection and the anonymous `llm_usage` rows
  * and nothing else: no profiles, no transcripts, no user content of any kind
@@ -62,7 +64,7 @@ let cachedService: TypedSupabaseClient | undefined;
 export function anonClient(): TypedSupabaseClient {
   if (cachedAnon !== undefined) return cachedAnon;
   const url = required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const key = required("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const key = required("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   cachedAnon = createClient<Database>(url, key, NO_PERSISTENCE);
   return cachedAnon;
 }
@@ -79,7 +81,7 @@ export function anonClient(): TypedSupabaseClient {
 export function serviceClient(): TypedSupabaseClient {
   if (typeof window !== "undefined") {
     throw new SupabaseConfigError(
-      "serviceClient() was called in a browser. The service role key bypasses RLS and must " +
+      "serviceClient() was called in a browser. The secret key bypasses RLS and must " +
         "never reach the client bundle; use anonClient() instead.",
     );
   }
@@ -88,7 +90,7 @@ export function serviceClient(): TypedSupabaseClient {
   // script-only override would let `pnpm seed` and the app write and read
   // different databases without anyone noticing.
   const url = required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const key = required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const key = required("SUPABASE_SECRET_KEY", process.env.SUPABASE_SECRET_KEY);
   cachedService = createClient<Database>(url, key, NO_PERSISTENCE);
   return cachedService;
 }

@@ -12,7 +12,7 @@
  * non-zero exit and no partial write. The database enforces the same rules
  * again as CHECK constraints and foreign keys.
  *
- * Uses the service role key, which bypasses RLS. Run it from a laptop or CI,
+ * Uses the secret key, which bypasses RLS. Run it from a laptop or CI,
  * never from the app.
  *
  *   pnpm db:start && pnpm db:reset && pnpm seed

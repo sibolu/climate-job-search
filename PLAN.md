@@ -23,7 +23,7 @@ in each phase's table. Every phase also starts with your kickoff prompt
   `ENABLE_EXPERIMENTAL_COREPACK=1`; set `APP_PASSCODE`,
   `PASSCODE_COOKIE_SECRET`, `ANTHROPIC_API_KEY` (an organisation with 30-day
   data retention, which Fable 5.2 needs), `NEXT_PUBLIC_SUPABASE_URL` and
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel, and not the service-role key.
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in Vercel, and not the secret key.
   Then kick off a fresh session with the same prompt (`Execute Phase 2d per
   PLAN.md. Commit each step on branch phase-2d. Stop at the gate.`) and give
   it the Supabase project ref and the production URL; it pushes the
@@ -268,7 +268,7 @@ per-session spend cap stays in 3.3 (the passcode is the demo's guard; watch
   written in memory mode.
 - Role profiles, never personal profiles (D6).
 - Deploy touches auth and Supabase production: no secret in the repo, the
-  anon key only in the app, `db:check-rls` run against production before the
+  publishable key only in the app, `db:check-rls` run against production before the
   URL is shared.
 
 | Step | What | Who | Done when | Status |

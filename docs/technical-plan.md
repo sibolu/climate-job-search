@@ -37,7 +37,7 @@ Defaults; a decision in §5 overrides a row here.
 | LLM | Anthropic TS SDK, model per step: `claude-fable-5-2` for `discover`, `claude-opus-5-5` for every other step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on every model. See D44, D45, D52, D62 |
 | Grounding | In the app, the model's own knowledge only: discovery gets the cards, skills and preferences, no catalogue, no URLs (D61). The reference catalogue is kept as an evaluation arm behind `DiscoverOptions.catalogue`, reached only by `pnpm try:discover --catalogue`. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Memory-only is the baseline arm; the app switches to the catalogue only if the evaluation says so (D61); hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
-| Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS. Not read by the app since D61; the catalogue arm of the evaluation reads it | The PRD's one allowed collection, reproducible from the repo |
+| Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Publishable key with select-only RLS. Not read by the app since D61; the catalogue arm of the evaluation reads it | The PRD's one allowed collection, reproducible from the repo |
 | Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
@@ -283,7 +283,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     as any migration. Hand-writing it would let the types drift from the
     schema silently.
 16. **The RLS shape has an executable test.** `pnpm db:check-rls` runs against
-    a live stack and asserts, with the anon key, that the three reference
+    a live stack and asserts, with the publishable key, that the three reference
     tables are readable and not writable, that `llm_usage` is insertable and
     not readable, and that the blocked-domain CHECK rejects a LinkedIn source
     even for the service role. It insists on Postgres `42501` rather than "any
@@ -328,7 +328,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     part of the same logical call: the wrapper resumes it (up to
     `MAX_PAUSE_TURN_CONTINUATIONS = 5`, then `LlmPauseLimitError`), sums the
     token counters across every continuation, and writes a single row. Rows
-    are written fire-and-forget through the anon key, and a failure is a
+    are written fire-and-forget through the publishable key, and a failure is a
     `console.warn` carrying the error *code* only — telemetry must never cost
     the user their turn, and must never be a channel through which content
     leaks. Refused and truncated turns are logged before the error is thrown,
@@ -338,7 +338,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     eagerly and lets it complete even if the consumer stops reading deltas
     (the API reports output tokens only in the final `message_delta`), so
     `final` always settles and the row is exact.
-22. **`llm_usage`'s shape is a CHECK constraint, not a comment.** The anon key
+22. **`llm_usage`'s shape is a CHECK constraint, not a comment.** The publishable key
     is public and INSERT on that table is open by design, so "counters and
     identifiers only" has to be something the database enforces rather than
     something the app promises: `session_id` must match `^[0-9a-f]{32}$` (the
@@ -1103,6 +1103,18 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     The 3-minute deadline is unchanged: the two measured memory-mode
     discovery calls took 61.5s and 78.8s (§6), and it would have been
     raised for `discover` alone had one passed 150s.
+
+63. **Supabase keys use the publishable / secret names (2026-11-25, Phase
+    2d deploy prep).** Supabase replaced the legacy anon and service-role
+    JWT keys with a publishable key (`sb_publishable_…`) and a secret key
+    (`sb_secret_…`), and the local CLI prints both as `PUBLISHABLE_KEY` and
+    `SECRET_KEY`. The env vars are renamed to match:
+    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`. Each
+    new key runs as the same Postgres role as the key it replaces (`anon`,
+    `service_role`), so RLS, the migrations and `pnpm db:check-rls` are
+    unchanged. `anonClient()` and `serviceClient()` keep their names because
+    they name the role, not the key. Applied migrations still say "anon key"
+    in comments; they are never edited.
 
 ---
 

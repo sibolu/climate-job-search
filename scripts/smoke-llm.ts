@@ -4,7 +4,7 @@
  *
  * It is deliberately tiny (a structured "say hello", no web tools, medium
  * effort) because what it proves is the wiring, not the model: the API key
- * works, `structured()` parses, and the anon key can insert a usage row that
+ * works, `structured()` parses, and the publishable key can insert a usage row that
  * the service role can read back. It runs as a `queries`-step call, so it
  * also proves the per-step model (technical-plan.md D46, D52): the row's
  * `model` must be `MODEL_BY_STEP.queries` (`claude-opus-5-5`), or it exits
@@ -14,8 +14,8 @@
  * safe to run on a machine that has no key. The key is the only credential
  * production has, so keying off it here matches how the app runs.
  *
- * Needs the local Supabase stack (`pnpm db:start`) and `SUPABASE_SERVICE_ROLE_KEY`
- * for the read-back — the anon key deliberately cannot read `llm_usage`.
+ * Needs the local Supabase stack (`pnpm db:start`) and `SUPABASE_SECRET_KEY`
+ * for the read-back — the publishable key deliberately cannot read `llm_usage`.
  */
 
 import process from "node:process";
