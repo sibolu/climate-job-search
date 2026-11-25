@@ -157,6 +157,16 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   path to Indeed search, which the PRD's no-scraping rule otherwise rules
   out. Any use goes through `src/lib/llm.ts` like every other fetch path.
   Check the terms and what the server exposes first. *(2026-11-17 run)*
+- **Google X-ray search of startup ATS boards.** Alongside each LinkedIn
+  query, write a Google search string the person pastes into Google to
+  reach Greenhouse, Lever and Ashby job boards directly, without the noise
+  of aggregators, e.g. `(site:boards.greenhouse.io OR site:jobs.lever.co OR
+  site:jobs.ashbyhq.com) "<role title>" (<field terms>)`. The person runs
+  it by hand, so nothing is fetched and the no-scraping rule holds. Needs
+  the current ATS host names (Greenhouse has more than one), Google's
+  operator and length limits, and whether it is a second query per role in
+  `queries.ts` or a variant derived from the LinkedIn one. Relates to
+  per-board query syntax above. *(2026-11-25)*
 - **Combine roles into one search.** Several ticked roles may be one
   query (synonymous titles, or one title with OR terms). A rule for when
   to merge and when to keep separate; today it is strictly one per role.
@@ -233,6 +243,13 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 
 ## 6. Process
 
+- **Select the arm per run.** The evaluation after the demo compares
+  discovery in several arms (memory only, which is what the app runs since
+  Phase 2d; the Phase 2c researched catalogue; later additions) while
+  `pnpm seed` knows only `data/*.yaml`. Needs a way to point a run at a
+  catalogue (a `--catalogue <dir>` on the try and eval scripts, one Supabase
+  schema per arm, or an injected `ReferenceReader`), decided in the
+  evaluation spec, not before. *(decided 2026-11-25)*
 - **Post-edit hook that runs lint and unit tests.** Cheap, but needs a
   scope narrower than "every edit" to fit the one-verification-pass-per-step
   rule in AGENTS.md. *(pre-2b)*
