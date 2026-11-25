@@ -60,6 +60,34 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 
 ## 2. Discovery, fields and roles
 
+- **Trades and field roles in the reference data.** The Phase 2c research
+  covers professional career switchers only. Installers, technicians,
+  electricians and other trades are left out, although public green-jobs
+  data is dominated by them. Adding them means a second pass over the same
+  sources with the `field-technician` function kept in.
+  *(decided 2026-11-23)*
+- **Finding the fields and roles that are growing now.** An extension to
+  the Phase 2c research, which works from official datasets and so lags
+  the market. Two ideas, suggested by Gemini and not yet checked:
+  - *Climate VC portfolios.* Pull company lists from Lowercarbon Capital,
+    Breakthrough Energy Ventures, Congruent Ventures, Energy Impact
+    Partners and World Fund (EU), then read each company's openings from
+    its applicant-tracking system's public endpoint (Greenhouse, Lever,
+    Ashby, Workable). The 2c.1 survey already found the Breakthrough and
+    Energy Impact Partners portfolios to be open lists.
+  - *Public subsidies and grants.* Cross-reference recent awardees from
+    the US Department of Energy (Loan Programs Office, ARPA-E), Inflation
+    Reduction Act tax-credit beneficiaries, EU Innovation Fund grantees
+    and Horizon Europe consortia. A large grant tends to be followed by
+    hiring for project developers, permitting leads and engineers.
+
+  Before building either: pulling openings from tracking-system endpoints
+  at scale would be a job corpus, which the PRD forbids, so it must stay
+  bounded like the career-page rule (titles, function and URL only) and
+  each system's terms must allow it. Check which awardee lists are
+  published as datasets, in line with D60; tax-credit beneficiaries may
+  not be public at all. *(noted 2026-11-23)*
+
 - **Field-level interest.** The Interesting / Unsure / Not for me row is
   gone (2b.12); fields are headings only. Decide how, and whether, the user
   tells us a whole field is or is not for them: a dismiss on the heading, an
@@ -129,6 +157,16 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   path to Indeed search, which the PRD's no-scraping rule otherwise rules
   out. Any use goes through `src/lib/llm.ts` like every other fetch path.
   Check the terms and what the server exposes first. *(2026-11-17 run)*
+- **Google X-ray search of startup ATS boards.** Alongside each LinkedIn
+  query, write a Google search string the person pastes into Google to
+  reach Greenhouse, Lever and Ashby job boards directly, without the noise
+  of aggregators, e.g. `(site:boards.greenhouse.io OR site:jobs.lever.co OR
+  site:jobs.ashbyhq.com) "<role title>" (<field terms>)`. The person runs
+  it by hand, so nothing is fetched and the no-scraping rule holds. Needs
+  the current ATS host names (Greenhouse has more than one), Google's
+  operator and length limits, and whether it is a second query per role in
+  `queries.ts` or a variant derived from the LinkedIn one. Relates to
+  per-board query syntax above. *(2026-11-25)*
 - **Combine roles into one search.** Several ticked roles may be one
   query (synonymous titles, or one title with OR terms). A rule for when
   to merge and when to keep separate; today it is strictly one per role.
@@ -205,6 +243,13 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 
 ## 6. Process
 
+- **Select the arm per run.** The evaluation after the demo compares
+  discovery in several arms (memory only, which is what the app runs since
+  Phase 2d; the Phase 2c researched catalogue; later additions) while
+  `pnpm seed` knows only `data/*.yaml`. Needs a way to point a run at a
+  catalogue (a `--catalogue <dir>` on the try and eval scripts, one Supabase
+  schema per arm, or an injected `ReferenceReader`), decided in the
+  evaluation spec, not before. *(decided 2026-11-25)*
 - **Post-edit hook that runs lint and unit tests.** Cheap, but needs a
   scope narrower than "every edit" to fit the one-verification-pass-per-step
   rule in AGENTS.md. *(pre-2b)*
