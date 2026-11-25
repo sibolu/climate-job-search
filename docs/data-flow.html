@@ -136,7 +136,7 @@
 <main>
 
 <h1>How profile.md moves through the app</h1>
-<p class="sub">Two flows: paste → climate fields and roles, and ticked roles → LinkedIn searches. Verified against the code on 2026-11-18 (branch <code>phase-2b</code>, after step 2b.12).</p>
+<p class="sub">Two flows: paste → climate fields and roles, and ticked roles → LinkedIn searches. Verified against the code on 2026-11-25 (branch <code>phase-2d</code>, after step 2d.2).</p>
 
 <div class="legend">
   <span><i class="sw" style="background:var(--you-bg);border-color:var(--you-bd)"></i>You, in the browser</span>
@@ -158,8 +158,8 @@
 <ul class="note" style="margin-top:10px">
   <li>Start (which records the pasted text and notes under <code>Inputs</code>), and clicks on skills, cards, interest pills and roles, edit profile.md in the browser. No server call.</li>
   <li>profile.md, <code>Inputs</code> included, lives in <code>localStorage</code> and is resent whole in every turn's request body; the server keeps nothing.</li>
-  <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content.</li>
-  <li>Every call: adaptive thinking, structured JSON output, no web tools. <code>claude-opus-5-5</code> for every call: cards, preferences, discovery and searches (<code>MODEL_BY_STEP</code>). All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
+  <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content. Nothing in either flow reads Supabase (technical-plan D61).</li>
+  <li>Every call: adaptive thinking, structured JSON output, no web tools. <code>claude-fable-5-2</code> for discovery, <code>claude-opus-5-5</code> for cards, preferences and searches (<code>MODEL_BY_STEP</code>, technical-plan D62). All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
 </ul>
 
 <!-- ───────────── flow 1 ───────────── -->
@@ -252,19 +252,19 @@
     <div class="row">
       <div class="cell"><div class="box store">
         <h3>Reference collection</h3>
-        <ul><li>Supabase, read-only</li><li>Climate fields + example roles, with source URLs</li><li>Curated in <a href="../data/">data/*.yaml</a></li></ul>
+        <ul><li><b>Not read by the app (D61); evaluation arm</b>, reached only by <code>pnpm try:discover --catalogue</code></li><li>Supabase, read-only: climate fields + example roles, with source URLs</li><li>Curated in <a href="../data/">data/*.yaml</a></li></ul>
       </div></div>
       <div class="cell"><div class="box api">
-        <div class="api-head"><span class="num">API 3</span><code>discoverFields</code><span class="tag">step discover</span><span class="tag">effort medium</span></div>
-        <h3>Cards + preferences + catalogue → 4–7 ranked fields, 2–4 roles each</h3>
+        <div class="api-head"><span class="num">API 3</span><code>discoverFields</code><span class="tag">step discover</span><span class="tag">claude-fable-5-2</span><span class="tag">effort medium</span></div>
+        <h3>Cards + preferences → 4–7 ranked fields, 2–4 roles each, from the model's knowledge</h3>
         <ul class="io">
-          <li><b>In:</b> active cards, preferences (picked climate areas rank first, never filter), skills from <code>activeSkills</code> (accepted unless removed), fields already on file (rejected ones must not return), the reference catalogue</li>
-          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles with plain occupation titles, each citing cards. A re-run replaces the list: fields and roles it does not return are marked <code>Dropped</code> and un-ticked, never deleted (D58)</li>
+          <li><b>In:</b> active cards, preferences (picked climate areas rank first, never filter), skills from <code>activeSkills</code> (accepted unless removed), fields already on file (rejected ones must not return). No catalogue, no web (D44, D61)</li>
+          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles with plain occupation titles, each citing cards; example organisations as plain text. No <code>Ref</code> and no source URL is written (D61). A re-run replaces the list: fields and roles it does not return are marked <code>Dropped</code> and un-ticked, never deleted (D58)</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT · discover.ts:320</a></div>
-          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:453</a></div>
-          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:877</a></div>
+          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT_MEMORY · discover.ts:398</a></div>
+          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:554</a></div>
+          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:1098</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -279,10 +279,10 @@
         <ul>
           <li>Drop any field or role that cites no active card</li>
           <li>Strip level words from role titles, dedupe within a field, drop a title headed by a rank (Director of…, Head of…)</li>
-          <li>Strip source URLs the catalogue doesn't list</li>
+          <li>Strip any URL from field and role text (memory mode has no sources)</li>
           <li>Cap at 7 fields, drop duplicates</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:770</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:850</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Fields</span><span class="chip w">Role Shortlist</span></div>
@@ -399,8 +399,8 @@
     <h2>Where the ground truth is</h2>
     <ul>
       <li><b>Your words:</b> pasted text, notes, pill answers, clicks. Every field and role must cite one of your cards.</li>
-      <li><b>Reference collection:</b> hand-curated YAML, mirrored to Supabase. Explains fields and roles; only source of links. Never powers a search.</li>
-      <li><b>The model's own knowledge:</b> fields or roles the collection lacks. Kept with no source link.</li>
+      <li><b>The model's own knowledge:</b> every field, role and example organisation in the app (D61). No source link, ever.</li>
+      <li><b>Reference collection:</b> hand-curated YAML, mirrored to Supabase. Not read by the app (D61); the catalogue arm of the evaluation. Never powers a search.</li>
     </ul>
   </div>
   <div>

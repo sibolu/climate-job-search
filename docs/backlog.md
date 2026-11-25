@@ -100,16 +100,19 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   screen shows. Either cut it from the discovery schema (less output, a
   faster turn) or bring it back with a job the title does not already do.
   *(2026-11-19 walkthrough)*
-- **Interest areas and the catalogue do not line up.** The six areas the
-  person picks from (`CLIMATE_AREAS` in `elicit.ts`, D54) are matched to
-  fields by the model alone: the catalogue's `sector_group` has three
-  coarse values, and about a quarter of its fields sit in none of the six
-  (climate finance, policy, communications, carbon accounting software,
-  risk analytics, adaptation, environmental justice). Options: tag each
-  field in `data/climate_fields.yaml` with an area (a schema change and a
-  migration) so ranking by interest can be checked in the evals; add areas
-  for what the six leave out; or leave it to the prompt. Ask first whether
-  fellows miss an area. *(2026-11-19 walkthrough)*
+- **Interest areas and the catalogue do not line up (catalogue arm).**
+  Since D61 the app runs memory-only discovery, whose prompt frames climate
+  work by ten areas (the six `CLIMATE_AREAS` plus Climate Finance, Industry
+  & Materials, Nature & Water, Corporate Sustainability & Climate
+  Services), so the mismatch now matters only for the evaluation's
+  catalogue arm: the six areas the person picks from (D54) are matched to
+  catalogue fields by the model alone, the catalogue's `sector_group` has
+  three coarse values, and about a quarter of its fields sit in none of the
+  six. Options for that arm: tag each field in `data/climate_fields.yaml`
+  with an area (a schema change and a migration) so ranking by interest can
+  be checked in the evals, or leave it to the prompt. Settle with the
+  evaluation spec, and ask whether fellows miss an area.
+  *(2026-11-19 walkthrough; narrowed 2026-11-25, D61)*
 - **"Get more fields" / "get more roles".** A second discovery pass that
   excludes what is already on the profile and returns the next tranche.
   Needs a rule for ranking old and new together (order is resolved on
@@ -247,7 +250,8 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   discovery in several arms (memory only, which is what the app runs since
   Phase 2d; the Phase 2c researched catalogue; later additions) while
   `pnpm seed` knows only `data/*.yaml`. Needs a way to point a run at a
-  catalogue (a `--catalogue <dir>` on the try and eval scripts, one Supabase
+  catalogue (a directory argument on `try:discover --catalogue`, which
+  today reads the local stack, and on the eval scripts, one Supabase
   schema per arm, or an injected `ReferenceReader`), decided in the
   evaluation spec, not before. *(decided 2026-11-25)*
 - **Post-edit hook that runs lint and unit tests.** Cheap, but needs a

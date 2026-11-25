@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D60, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D62, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -32,12 +32,12 @@ Defaults; a decision in §5 overrides a row here.
 | Concern | Choice | Why |
 |---|---|---|
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
-| Hosting | Vercel for app and route handlers. Supabase Postgres for the reference collection only | Existing subscriptions |
+| Hosting | Vercel for app and route handlers. Supabase Postgres for the `llm_usage` table and the reference tables (seeded, not read by the app since D61). Setup in `docs/deploy.md` | Existing subscriptions |
 | Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
 | LLM | Anthropic TS SDK, model per step: `claude-fable-5-2` for `discover`, `claude-opus-5-5` for every other step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on every model. See D44, D45, D52, D62 |
-| Grounding | Supabase reference collection, then the model's own knowledge. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Baseline before a larger roles-and-occupations catalogue; hard constraint still enforced in code |
+| Grounding | In the app, the model's own knowledge only: discovery gets the cards, skills and preferences, no catalogue, no URLs (D61). The reference catalogue is kept as an evaluation arm behind `DiscoverOptions.catalogue`, reached only by `pnpm try:discover --catalogue`. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Memory-only is the baseline arm; the app switches to the catalogue only if the evaluation says so (D61); hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
-| Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
+| Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS. Not read by the app since D61; the catalogue arm of the evaluation reads it | The PRD's one allowed collection, reproducible from the repo |
 | Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
@@ -127,7 +127,7 @@ src/
     reference.ts    # typed reads from the Supabase reference tables (0.4)
     cards.ts        # pasted text → experience cards (1.1)
     elicit.ts       # preference elicitation policy and answer pills (1.2)
-    discover.ts     # fields/roles discovery, no web tools (1.4; D44)
+    discover.ts     # fields/roles discovery, no web tools, memory-only in the app (1.4; D44, D61)
     explore.ts      # field drill-down, example posts, LinkedIn guidance; no UI path (2.2; D39)
     queries.ts      # one LinkedIn query per selected role, and revision from feedback (2.3/2b.8; D47)
     boards.ts       # client-safe board labels, alert steps, query extra keys (2.4; D32)
@@ -168,8 +168,8 @@ evals/                 # synthetic profiles, structural checks, LLM-judge rubric
 ## 4. Risks specific to this project
 
 - **Grounding quality is the hypothesis under test.** Discovery now runs on
-  the reference collection and the model's own knowledge (D44), so a field
-  outside the collection has no source at all. Step 1.4's check counts
+  the model's own knowledge alone (D61), with no source for any field; the
+  reference catalogue is an evaluation arm. Step 1.4's check counts
   citations, not their quality; the LLM judge in 3.1 is where quality gets
   measured, and it is what decides whether a larger catalogue or bounded
   search comes back. Do not skip 3.1.
@@ -205,7 +205,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
    Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
    `claude-opus-5-5`: D44; `queries` and `revise` on `claude-sonnet-5-5`:
-   D46. Superseded by D52: every step on `claude-opus-5-5` again.)
+   D46. Superseded by D52: every step on `claude-opus-5-5` again; then
+   D62: `discover` on `claude-fable-5-2`.)
 3. All user state lives in the browser (`localStorage`) and is resent each
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
@@ -662,6 +663,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 
     Re-check with the Phase 3 evals (3.1): if recalled fields turn out
     wrong or generic, the catalogue comes first, then bounded search.
+    (Superseded in part by D61: the app no longer reads the catalogue, and
+    "sources are catalogue URLs only" now describes the catalogue arm.)
 
 45. **Every model call streams, has a 3-minute deadline, and stops when the
     browser goes away (2026-09-24).** Supersedes D27's timeout arithmetic and
@@ -837,7 +840,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     terms ("green jobs", "climate careers") instead of the field's own
     vocabulary, so they were too general to be worth the saving.
     - `MODEL_BY_STEP.queries` and `.revise` → `claude-opus-5-5`; all six
-      steps now run on Opus 5.5. `EFFORT_BY_STEP` is unchanged: `explore`
+      steps now run on Opus 5.5 (D62 then moves `discover` to Fable 5.2).
+      `EFFORT_BY_STEP` is unchanged: `explore`
       `high`, every other step `medium`, always sent explicitly.
     - The `ModelId` union and the Sonnet 5.5 row in `PRICE_PER_MTOK` are
       kept, so a later switch is a one-line table change. `costUsd` still
@@ -1057,6 +1061,48 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     (ESCO, the EU Taxonomy, any OECD table) is settled at G2c.2, after the 2c.3
     exploration. A script that calls these APIs is a dev-only fetch path
     like D59: no route can reach it, and it refuses blocked hosts.
+
+61. **Memory-only discovery is the app's behaviour and the baseline arm
+    (2026-11-25, step 2d.2).** The evaluation that follows the demo holds
+    the pipeline constant and changes only what the model is given:
+    nothing, then the O*NET-based catalogue from Phase 2c, then whatever
+    comes after. The app runs the first arm.
+    - A model-generated shared catalogue was considered and rejected: it
+      would be a middle arm (model plus model-written data), not the floor.
+    - **No URL from memory, ever.** The memory schema
+      (`DiscoverOutputSchemaMemory`) has no `ref` and no `sources`, and the
+      validator strips any URL from the free text of fields and roles,
+      counted in `textUrlsStripped`. No `Ref` and no source is written.
+    - Example companies are plain text, never links: well-known
+      organisations the model is sure exist, in the US or the EU, or an
+      organisation type ("a utility's grid-planning team") rather than a
+      guessed name; organisations, never people (D6).
+    - The prompt (`DISCOVER_SYSTEM_PROMPT_MEMORY`) frames climate work by
+      ten areas, the six `CLIMATE_AREAS` plus Climate Finance, Industry &
+      Materials, Nature & Water, and Corporate Sustainability & Climate
+      Services, so coverage does not depend on the six interest pills.
+    - The catalogue path stays behind `DiscoverOptions.catalogue`
+      (`DISCOVER_SYSTEM_PROMPT_CATALOGUE`, byte-identical to the old
+      prompt), reached only by `pnpm try:discover --catalogue` and the
+      evaluation, the way `explore` and `revise` are script-only (D39,
+      D47). The reference tables, `pnpm seed` and `pnpm db:check-rls` stay.
+    - 2c.8 feeds the evaluation's catalogue arm; the app switches to it
+      only if the evaluation says so.
+
+    Supersedes D44's "sources are catalogue URLs only" for the app; it now
+    describes the catalogue arm.
+
+62. **`discover` runs on Claude Fable 5.2 at `medium` (2026-11-25, step
+    2d.1).** `MODEL_BY_STEP.discover` is `claude-fable-5-2`, priced $8 /
+    $40 per MTok, cache read $0.20, cache write $10 (`PRICE_PER_MTOK`,
+    from the model table checked 2026-11-25). The other five steps stay on
+    Opus 5.5 (D52). The request shape is unchanged: adaptive thinking,
+    structured output, streaming. No server-side fallback: a refusal is
+    `LlmRefusalError` and the usual error banner. Fable 5.2 needs an
+    Anthropic organisation with 30-day data retention (`docs/deploy.md`).
+    The 3-minute deadline is unchanged: the two measured memory-mode
+    discovery calls took 61.5s and 78.8s (§6), and it would have been
+    raised for `discover` alone had one passed 150s.
 
 ---
 
@@ -1329,3 +1375,47 @@ for, and it passes; it is the query to watch if the check is tightened.
 Queries were judged by reading them: no job board was opened or searched.
 The UI steps 2b.15–2b.18 were not exercised by this run; the try scripts
 cover the model stages and the profile, not the screens.
+
+### Phase 2d: the 2d.2 memory-only run (2026-11-25)
+
+The loop after 2d.1 and 2d.2 (D61, D62) was run live through the try
+scripts on the same two inputs as 2b.19: the `userdata/` resume (only
+counts, costs and times recorded) and the videographer fixture. Discovery
+ran in memory mode on `claude-fable-5-2` at `medium`; the other steps on
+`claude-opus-5-5`. Each stage ran once, the two inputs in parallel, nothing
+rerun, no prompt changed after the run. One catalogue-arm call was added on
+the fixture for comparison.
+
+| Pass | Step | Result | Tokens (in / cache write / out) | Cost | Time |
+|---|---|---|---|---|---|
+| `userdata/` resume | `try:cards` | 5 cards | 1,573 / 3,053 / 2,249 | $0.0665 | 21.0s |
+| | `try:discover --interest="Energy,Transportation"` (memory, Fable 5.2) | 5 fields, 11 roles, nothing dropped, no level word | 1,913 / 3,818 / 7,476 | $0.3525 | 78.8s |
+| | `try:queries --tick` (4 roles, 4 fields) | 4 LinkedIn queries | 2,132 / 2,171 / 1,093 | $0.0412 | 13.0s |
+| | **Total** | | | **$0.4602** | |
+| Videographer | `try:cards` | 3 cards | 1,014 / 3,053 / 1,251 | $0.0443 | 12.7s |
+| | `try:discover --interest="Food & Agriculture,Energy"` (memory, Fable 5.2) | 5 fields, 14 roles, nothing dropped, no level word | 1,141 / 3,818 / 5,735 | $0.2767 | 61.5s |
+| | `try:queries --tick R1,R4,R7,R10` | 4 LinkedIn queries | 1,700 / 2,171 / 1,076 | $0.0392 | 11.7s |
+| | **Total** | | | **$0.3602** | |
+| Videographer, catalogue arm | `try:discover --catalogue` (Fable 5.2) | 5 fields, 13 roles; 5 `Ref` lines, 7 lines with source URLs | 14,781 / 3,452 / 7,418 | $0.4495 | 79.3s |
+
+The whole run cost $1.27 (the two memory loops $0.82). The checks, on both
+inputs:
+
+- All seven scripts exited 0; both memory discovery calls finished well
+  inside the 180s deadline.
+- **No URL from memory (D61).** Zero `Ref` lines; every `- **Sources:**`
+  label bare (16 of 16 and 19 of 19); zero `http` or `www.` outside
+  `## Inputs`.
+- **Interest order (D54).** Fields in the picked areas with fit strong or
+  some rank first; one or two fields outside them are still listed.
+- **Search quality.** All eight queries pass the 2b.19 check.
+- **Companies.** In the fixture run discovery named 26 organisations and
+  12 organisation types; the reviewing worker judged none non-existent
+  (from model knowledge, unverified), and three were loose fits for their
+  field.
+
+Against 2b.19 (Opus 5.5 with the catalogue), discovery cost $0.35 / $0.28
+against $0.26 / $0.21 in about the same time (78.8s / 61.5s against
+79.8s / 61.6s): a far smaller input (about 2K tokens against 15K) does not
+offset Fable's higher output price. One run per stage, so the numbers are
+rough.
