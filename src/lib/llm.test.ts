@@ -220,14 +220,16 @@ describe("blocked domains", () => {
 // Config
 // ---------------------------------------------------------------------------
 
-describe("model and effort per step (technical-plan.md D44, D52)", () => {
+describe("model and effort per step (technical-plan.md D44, D52, D62)", () => {
+  const OPUS_PRICE = { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 };
+  const FABLE_PRICE = { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 };
   const EXPECTED = {
-    cards: { model: "claude-opus-5-5", effort: "medium" },
-    elicit: { model: "claude-opus-5-5", effort: "medium" },
-    discover: { model: "claude-opus-5-5", effort: "medium" },
-    explore: { model: "claude-opus-5-5", effort: "high" },
-    queries: { model: "claude-opus-5-5", effort: "medium" },
-    revise: { model: "claude-opus-5-5", effort: "medium" },
+    cards: { model: "claude-opus-5-5", effort: "medium", price: OPUS_PRICE },
+    elicit: { model: "claude-opus-5-5", effort: "medium", price: OPUS_PRICE },
+    discover: { model: "claude-fable-5-2", effort: "medium", price: FABLE_PRICE },
+    explore: { model: "claude-opus-5-5", effort: "high", price: OPUS_PRICE },
+    queries: { model: "claude-opus-5-5", effort: "medium", price: OPUS_PRICE },
+    revise: { model: "claude-opus-5-5", effort: "medium", price: OPUS_PRICE },
   } as const;
 
   it("covers every StepName, and prices every model it names", () => {
@@ -250,8 +252,12 @@ describe("model and effort per step (technical-plan.md D44, D52)", () => {
     expect(sink.rows[0]?.cost_usd).toBe(costUsd(EXPECTED[step].model, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }));
   });
 
-  it("runs every step on Opus 5.5 (D52)", () => {
-    for (const step of StepNameSchema.options) expect(MODEL_BY_STEP[step]).toBe("claude-opus-5-5");
+  it("runs discover on Fable 5.2 (D62) and every other step on Opus 5.5 (D52), at the listed effort and price", () => {
+    for (const step of StepNameSchema.options) {
+      expect(MODEL_BY_STEP[step]).toBe(EXPECTED[step].model);
+      expect(EFFORT_BY_STEP[step]).toBe(EXPECTED[step].effort);
+      expect(PRICE_PER_MTOK[MODEL_BY_STEP[step]]).toEqual(EXPECTED[step].price);
+    }
   });
 
   it("prices a queries call by the rates of the model that ran", async () => {
@@ -297,6 +303,13 @@ describe("cost", () => {
     // A realistic chat turn: 3k in, 700 out, 12k cache read.
     expect(costUsd("claude-opus-5-5", TURN)).toBeCloseTo(0.0284, 6);
     expect(costUsd("claude-opus-5-5", { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(0);
+  });
+
+  it("prices Fable 5.2", () => {
+    // 1M in + 1M out + 1M cache read + 1M cache write = 8 + 40 + 0.2 + 10
+    expect(costUsd("claude-fable-5-2", MILLION)).toBeCloseTo(58.2, 6);
+    // (3000 × 8 + 700 × 40 + 12000 × 0.2) / 1M = (24000 + 28000 + 2400) / 1M
+    expect(costUsd("claude-fable-5-2", TURN)).toBeCloseTo(0.0544, 6);
   });
 
   it("prices Sonnet 5.5", () => {
@@ -636,6 +649,8 @@ describe("structured", () => {
     expect(result.value.greeting).toBe("hello");
     expect(sink.rows).toHaveLength(1);
     expect(sink.rows[0]?.step).toBe("discover");
+    expect(sink.rows[0]?.model).toBe("claude-fable-5-2");
+    expect(params[0]?.model).toBe("claude-fable-5-2");
     expect(Object.keys(sink.rows[0] ?? {})).toEqual([...USAGE_ROW_KEYS]);
     expect(params[0]?.output_config?.effort).toBe("medium");
     expect(params[0]?.output_config?.format?.type).toBe("json_schema");

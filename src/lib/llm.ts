@@ -28,15 +28,17 @@
  * SDK notes (checked against the `claude-api` skill on 2026-09-24,
  * `@anthropic-ai/sdk` 0.125.0):
  *   * The model is chosen per step (see {@link MODEL_BY_STEP},
- *     technical-plan.md D52): every step runs on Opus 5.5 today, and the
- *     table can name any priced {@link ModelId}. Everything below holds for
- *     every model in the union.
- *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, both
- *     models; `budget_tokens` and disabled thinking are rejected by
- *     `claude-opus-5-5`.
+ *     technical-plan.md D52, D62): discovery runs on Fable 5.2 at `medium`
+ *     (D62), every other step on Opus 5.5 (D52), and the table can name any
+ *     priced {@link ModelId}. Everything below holds for every model in the
+ *     union.
+ *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, every
+ *     model; `budget_tokens` and disabled thinking are rejected by
+ *     `claude-opus-5-5` and `claude-fable-5-2`.
  *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
- *     Defaults differ by model (Opus 5.5 defaults to `medium`), so every
- *     call sets it explicitly; no default is relied on.
+ *     Defaults differ by model (Opus 5.5 defaults to `medium`, Sonnet 5.5
+ *     and Fable 5.2 to `high`), so every call sets it explicitly; no default
+ *     is relied on.
  *   * Every call streams (`client.messages.stream()` + `finalMessage()`), so
  *     no HTTP timeout sits under a long answer, and one deadline
  *     ({@link CALL_TIMEOUT_MS}) plus the caller's abort signal bound it
@@ -67,18 +69,19 @@ import { anonClient } from "./supabase";
 // ---------------------------------------------------------------------------
 
 /** The models this app calls. {@link PRICE_PER_MTOK} must price every one. */
-export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5";
+export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5" | "claude-fable-5-2";
 
 /**
- * Model per call type (technical-plan.md D2, D44, D52). Every step runs on
- * Opus 5.5: the cheaper model wrote searches that were too general (D52
- * reverses D46). The table stays so a later switch is a one-line change
- * here, not at the call sites.
+ * Model per call type (technical-plan.md D2, D44, D52, D62). Discovery runs
+ * on Fable 5.2 (technical-plan.md D62); every other step runs on Opus 5.5:
+ * the cheaper model wrote searches that were too general (D52 reverses
+ * D46). The table stays so a later switch is a one-line change here, not at
+ * the call sites.
  */
 export const MODEL_BY_STEP: Record<StepName, ModelId> = {
   cards: "claude-opus-5-5",
   elicit: "claude-opus-5-5",
-  discover: "claude-opus-5-5",
+  discover: "claude-fable-5-2",
   explore: "claude-opus-5-5",
   queries: "claude-opus-5-5",
   revise: "claude-opus-5-5",
@@ -88,10 +91,10 @@ export const MODEL_BY_STEP: Record<StepName, ModelId> = {
 export type Effort = "low" | "medium" | "high" | "max";
 
 /**
- * Depth per call type (technical-plan.md §1, D44, D52). Chat-like steps,
- * discovery and the query steps run at `medium`: on Opus 5.5, `medium`
- * discovery took half the time of Opus 5 at `high` with output that looked
- * about as good. `explore` (script-only) stays `high`.
+ * Depth per call type (technical-plan.md §1, D44, D52, D62). Chat-like
+ * steps, discovery and the query steps run at `medium`. Discovery runs on
+ * Fable 5.2 at `medium` (technical-plan.md D62); the others run on Opus 5.5
+ * (D52). `explore` (script-only) stays `high`.
  */
 export const EFFORT_BY_STEP: Record<StepName, Effort> = {
   cards: "medium",
@@ -244,18 +247,21 @@ export interface ModelPrice {
 
 /**
  * USD per million tokens, keyed by the model that ran (technical-plan.md D46,
- * D52).
+ * D52, D62).
  * Cache write is the 5-minute rate, 1.25× input.
  *   * `claude-opus-5-5`, from the `claude-api` skill's model table (checked
  *     2026-09-24): input $4, output $20, cache read $0.20.
  *   * The second priced model (2026-11-18): input $2, output $10, cache read
  *     $0.10. No step runs on it now (D52); its row stays so a later switch
  *     is a one-line {@link MODEL_BY_STEP} change.
+ *   * `claude-fable-5-2`, from the `claude-api` skill's model table (checked
+ *     2026-11-25): input $8, output $40, cache read $0.20.
  * Update both the numbers and the date when the skill's numbers change.
  */
 export const PRICE_PER_MTOK: Readonly<Record<ModelId, Readonly<ModelPrice>>> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+  "claude-fable-5-2": { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 },
 };
 
 /** Token counters, summed across the continuations of one logical call. */
@@ -687,7 +693,7 @@ function requestParams(
     max_tokens: maxTokens,
     system: systemBlocks(request.system),
     messages,
-    // Adaptive thinking on every call, both models; Opus 5.5 rejects
+    // Adaptive thinking on every call, every model; Opus 5.5 and Fable 5.2 reject
     // `budget_tokens` and "disabled".
     thinking: { type: "adaptive" },
     output_config: {
