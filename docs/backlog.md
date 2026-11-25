@@ -66,6 +66,27 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   data is dominated by them. Adding them means a second pass over the same
   sources with the `field-technician` function kept in.
   *(decided 2026-11-23)*
+- **Finding the fields and roles that are growing now.** An extension to
+  the Phase 2c research, which works from official datasets and so lags
+  the market. Two ideas, suggested by Gemini and not yet checked:
+  - *Climate VC portfolios.* Pull company lists from Lowercarbon Capital,
+    Breakthrough Energy Ventures, Congruent Ventures, Energy Impact
+    Partners and World Fund (EU), then read each company's openings from
+    its applicant-tracking system's public endpoint (Greenhouse, Lever,
+    Ashby, Workable). The 2c.1 survey already found the Breakthrough and
+    Energy Impact Partners portfolios to be open lists.
+  - *Public subsidies and grants.* Cross-reference recent awardees from
+    the US Department of Energy (Loan Programs Office, ARPA-E), Inflation
+    Reduction Act tax-credit beneficiaries, EU Innovation Fund grantees
+    and Horizon Europe consortia. A large grant tends to be followed by
+    hiring for project developers, permitting leads and engineers.
+
+  Before building either: pulling openings from tracking-system endpoints
+  at scale would be a job corpus, which the PRD forbids, so it must stay
+  bounded like the career-page rule (titles, function and URL only) and
+  each system's terms must allow it. Check which awardee lists are
+  published as datasets, in line with D60; tax-credit beneficiaries may
+  not be public at all. *(noted 2026-11-23)*
 
 - **Field-level interest.** The Interesting / Unsure / Not for me row is
   gone (2b.12); fields are headings only. Decide how, and whether, the user

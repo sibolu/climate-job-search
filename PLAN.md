@@ -15,12 +15,15 @@ in each phase's table. Every phase also starts with your kickoff prompt
 
 ## Waiting on you
 
-- **G2c.1:** read `docs/research/sources/recommendation.md` and pick the
-  backbone sources; the one open choice is whether Climate Finance and
-  Corporate Sustainability get one more survey worker, are kept unsurveyed,
-  or are cut. Then kick off the rest of the phase
+- **2c.2:** set up dataset access in a separate session (O*NET first;
+  then BLS, ILOSTAT and the OECD data API; ESCO is a proposed addition for
+  the EU side, strike it if you disagree). Then kick off 2c.3 in a fresh
+  session
   (`Execute Phase 2c per PLAN.md. Commit each step on branch phase-2c. Stop
   at the gate.`); it stops at G2c.2.
+- **2c.6 (before it runs, not urgent):** decide how the Climatebase job
+  list reaches the repo. The PRD forbids scraping Climatebase, so no worker
+  may fetch it; the step is written for a list you supply.
 
 ## Goal
 
@@ -215,19 +218,30 @@ insurance and carbon markets); Industry & Materials (steel, cement,
 chemicals, hydrogen, industrial heat); Nature & Water (conservation,
 forestry, oceans, water systems); Corporate Sustainability & Climate
 Services (carbon accounting, disclosure, climate data and software, policy
-and advocacy). An area that proves thin is cut at G2c.1. Which of the four
+and advocacy). No area was cut at G2c.1; whether Climate Finance and
+Corporate Sustainability stay is decided at G2c.2, once the dataset
+exploration shows whether occupation data can see them. Which of the four
 become pills in the UI is decided outside this phase.
 
 **Rules for every worker.**
 - Research output goes to `docs/research/`, never straight into `data/`.
+- The 2c.1 source survey is archived in `docs/archive/2c.1-source-survey/`
+  (gitignored, local only; the committed copy is in git history at
+  `9bad65f`). It surveyed reports, which D60 set aside, so no worker reads
+  it as a starting point. What later steps need from it is written into
+  their rows below.
+- Datasets, not reports (D60). Fields and roles come from datasets read
+  through their API or an MCP server. No worker extracts figures or lists
+  from an analysis page or a report; a report is named only as how a
+  dataset was found.
 - Every row carries its geography (US, EU or both) and a retrieval date.
 - Every claim carries a URL. A script checks that each URL resolves and is
   not on a blocked domain before a gate; an Opus worker spot-checks a
   sample of claims against their sources.
 - Company career pages may be read in a bounded way: at most 10 companies
   per field, recording title, function and URL only, no posting text.
-- Companies are chosen by fixed criteria, set in the 2c.2 brief and reused
-  unchanged in 2c.3: US and EU; a mix of startups, scale-ups, incumbents
+- Companies are chosen by fixed criteria, set in the 2c.4 brief and reused
+  unchanged in 2c.5: US and EU; a mix of startups, scale-ups, incumbents
   and nonprofits; a public careers page; named on at least one published
   list.
 - LinkedIn's Green Skills Report is not used.
@@ -237,18 +251,25 @@ the researched data.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/research/sources/`; every URL resolves and none is on a blocked domain (checked by script) | `[DONE]` (2026-11-23: 31 scorecards in five files; `pnpm research:check-links` passes with 10 sites refusing automated checks (D59); 10 claims spot-checked, 4 corrected; recommendation in `docs/research/sources/recommendation.md`) |
-| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation (`docs/research/sources/recommendation.md`) | Choices recorded here | `[TODO]` |
-| 2c.2 | Pilot two areas end to end, Energy (best data) and Carbon Removal (worst): fields, a field × function matrix of roles, top companies, real titles from a bounded career-page read. Appends the career-page decision to `docs/technical-plan.md` §5 | Claude (Sonnet gathers, Opus reconciles) | Both areas written up under `docs/research/areas/` in one agreed format; empty matrix cells say "none found" or "not looked" | `[TODO]` |
-| G2c.2 | Review the pilot format before the fan-out | **`YOU`** | Format approved or corrected | `[TODO]` |
-| 2c.3 | Remaining areas in the approved format, one worker per area | Claude (Sonnet gathers, Opus reconciles) | Every area written up; link check passes | `[TODO]` |
-| 2c.4 | Synthesis: one consolidated reference set and a schema recommendation (occupation codes on roles, a companies table, or the current three files unchanged) | Claude (Fable) | `docs/research/synthesis.md` | `[TODO]` |
-| G2c.3 | Approve the reference set and decide the schema | **`YOU`** | Decision recorded in `docs/technical-plan.md` §5 | `[TODO]` |
-| 2c.5 | Implement the first round of research into `data/*.yaml` (and the schema, if it changes) | Claude (Opus) | `pnpm seed` and `pnpm db:check-rls` pass; `try:discover` cites only catalogue URLs | `[TODO]` |
+| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/archive/2c.1-source-survey/`; every URL resolves and none is on a blocked domain (checked by script) | `[DONE]` (2026-11-23: 31 scorecards in five files; `pnpm research:check-links` passes with 10 sites refusing automated checks (D59); 10 claims spot-checked, 4 corrected; recommendation in `docs/archive/2c.1-source-survey/recommendation.md`) |
+| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation (`docs/archive/2c.1-source-survey/recommendation.md`) | Choices recorded here | `[DONE]` (2026-11-23: datasets first, read through their APIs; the O*NET database is the main starting point, extending to BLS and ILOSTAT, with the OECD's derived datasets explored as a separate step (D60). This replaces the per-area report backbone in the recommendation. No area cut; the Climate Finance and Corporate Sustainability choice moves to G2c.2) |
+| 2c.2 | Dataset access, by API or an MCP server. First the O*NET database (https://www.onetcenter.org/database.html) through O*NET Web Services: it is the main starting point. Then the BLS public data API, ILOSTAT, and the OECD data API for 2c.3b. Proposed addition: the ESCO API, the EU counterpart joined to O*NET by the official crosswalk. Keys live in `.env.local`, never committed | **`YOU`**, in a separate session | Each source answers one test query from this repo; O*NET alone is enough to start 2c.3 | `[TODO]` |
+| 2c.3 | Dataset exploration, starting from O*NET: catalogue the tables that matter (occupations, tasks, alternate and reported titles, the green tags as a hint only), then what BLS and ILOSTAT add (employment by occupation and industry) and, if connected, ESCO (its O*NET crosswalk is a CSV at https://esco.ec.europa.eu/en/use-esco/other-crosswalks). The green tags are a hint only because the survey found them unchanged since about 2012. For each source: the finest industry and occupation level, geography and latest year. Answers two questions: can the data name roles at the level the app shows, and can it tie a role to a climate field, since O*NET is keyed by occupation, not by field. Ends in a proposed pull spec (which tables, which codes, which filters). If no dataset can name fields, the spec says so and proposes a taxonomy dataset (the EU Taxonomy) for that layer | Claude (Sonnet explores, Opus writes the spec) | Catalogue and pull spec under `docs/research/datasets/` | `[TODO]` |
+| 2c.3b | OECD derived datasets, explored on their own: what the OECD data API offers beyond the O*NET and BLS data it is built from (for example green-task measures by country or region), and whether any of it is worth adding to the pull spec. A side step: it can run alongside 2c.3 and does not hold up G2c.2 | Claude (Sonnet, low effort) | A short note under `docs/research/datasets/` saying "add these tables" or "nothing to add" | `[TODO]` |
+| G2c.2 | Finalise the data to pull; decide whether Climate Finance and Corporate Sustainability stay | **`YOU`** with the orchestrator's pull spec | Spec approved or corrected, recorded here | `[TODO]` |
+| 2c.4 | Pilot two areas end to end, Energy (best data) and Carbon Removal (worst), from data pulled under the approved spec: fields, a field × function matrix of roles, top companies, real titles from a bounded career-page read. Appends the career-page decision to `docs/technical-plan.md` §5 | Claude (Sonnet gathers, Opus reconciles) | Both areas written up under `docs/research/areas/` in one agreed format; empty matrix cells say "none found" or "not looked" | `[TODO]` |
+| G2c.3 | Review the pilot format before the fan-out | **`YOU`** | Format approved or corrected | `[TODO]` |
+| 2c.5 | Remaining areas in the approved format, one worker per area | Claude (Sonnet gathers, Opus reconciles) | Every area written up; link check passes | `[TODO]` |
+| 2c.6 | Verification against Climatebase jobs: check whether each posted job fits one of the researched roles, to catch what the datasets missed. The list is pre-filtered for fellows and not comprehensive, so it tests for gaps, not for coverage. **No worker fetches climatebase.org** (PRD hard constraint; it is a blocked domain). You supply a bounded list of titles and employers, kept in gitignored `userdata/` and never committed, seeded or cited. A role found only this way is sourced elsewhere before it enters the reference set. Appends the decision to `docs/technical-plan.md` §5 | **`YOU`** supply the list; Claude (Sonnet matches, Opus reviews the misses) | `docs/research/verification.md`: the share of jobs that fit a role, and each miss marked "add a role", "add a field" or "out of scope" | `[TODO]` |
+| 2c.7 | Synthesis: one consolidated reference set, the 2c.6 misses resolved, and a schema recommendation (occupation codes on roles, a companies table, or the current three files unchanged) | Claude (Fable) | `docs/research/synthesis.md` | `[TODO]` |
+| G2c.4 | Approve the reference set and decide the schema | **`YOU`** | Decision recorded in `docs/technical-plan.md` §5 | `[TODO]` |
+| 2c.8 | Implement the first round of research into `data/*.yaml` (and the schema, if it changes) | Claude (Opus) | `pnpm seed` and `pnpm db:check-rls` pass; `try:discover` cites only catalogue URLs | `[TODO]` |
 
-2c.5 is a fit for the `Workflow` tool (a deterministic fan-out with a
+2c.8 is a fit for the `Workflow` tool (a deterministic fan-out with a
 schema per area); it runs that way only if you opt in ("use a workflow for
-step 2c.5"). The schema decision is deliberately left to G2c.3.
+step 2c.8"). The schema decision is deliberately left to G2c.4. Steps after
+G2c.1 were renumbered on 2026-11-23 when the dataset steps (2c.2, 2c.3) and
+the verification step (2c.6) were added; none had started.
 
 ### Phase 3 — Evaluation and pilot readiness `[TODO]`
 

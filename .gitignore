@@ -49,3 +49,7 @@ next-env.d.ts
 
 # Personal user data (resumes etc.) used for local testing: never committed
 /userdata/
+
+# Superseded research kept for reading (Phase 2c.1 source survey): local only.
+# The committed copy is in git history at 9bad65f.
+/docs/archive/

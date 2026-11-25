@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D58, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D60, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1041,6 +1041,22 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     - 2xx/3xx pass. 401, 403 and 429 are reported as "refused" (the site
       answered but declines automated checks) and do not fail the run; the
       gate report lists them. Anything else fails.
+
+60. **Reference research works from datasets, not reports (2026-11-23,
+    gate G2c.1).** The 2c.1 survey showed that the jobs reports either
+    carry no occupations or derive them from a few datasets (O*NET, BLS,
+    ILOSTAT). Fields and roles are therefore identified from datasets read
+    through their APIs or an MCP server. The O*NET database is the main
+    starting point, extended by BLS and ILOSTAT; the OECD's datasets are
+    derived from its publications and from O*NET and BLS, so they are
+    explored as a separate side step (2c.3b), not as the backbone. No worker extracts figures or lists from
+    an analysis page or a report; a report is named only as how a dataset
+    was found. This replaces the per-area report backbone proposed in
+    the 2c.1 recommendation (archived, gitignored, in
+    `docs/archive/2c.1-source-survey/`; committed copy at `9bad65f`). Which further datasets join
+    (ESCO, the EU Taxonomy, any OECD table) is settled at G2c.2, after the 2c.3
+    exploration. A script that calls these APIs is a dev-only fetch path
+    like D59: no route can reach it, and it refuses blocked hosts.
 
 ---
 
