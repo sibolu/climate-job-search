@@ -1431,3 +1431,35 @@ against $0.26 / $0.21 in about the same time (78.8s / 61.5s against
 79.8s / 61.6s): a far smaller input (about 2K tokens against 15K) does not
 offset Fable's higher output price. One run per stage, so the numbers are
 rough.
+
+### Phase 2d: the 2d.3 production database (2026-11-25)
+
+Supabase project `thqugwlqlpflgtndymus`, through the logged-in CLI (2.95.4).
+The Vercel half of 2d.3 is not verified: see the last paragraph.
+
+- **Migrations.** `supabase migration list --linked` showed an empty remote;
+  the dry run listed the three files and nothing else; after
+  `supabase db push` all three versions show as applied.
+- **RLS, anon side.** `scripts/check-rls.ts` against production with the
+  publishable key: all 15 anon checks pass (insert-only on `llm_usage`,
+  select-only on the three reference tables, which are empty).
+- **RLS, service-role side.** The script's four service-role checks did not
+  run: the CLI returns the secret key masked, so they failed with
+  `Invalid API key`. The same four were run as SQL in one transaction that
+  was rolled back (`set local role service_role`, then `anon`): the
+  service role can insert into `llm_usage`; a `session_id` that is not 32
+  hex chars, a free-text `step` and a `linkedin.com` source are each
+  rejected with 23514; anon's select on `llm_usage` is refused with 42501.
+  The script itself has not passed end to end with the real secret key.
+- **Left behind: nothing.** The failed run could not delete its one anon
+  probe row; it was deleted by session id. `llm_usage` and
+  `climate_fields` both count 0 rows.
+
+The production domain does not run this branch. `gh api …/deployments`
+shows every production deployment since 2026-09-18 as "Deployment was
+blocked"; the domain serves the 2026-09-13 build (`<html lang="en">` with
+no font classes), where `POST /api/enter` with a wrong passcode returns 500
+instead of 401, the sign of a missing passcode variable in that deployment.
+The gate itself holds there: `/` redirects to `/enter` and `/api/turn`
+returns 401. The `phase-2d` preview of `9272e47` built, but redirects to
+Vercel's login, so nothing on it was checked.

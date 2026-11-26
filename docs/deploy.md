@@ -2,11 +2,17 @@
 
 Production URL: `<fill in after the first deploy>`
 
+Status, 2026-11-25: steps 1 to 5 are done on Supabase project
+`thqugwlqlpflgtndymus` (migrations applied, RLS checked). Step 6 is open: no
+production deployment has succeeded since 2026-09-13, so the production
+domain still serves that build. See "Which deployment is production" below.
+
 This runbook covers the hosted demo (PLAN.md step 2d.3). Steps marked **You**
 need an account owner; steps marked **Claude** can be run by an agent from
-this repo once the projects exist. Nothing here contains a secret: every key,
-ref and passcode is a placeholder and lives only in Vercel, Supabase or your
-shell.
+this repo once the projects exist. Nothing here contains a secret: every key
+and passcode is a placeholder and lives only in Vercel, Supabase or your
+shell. The Supabase project ref is not a secret: it is part of the public
+URL the browser calls.
 
 ## What is where
 
@@ -61,7 +67,7 @@ shell.
    pushing.
 
    ```bash
-   supabase link --project-ref <project-ref>   # asks for the database password
+   supabase link --project-ref <project-ref>   # logged-in CLI 2.95: no password asked
    cat supabase/.temp/project-ref              # must print <project-ref>
    supabase db push --dry-run                  # lists the three files only
    supabase db push
@@ -86,12 +92,52 @@ shell.
    It exits non-zero on any violation. It writes probe rows only to
    `llm_usage` (plus one `climate_fields` insert the CHECK constraint must
    reject) and deletes what it wrote.
-6. **Claude: deploy and verify.** Push the branch Vercel builds (or redeploy
-   from the dashboard) and check the build log shows Node 24 and pnpm 12.
-   Then, from a clean browser window:
+
+   The secret key has to come from the dashboard (Settings, API keys):
+   `supabase projects api-keys` prints it masked, and a masked or wrong key
+   fails the four service-role checks with `Invalid API key`. In that case
+   the clean-up fails too (it uses the secret key) and one anon probe row
+   stays in `llm_usage`; the warning prints its session id. Delete it with
+   `supabase db query --linked "delete from llm_usage where session_id = '<id>'"`.
+6. **You, then Claude: deploy and verify.** Get the commit to demo onto the
+   production domain (see "Which deployment is production" below) and check
+   the build log shows Node 24 and pnpm 12. Then, from a clean browser
+   window:
    - a wrong passcode on `/enter` is refused;
    - the right one leads through paste → Highlights → Roles → Searches;
    - new rows appear in `llm_usage` (query below), one per model call.
+
+## Which deployment is production
+
+Vercel builds every push, but only a build of the production branch (`main`)
+is served on the production domain. A push to any other branch, `phase-2d`
+included, gives a preview deployment at a `…-<team>.vercel.app` URL, and
+previews sit behind Vercel Authentication: a visitor without a Vercel login
+is redirected to `vercel.com/sso-api`, so a preview cannot be the demo URL
+as it stands.
+
+To serve a branch before it is merged, either promote its latest preview
+deployment to production in the dashboard (Deployments, the deployment's
+menu, "Promote to Production"; Vercel rebuilds it with the Production
+environment variables), or change the production branch in Settings, Git.
+
+How to tell what a domain serves, without logging in:
+
+```bash
+curl -s https://<domain>/enter | grep -o '<html[^>]*>'
+# a build from Phase 2b or later carries the font classes on <html>;
+# the 2026-09-13 build prints only data-dpl-id and lang="en"
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  --data-urlencode 'passcode=wrong' https://<domain>/api/enter
+# 401: the gate works. 500: APP_PASSCODE or PASSCODE_COOKIE_SECRET is
+# missing from that deployment (variables apply from the next deploy on)
+```
+
+GitHub records each Vercel deployment and its state:
+`gh api "repos/<owner>/<repo>/deployments?environment=Production"`, then
+`…/deployments/<id>/statuses`. "Deployment was blocked" is Vercel refusing
+the deploy before the build; the reason is on the deployment's page in the
+Vercel dashboard.
 
 ## Rotating the passcode
 
