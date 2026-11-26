@@ -2,10 +2,11 @@
 
 Production URL: `https://climate-job-search.vercel.app`
 
-Status, 2026-11-26: deployed. Supabase project `thqugwlqlpflgtndymus` has
+Status, 2026-11-25: deployed. Supabase project `thqugwlqlpflgtndymus` has
 the migrations and the RLS shape; the production domain serves `phase-2d`
 (promoted from its preview, since `main` does not have Phase 2d until PR #7
-merges). Open: the first full loop on production, which is PLAN.md G2d.1.
+merges). The full loop works there (G2d.1). Open: confirming on production
+that every call's `llm_usage` row lands, after the D64 fix is deployed.
 
 This runbook covers the hosted demo (PLAN.md step 2d.3). Steps marked **You**
 need an account owner; steps marked **Claude** can be run by an agent from
@@ -157,6 +158,11 @@ out at once, also replace `PASSCODE_COOKIE_SECRET` with a fresh
 The publishable key can insert rows but not read them, so read in the Supabase
 dashboard's SQL editor (or with the secret key from a shell). Rows hold
 counters only; there is no prompt, reply or resume text to find.
+
+A missing row for the last call of a turn (`discover`, `queries`) was the
+symptom of the function being suspended before its insert landed; the turn
+route now waits up to 5s for pending inserts after the response
+(`docs/technical-plan.md` D64).
 
 ```sql
 -- Spend per day

@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D62, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D64, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1116,6 +1116,23 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     they name the role, not the key. Applied migrations still say "anon key"
     in comments; they are never edited.
 
+64. **The turn route waits for its usage rows before the function ends
+    (2026-11-25, Phase 2d).** In production a full run left `cards` and
+    `elicit` rows but none for `discover` or `queries`, the last call of
+    their turns. The likely cause (Vercel logs were not available): the
+    usage insert was fire-and-forget, the route closed the response right
+    after the last call, and Vercel suspended the function before an insert
+    on a cold connection completed. `recordUsage` in `llm.ts` still never
+    blocks the call, but tracks each write until it settles;
+    `usageWritesSettled(timeoutMs = USAGE_FLUSH_TIMEOUT_MS)` (5s) resolves
+    when every write pending at call time has settled or the timeout
+    passes, and never rejects. `/api/turn` calls `after()` from
+    `next/server`, whose callback waits for the turn's stream `start` to
+    finish (its `finally`, so the disconnect path is covered too, D45) and
+    then awaits `usageWritesSettled()`. The response body is never delayed;
+    only the invocation is extended, by at most 5s. No dependency added
+    (`after` uses the platform's `waitUntil`).
+
 ---
 
 ## 6. Verification log
@@ -1464,7 +1481,7 @@ The gate itself holds there: `/` redirects to `/enter` and `/api/turn`
 returns 401. The `phase-2d` preview of `9272e47` built, but redirects to
 Vercel's login, so nothing on it was checked.
 
-**2026-11-26, after the fix.** The cause was a paused Vercel project.
+**Later the same day, after the fix.** The cause was a paused Vercel project.
 Unpaused, with `phase-2d` promoted, GitHub shows a successful Production
 deployment of `512b2db` and the domain serves it (font classes on
 `<html>`). From outside, without the passcode: `POST /api/enter` with a
@@ -1474,3 +1491,14 @@ wrong or an empty passcode returns 401 and sets no cookie; `/` redirects to
 the `llm_usage` rows from Vercel, the 800s function limit in practice) and
 the build log's Node and pnpm versions. `llm_usage` held 0 rows at the time
 of writing; the first rows come from the G2d.1 run.
+
+**The G2d.1 run and `llm_usage`.** The user's run through the production
+URL reached Searches with no error. It left two rows in one session, where
+the flow makes at least four calls: `cards` (Opus 5.5, 1,528 in / 2,249 out,
+$0.0664, 18.3s) and `elicit` (Opus 5.5, 2,153 / 201, $0.0176, 3.9s). No
+`discover` row and no `queries` row. The Supabase variables are therefore
+right; what is lost is the insert for the last call of a turn. D64 is the
+fix (the route waits for pending writes inside `after()`); the cause is
+likely, not proven, and the fix is unit-tested but not yet seen working on
+Vercel. It is confirmed when a production run leaves a `discover` and a
+`queries` row.

@@ -519,17 +519,55 @@ function errorCode(error: unknown): string {
 }
 
 /**
- * Fire and forget. Telemetry must never cost the user their turn, so a failure
- * is a `console.warn` with the error code only and nothing else.
+ * How long {@link usageWritesSettled} waits for pending usage-row writes before
+ * giving up (technical-plan.md D64). Bounded so a hung insert can never keep a
+ * function alive for long.
+ */
+export const USAGE_FLUSH_TIMEOUT_MS = 5_000;
+
+/** Usage-row writes started but not yet settled; each removes itself when it does. */
+const pendingUsageWrites = new Set<Promise<void>>();
+
+/**
+ * Starts the usage-row write without blocking the call: the caller never awaits
+ * it, so telemetry can never cost the user their turn, and a failure is a
+ * `console.warn` with the error code only and nothing else. The write is
+ * tracked until it settles, so a serverless route can keep the function alive
+ * until it lands via {@link usageWritesSettled} (technical-plan.md D64).
  */
 function recordUsage(sink: UsageSink, row: UsageRow): void {
   const warn = (error: unknown): void => {
     console.warn(`llm_usage row not written (${errorCode(error)}); the turn was unaffected`);
   };
+  let write: Promise<void>;
   try {
-    void Promise.resolve(sink.record(row)).catch(warn);
+    write = Promise.resolve(sink.record(row)).then(() => undefined, warn);
   } catch (error) {
     warn(error);
+    return;
+  }
+  pendingUsageWrites.add(write);
+  void write.finally(() => pendingUsageWrites.delete(write));
+}
+
+/**
+ * Resolves once every usage-row write pending at call time has settled, or
+ * after `timeoutMs`, whichever comes first. Never rejects and logs nothing of
+ * its own (a failed write already warned in {@link recordUsage}). The turn
+ * route awaits it inside `after()` so Vercel does not suspend the function
+ * before the last call's row is inserted (technical-plan.md D64).
+ */
+export async function usageWritesSettled(timeoutMs: number = USAGE_FLUSH_TIMEOUT_MS): Promise<void> {
+  if (pendingUsageWrites.size === 0) return;
+  const writes = Promise.allSettled([...pendingUsageWrites]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([writes, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

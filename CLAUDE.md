@@ -296,7 +296,11 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   `console.warn` with the error *code* only. Keep it that way.
 - **Usage rows** are one per logical call (a `pause_turn` continuation is part
   of the same call and its tokens are summed), priced from `PRICE_PER_MTOK`,
-  written fire-and-forget through the publishable key. `UsageRow` has a fixed key
+  written through the publishable key without blocking the call; each write is
+  tracked until it settles, and `/api/turn` awaits `usageWritesSettled()`
+  (bounded by `USAGE_FLUSH_TIMEOUT_MS`, 5s) inside `after()` so the function
+  is not suspended before the last row lands (docs/technical-plan.md D64).
+  `UsageRow` has a fixed key
   list (`USAGE_ROW_KEYS`) guarded at compile time and in the tests: it holds
   counters only, and no content field may ever be added.
 

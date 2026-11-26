@@ -20,11 +20,13 @@ import {
   MODEL_BY_STEP,
   PRICE_PER_MTOK,
   REQUEST_TIMEOUT_MS,
+  USAGE_FLUSH_TIMEOUT_MS,
   USAGE_ROW_KEYS,
   assertToolsAllowed,
   costUsd,
   createLlm,
   memoryUsageSink,
+  usageWritesSettled,
   webTools,
   type LlmClient,
   type LlmStream,
@@ -817,5 +819,84 @@ describe("deadline and cancellation", () => {
     );
     expect(params).toHaveLength(0);
     expect(sink.rows).toHaveLength(0);
+  });
+});
+
+describe("usageWritesSettled (technical-plan.md D64)", () => {
+  /** A sink whose one write settles only when the test says so. */
+  function heldSink(): { sink: UsageSink; resolve: () => void; reject: (e: unknown) => void } {
+    let resolve!: () => void;
+    let reject!: (e: unknown) => void;
+    const pending = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { sink: { record: () => pending }, resolve, reject };
+  }
+
+  async function runOneCall(sink: UsageSink): Promise<void> {
+    const { client } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+    const call = createLlm({ client, usageSink: sink, now: () => 0 }).streamText(REQUEST);
+    await drain(call.textDeltas);
+    await call.final;
+  }
+
+  it("has a 5s default timeout", () => {
+    expect(USAGE_FLUSH_TIMEOUT_MS).toBe(5_000);
+  });
+
+  it("resolves immediately with nothing pending", async () => {
+    await expect(usageWritesSettled()).resolves.toBeUndefined();
+  });
+
+  it("resolves only after a slow write resolves", async () => {
+    const held = heldSink();
+    await runOneCall(held.sink);
+    let settled = false;
+    const flushed = usageWritesSettled().then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(settled).toBe(false);
+    held.resolve();
+    await flushed;
+    expect(settled).toBe(true);
+    await expect(usageWritesSettled()).resolves.toBeUndefined();
+  });
+
+  it("resolves, never rejects, when the write rejects", async () => {
+    const held = heldSink();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await runOneCall(held.sink);
+      const flushed = usageWritesSettled();
+      held.reject(Object.assign(new Error("network"), { code: "ECONNRESET" }));
+      await expect(flushed).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("resolves at the timeout when a write never settles", async () => {
+    const held = heldSink();
+    await runOneCall(held.sink);
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const flushed = usageWritesSettled(1_000).then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await flushed;
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      // Let the hung write settle so it does not leak into later tests.
+      held.resolve();
+      await usageWritesSettled();
+    }
   });
 });
