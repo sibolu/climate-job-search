@@ -1502,3 +1502,11 @@ fix (the route waits for pending writes inside `after()`); the cause is
 likely, not proven, and the fix is unit-tested but not yet seen working on
 Vercel. It is confirmed when a production run leaves a `discover` and a
 `queries` row.
+
+**D64 confirmed (2026-11-26).** With `d65a92f` promoted (GitHub shows its
+Production deployment at 21:47 UTC), the user's second run through to
+Searches left all four rows in one session: `cards` (Opus 5.5, $0.0491),
+`elicit` (Opus 5.5, $0.0144), `discover` (Fable 5.2, 1,291 in / 4,526 out,
+$0.2295, 47.3s) and `queries` (Opus 5.5, 1,571 / 1,183, $0.0408, 13.2s);
+$0.334 for the loop. Read with `supabase db query --linked`. The earlier
+session's two rows stay as they were.
