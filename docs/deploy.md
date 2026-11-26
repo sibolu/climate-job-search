@@ -1,11 +1,11 @@
 # Deploying the hosted demo
 
-Production URL: `<fill in after the first deploy>`
+Production URL: `https://climate-job-search.vercel.app`
 
-Status, 2026-11-25: steps 1 to 5 are done on Supabase project
-`thqugwlqlpflgtndymus` (migrations applied, RLS checked). Step 6 is open: no
-production deployment has succeeded since 2026-09-13, so the production
-domain still serves that build. See "Which deployment is production" below.
+Status, 2026-11-26: deployed. Supabase project `thqugwlqlpflgtndymus` has
+the migrations and the RLS shape; the production domain serves `phase-2d`
+(promoted from its preview, since `main` does not have Phase 2d until PR #7
+merges). Open: the first full loop on production, which is PLAN.md G2d.1.
 
 This runbook covers the hosted demo (PLAN.md step 2d.3). Steps marked **You**
 need an account owner; steps marked **Claude** can be run by an agent from
@@ -137,7 +137,10 @@ GitHub records each Vercel deployment and its state:
 `gh api "repos/<owner>/<repo>/deployments?environment=Production"`, then
 `…/deployments/<id>/statuses`. "Deployment was blocked" is Vercel refusing
 the deploy before the build; the reason is on the deployment's page in the
-Vercel dashboard.
+Vercel dashboard. From 2026-09-18 to 2026-11-25 the reason was a paused
+Vercel project: previews of a paused project still build, production
+deployments do not, and the production domain keeps serving the last build
+from before the pause.
 
 ## Rotating the passcode
 

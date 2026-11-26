@@ -1463,3 +1463,14 @@ instead of 401, the sign of a missing passcode variable in that deployment.
 The gate itself holds there: `/` redirects to `/enter` and `/api/turn`
 returns 401. The `phase-2d` preview of `9272e47` built, but redirects to
 Vercel's login, so nothing on it was checked.
+
+**2026-11-26, after the fix.** The cause was a paused Vercel project.
+Unpaused, with `phase-2d` promoted, GitHub shows a successful Production
+deployment of `512b2db` and the domain serves it (font classes on
+`<html>`). From outside, without the passcode: `POST /api/enter` with a
+wrong or an empty passcode returns 401 and sets no cookie; `/` redirects to
+`/enter`; `/api/turn` returns 401 unauthenticated and with a forged
+`cjs_session` cookie. Not checked: anything behind the passcode (the loop,
+the `llm_usage` rows from Vercel, the 800s function limit in practice) and
+the build log's Node and pnpm versions. `llm_usage` held 0 rows at the time
+of writing; the first rows come from the G2d.1 run.
