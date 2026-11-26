@@ -185,6 +185,14 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   terms required, generic ones banned), and the Phase 3 eval rubric should
   check for it either way. Related:
   product-review.md B6. *(2026-11-19 walkthrough)*
+- **Promoted posts in LinkedIn results.** LinkedIn mixes promoted
+  listings into a search's results, matched to the person's own LinkedIn
+  profile rather than to the query, so some results are off-target. Much
+  fewer than before, but not zero, and
+  nothing in the URL turns them off. A one-line note on the Searches
+  screen ("Promoted" posts are LinkedIn's picks for your LinkedIn profile,
+  not this search) may be enough; check the current LinkedIn search URL
+  parameters first. *(2026-11-26 G2d.1 run)*
 - **Job alerts.** The "Get new matches by email" steps left the search card
   in 2b.18; `ALERT_STEPS` in `boards.ts` keeps the text. The PRD has the
   person set up alerts by hand, so the guidance should return once it has a
