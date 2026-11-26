@@ -878,13 +878,46 @@ describe("usageWritesSettled (technical-plan.md D64)", () => {
     }
   });
 
+  it("with a signal, waits only for that signal's writes", async () => {
+    const mine = heldSink();
+    const other = heldSink();
+    const signal = new AbortController().signal;
+    const run = async (sink: UsageSink, s?: AbortSignal) => {
+      const { client } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+      const call = createLlm({ client, usageSink: sink, now: () => 0 }).streamText({ ...REQUEST, signal: s });
+      await drain(call.textDeltas);
+      await call.final;
+    };
+    await run(mine.sink, signal);
+    await run(other.sink);
+    let settled = false;
+    const flushed = usageWritesSettled(signal).then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(settled).toBe(false);
+    mine.resolve();
+    await flushed;
+    expect(settled).toBe(true);
+    // The other turn's write is still pending, and an unscoped wait sees it.
+    let all = false;
+    const flushedAll = usageWritesSettled().then(() => {
+      all = true;
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(all).toBe(false);
+    other.resolve();
+    await flushedAll;
+    await expect(usageWritesSettled(new AbortController().signal)).resolves.toBeUndefined();
+  });
+
   it("resolves at the timeout when a write never settles", async () => {
     const held = heldSink();
     await runOneCall(held.sink);
     vi.useFakeTimers();
     try {
       let settled = false;
-      const flushed = usageWritesSettled(1_000).then(() => {
+      const flushed = usageWritesSettled(undefined, 1_000).then(() => {
         settled = true;
       });
       await vi.advanceTimersByTimeAsync(999);

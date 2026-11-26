@@ -575,9 +575,9 @@ export interface DroppedCounts {
   rolesLevelTitled: number;
   /** Catalogue mode: entries removed from `sources` as not listed in the catalogue, blocked, or malformed. */
   sourcesRemoved: number;
-  /** Memory mode: URLs removed from the prose the model wrote, where nothing may carry one (technical-plan.md D44, D61). */
+  /** Memory mode: URLs removed from the text of kept fields and roles, where nothing may carry one (technical-plan.md D44, D61). */
   textUrlsStripped: number;
-  /** Fields beyond {@link MAX_FIELDS} or duplicating an earlier field. */
+  /** Fields beyond {@link MAX_FIELDS}, duplicating an earlier field, or with no name (memory mode: none left once URLs are removed). */
   fieldsSurplus: number;
   /** Evidence entries dropped for citing no active card, being blank, or repeating a card. */
   evidenceDropped: number;
@@ -634,19 +634,39 @@ export function cleanCatalogueSources(
 /**
  * A link: anything with a scheme or a leading "www.". A bare name such as
  * "350.org" is what an organisation is called, not a link, and is left alone.
+ * A comma or semicolon ends the link when a space, the end, or a card ID
+ * follows ("https://a.org,C1" keeps its citation), and a balanced "(…)" stays
+ * inside it ("…/Grid_(power)"), unless it is a lone card ID.
  */
-const URL_SOURCE = "(?:https?:\\/\\/|www\\.)[^\\s<>()\\[\\]\"']+";
+const URL_SOURCE =
+  "(?:https?:\\/\\/|www\\.)" +
+  "(?:[^\\s<>()\\[\\]\"',;]|[,;](?!\\s|$|C\\d)|\\((?!C\\d+\\))[^\\s<>()\\[\\]\"']*\\))+";
 const URL_RE = new RegExp(URL_SOURCE, "i");
 /** `[label](url)`: the label is the text, the URL goes. */
 const MARKDOWN_LINK_RE = new RegExp(`\\[([^\\]]*)\\]\\(\\s*${URL_SOURCE}\\s*\\)`, "gi");
-/** A URL with the word that only introduced it ("see", "source:", "at"), so no dangling lead-in is left. */
+/**
+ * A URL with the words that only introduced it, so no dangling lead-in is
+ * left: "see", "visit", and the prepositions "via" and "at", whose object the
+ * URL is. "Source" and "link" are ordinary words too ("open source"), so they
+ * go only as a label with a colon ("Source: <url>").
+ */
 const LED_URL_RE = new RegExp(
-  `(?:\\b(?:see(?:\\s+also)?|sources?|via|visit|link|at)\\b\\s*:?\\s*)?${URL_SOURCE}`,
+  `(?:\\b(?:see(?:\\s+also)?|visit|via|at)\\b\\s*:?\\s*|\\b(?:sources?|links?)\\s*:\\s*)?${URL_SOURCE}`,
   "gi",
 );
 /** Marks where a URL was until the punctuation around it is tidied. */
-const GAP = "\uE001";
-const GAP_IN_BRACKETS_RE = new RegExp(`["'(\\[<]\\s*${GAP}[.,;:!?]*\\s*["')\\]>]`, "g");
+const GAP = "";
+/** "(<url>)", "(<url>, <url>)": a bracket that held nothing but links goes whole. */
+const GAPS_ONLY_IN_BRACKETS_RE = new RegExp(
+  `["'(\\[<]\\s*${GAP}(?:[\\s.,;:!?]*${GAP})*[.,;:!?]*\\s*["')\\]>]`,
+  "g",
+);
+/** "(C1; <url>)" → "(C1)": links at the end of a bracket go with their separators. */
+const GAPS_BEFORE_CLOSE_RE = new RegExp(`(?:\\s*[,;:]?\\s*${GAP}[.,;:!?]*)+\\s*(?=[)\\]>])`, "g");
+/** "(<url>, C1)" → "(C1)": links at the start of a bracket go with their separators. */
+const GAPS_AFTER_OPEN_RE = new RegExp(`(?<=[(\\[<])\\s*(?:${GAP}[.,;:!?]*\\s*)+`, "g");
+/** A bracket left holding only punctuation. */
+const EMPTY_BRACKETS_RE = /\s*[(\[<][\s.,;:!?]*[)\]>]/g;
 /** "…as C1: <url>." — the clause opener goes with the URL it introduced. */
 const GAP_AFTER_CLAUSE_OPENER_RE = new RegExp(`[,;:]\\s*${GAP}(?=[.!?])`, "g");
 /** "…this work. <url>. Then…" — a URL that stood as its own sentence or clause. */
@@ -680,7 +700,10 @@ export function stripUrls(text: string): { text: string; removed: number } {
   if (removed === 0) return { text, removed };
   return {
     text: gapped
-      .replace(GAP_IN_BRACKETS_RE, "")
+      .replace(GAPS_ONLY_IN_BRACKETS_RE, "")
+      .replace(GAPS_BEFORE_CLOSE_RE, "")
+      .replace(GAPS_AFTER_OPEN_RE, "")
+      .replace(EMPTY_BRACKETS_RE, "")
       .replace(GAP_AFTER_CLAUSE_OPENER_RE, "")
       .replace(GAP_AS_OWN_CLAUSE_RE, "$1")
       .replace(GAP_RE, "")
@@ -796,36 +819,58 @@ function identityKeys(ref: string | null | undefined, name: string): string[] {
 
 const NO_SOURCES: ReadonlySet<string> = new Set<string>();
 
+/** A draft ready for validation, with the URLs stripped from it in memory mode (none in catalogue mode). */
+interface MemoryDraft {
+  draft: FieldDraftCatalogue;
+  /** URLs stripped from the field's own text, counted only if the field is kept. */
+  urlsStripped: number;
+  /** URLs stripped from each role, by index, counted only if that role is kept. */
+  roleUrlsStripped: number[];
+}
+
 /**
  * A memory-mode draft in the shape validation works on: no ref, no sources,
- * and every piece of prose the model wrote run through {@link stripUrls}.
- * Names and titles are identity, not prose, and are left as written.
+ * and every string the screens render, names and titles included, run
+ * through {@link stripUrls} (technical-plan.md D44, D61). The counts are held
+ * back so only what survives validation adds to `textUrlsStripped`.
  */
-function memoryDraft(draft: FieldDraftMemory, dropped: DroppedCounts): FieldDraftCatalogue {
-  const prose = (text: string): string => {
+function memoryDraft(draft: FieldDraftMemory): MemoryDraft {
+  let count = 0;
+  const strip = (text: string): string => {
     const { text: clean, removed } = stripUrls(text);
-    dropped.textUrlsStripped += removed;
+    count += removed;
     return clean;
   };
-  return {
-    ...draft,
-    ref: null,
-    sector: prose(draft.sector),
-    summary: prose(draft.summary),
-    chips: draft.chips.map(prose),
-    fit: prose(draft.fit),
-    evidence: draft.evidence.map((e) => ({ ...e, why: prose(e.why) })),
-    uncertainties: draft.uncertainties.map(prose),
-    ask: { ...draft.ask, question: prose(draft.ask.question), placeholder: prose(draft.ask.placeholder) },
-    sources: [],
-    roles: draft.roles.map((r) => ({
+  const roleUrlsStripped: number[] = [];
+  const roles = draft.roles.map((r) => {
+    count = 0;
+    const role = {
       ...r,
       ref: null,
-      companies: r.companies.map(prose),
-      why: prose(r.why),
+      title: strip(r.title),
+      companies: r.companies.map(strip),
+      why: strip(r.why),
       sources: [],
-    })),
+    };
+    roleUrlsStripped.push(count);
+    return role;
+  });
+  count = 0;
+  const field: FieldDraftCatalogue = {
+    ...draft,
+    ref: null,
+    name: strip(draft.name),
+    sector: strip(draft.sector),
+    summary: strip(draft.summary),
+    chips: draft.chips.map(strip),
+    fit: strip(draft.fit),
+    evidence: draft.evidence.map((e) => ({ ...e, why: strip(e.why) })),
+    uncertainties: draft.uncertainties.map(strip),
+    ask: { ...draft.ask, question: strip(draft.ask.question), placeholder: strip(draft.ask.placeholder) },
+    sources: [],
+    roles,
   };
+  return { draft: field, urlsStripped: count, roleUrlsStripped };
 }
 
 /**
@@ -837,9 +882,11 @@ function memoryDraft(draft: FieldDraftMemory, dropped: DroppedCounts): FieldDraf
  *
  * Without it (memory mode, technical-plan.md D61) there is no catalogue
  * filter: every field and role comes out with no ref and no sources, fields
- * are deduped by name, and a URL in the model's prose is removed and counted
- * in `textUrlsStripped` before citations are looked for, so a card ID that
- * appears only inside a URL is not a citation.
+ * are deduped by name, and every URL in what the model wrote (names and
+ * titles included) is removed before citations are looked for, so a card ID
+ * that appears only inside a URL is not a citation. `textUrlsStripped` counts
+ * only the URLs of fields and roles that are kept; a field whose name was
+ * nothing but a URL is dropped as surplus.
  *
  * Role titles lose their level modifiers before anything else looks at them
  * (technical-plan.md D48), so "Senior Data Scientist" and "Data Scientist" in
@@ -857,14 +904,16 @@ export function validateOutput(
   const seen = new Set<string>();
   const allowedSources = catalogueSources ?? NO_SOURCES;
   for (const raw of output.fields) {
-    // A ref counts only in catalogue mode; in memory mode identity is the name.
+    // A ref counts only in catalogue mode; in memory mode identity is the name,
+    // once any URL is out of it.
     const catalogueDraft = catalogueSources !== undefined && "ref" in raw ? raw : undefined;
-    const keys = identityKeys(catalogueDraft?.ref, raw.name);
-    if (fields.length >= MAX_FIELDS || keys.some((k) => seen.has(k))) {
+    const { draft, urlsStripped, roleUrlsStripped: roleUrls }: MemoryDraft =
+      catalogueDraft === undefined ? memoryDraft(raw) : { draft: catalogueDraft, urlsStripped: 0, roleUrlsStripped: [] };
+    const keys = identityKeys(draft.ref, draft.name);
+    if (fields.length >= MAX_FIELDS || draft.name.trim() === "" || keys.some((k) => seen.has(k))) {
       dropped.fieldsSurplus += 1;
       continue;
     }
-    const draft = catalogueDraft ?? memoryDraft(raw, dropped);
     const citedIds = citedActiveCardIds(draft.fit, profile);
     if (citedIds.length === 0) {
       dropped.fieldsUncited += 1;
@@ -874,13 +923,16 @@ export function validateOutput(
     dropped.sourcesRemoved += removed;
     const roles: ValidatedRole[] = [];
     const seenRoles = new Set<string>();
-    for (const r of draft.roles) {
+    let roleUrlsStripped = 0;
+    for (const [i, r] of draft.roles.entries()) {
       if (roles.length >= MAX_ROLES_PER_FIELD) break;
       const title = stripLevelWords(r.title);
       if (hasLevelHead(title) || (title === "" && r.title.trim() !== "")) {
         dropped.rolesLevelTitled += 1;
         continue;
       }
+      // No title at all (in memory mode, possibly one that was only a URL).
+      if (title === "") continue;
       const rKeys = identityKeys(r.ref, title);
       if (rKeys.some((k) => seenRoles.has(k))) continue;
       if (citedActiveCardIds(r.why, profile).length === 0) {
@@ -890,6 +942,7 @@ export function validateOutput(
       const rs = cleanCatalogueSources(r.sources, allowedSources);
       dropped.sourcesRemoved += rs.removed;
       for (const k of rKeys) seenRoles.add(k);
+      roleUrlsStripped += roleUrls[i] ?? 0;
       roles.push({
         ref: trimmedRef(r.ref),
         title,
@@ -899,6 +952,7 @@ export function validateOutput(
       });
     }
     for (const k of keys) seen.add(k);
+    dropped.textUrlsStripped += urlsStripped + roleUrlsStripped;
     let chips = cleanPhrases(draft.chips, MAX_CHIPS);
     if (chips.length === 0) {
       // No chips from the model: fall back to the skills of the cards the fit cites.

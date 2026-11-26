@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D64, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D65, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1132,6 +1132,25 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     then awaits `usageWritesSettled()`. The response body is never delayed;
     only the invocation is extended, by at most 5s. No dependency added
     (`after` uses the platform's `waitUntil`).
+65. **A turn waits only for its own usage rows, and memory mode strips URLs
+    from every rendered string (2026-11-26, Gate 2d code review).**
+    `recordUsage` also files each write under the call's abort signal, and
+    `usageWritesSettled(signal?, timeoutMs)` with a signal waits only for
+    those writes, so on Fluid compute one turn is never held up to 5s by
+    another turn's insert; `/api/turn` passes its `abort.signal`, which
+    `runTurn` puts on every call (D45). The route resolves `turnDone` first
+    in its `finally`, so nothing that throws there can leave `after()`
+    waiting until `maxDuration`. In memory mode (D61) field names and role
+    titles go through `stripUrls` too, a field left with no name is dropped
+    as surplus, and `textUrlsStripped` counts only kept fields and roles.
+    `stripUrls` ends a link at a comma or semicolon before a space, the end
+    or a card ID (so "https://a.org,C1" keeps its citation), keeps a
+    balanced "(…)" inside a link, removes bracketed link lists with their
+    separators, and treats "source" and "link" as lead-ins only with a
+    colon ("open source" survives); "at" and "via" still go with the URL
+    that is their object. `turnErrorMessage` keeps its `ReferenceReadError`
+    sentence: `explore`, which only scripts send (D39), still reads the
+    reference tables through the route.
 
 ---
 

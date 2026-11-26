@@ -181,7 +181,18 @@ async function main(): Promise<void> {
     if (catalogue === undefined) {
       if (f.extra[REF_KEY] !== undefined) problems.push(`${f.id} carries a Ref`);
       if (f.sources.length > 0) problems.push(`${f.id} has a source`);
-      if ([f.fit, f.summary, f.uncertain].some((text) => hasUrl(text))) problems.push(`${f.id} has a URL in its text`);
+      // Every string the screens render, names included (technical-plan.md D44, D61).
+      const shown = [
+        f.name,
+        f.sector,
+        f.summary,
+        f.fit,
+        f.uncertain,
+        ...f.chips,
+        ...f.evidence.map((e) => e.why),
+        ...(f.ask === undefined ? [] : [f.ask.question, f.ask.placeholder]),
+      ];
+      if (shown.some((text) => hasUrl(text))) problems.push(`${f.id} has a URL in its text`);
     } else {
       for (const u of f.sources) if (!catalogue.sourceUrls.has(u)) problems.push(`${f.id} cites a non-catalogue URL`);
     }
@@ -203,7 +214,7 @@ async function main(): Promise<void> {
     if (catalogue === undefined) {
       if (r.extra[REF_KEY] !== undefined) problems.push(`${r.id} carries a Ref`);
       if (r.sources.length > 0) problems.push(`${r.id} has a source`);
-      if ([r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
+      if ([r.title, r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
     } else {
       for (const u of r.sources) if (!catalogue.sourceUrls.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
     }

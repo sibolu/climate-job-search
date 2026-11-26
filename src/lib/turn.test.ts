@@ -305,8 +305,10 @@ describe("turnErrorMessage", () => {
     expect(turnErrorMessage(named("CardsInputError", "Pasted text is too short."))).toBe("Pasted text is too short.");
   });
 
-  it("has no message of its own for a reference read: discovery reads no catalogue (technical-plan.md D61)", () => {
-    expect(turnErrorMessage(named("ReferenceReadError"))).toBe(turnErrorMessage(named("SomethingElse")));
+  it("names a reference read failure: explore still reads the reference tables", () => {
+    expect(turnErrorMessage(named("ReferenceReadError"))).toBe(
+      "The reference collection is unavailable right now. Try again in a minute.",
+    );
   });
 
   it("never leaks model or SDK text", () => {

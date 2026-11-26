@@ -14,8 +14,8 @@ import { encodeTurnEvent, NDJSON_CONTENT_TYPE, type TurnEvent } from "@/lib/turn
  * Stateless: nothing is stored or logged except the anonymous usage row that
  * `llm.ts` writes. Discovery and exploration can run for minutes, hence
  * `maxDuration` and the heartbeat that keeps the connection alive. `after()`
- * keeps the function alive past the response until the turn's usage rows have
- * been written, bounded by `USAGE_FLUSH_TIMEOUT_MS` (technical-plan.md D64).
+ * keeps the function alive past the response until this turn's usage rows have
+ * been written (not other turns' in the same instance, technical-plan.md D65), bounded by `USAGE_FLUSH_TIMEOUT_MS` (technical-plan.md D64).
  */
 // Segment config must be a literal Next can read at build time; the test pins
 // it to `MAX_DURATION_SECONDS` in `llm.ts` (technical-plan.md §4).
@@ -73,7 +73,8 @@ export async function POST(request: Request): Promise<Response> {
   // this only extends the invocation, and `usageWritesSettled` never rejects.
   after(async () => {
     await turnDone;
-    await usageWritesSettled();
+    // Only this turn's rows: every call `runTurn` makes carries `abort.signal`.
+    await usageWritesSettled(abort.signal);
   });
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -102,13 +103,15 @@ export async function POST(request: Request): Promise<Response> {
           write({ type: "error", message: turnErrorMessage(error) });
         }
       } finally {
+        // First, so nothing below that throws can leave `after()` waiting
+        // until `maxDuration`.
+        turnFinished();
         clearInterval(heartbeat);
         request.signal.removeEventListener("abort", disconnect);
         if (!closed) {
           closed = true;
           controller.close();
         }
-        turnFinished();
       }
     },
     cancel() {

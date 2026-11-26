@@ -297,9 +297,11 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
 - **Usage rows** are one per logical call (a `pause_turn` continuation is part
   of the same call and its tokens are summed), priced from `PRICE_PER_MTOK`,
   written through the publishable key without blocking the call; each write is
-  tracked until it settles, and `/api/turn` awaits `usageWritesSettled()`
-  (bounded by `USAGE_FLUSH_TIMEOUT_MS`, 5s) inside `after()` so the function
-  is not suspended before the last row lands (docs/technical-plan.md D64).
+  tracked until it settles, and `/api/turn` awaits
+  `usageWritesSettled(abort.signal)` (bounded by `USAGE_FLUSH_TIMEOUT_MS`,
+  5s) inside `after()` so the function is not suspended before the last row
+  lands; the signal scopes the wait to that turn's own writes
+  (docs/technical-plan.md D64, D65).
   `UsageRow` has a fixed key
   list (`USAGE_ROW_KEYS`) guarded at compile time and in the tests: it holds
   counters only, and no content field may ever be added.
@@ -320,8 +322,10 @@ One `POST /api/turn` for every step (docs/technical-plan.md D31). The browser se
 dispatches and returns the assistant message, pills, and the **whole**
 canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 `delta`s, a heartbeat every 15s, then one `final` or one `error`. No step the
-route reaches reads Supabase: discovery runs memory-only (technical-plan.md
-D61), and the only write is the `llm_usage` row.
+browser sends reads Supabase: discovery runs memory-only (technical-plan.md
+D61). `explore`, which only scripts send (D39), is still dispatched and still
+reads the reference tables, so `turnErrorMessage` keeps its
+`ReferenceReadError` sentence. The only write is the `llm_usage` row.
 
 - The browser names what it wants through `TurnInput`: `message` (the
   pasted text on Start, and "Find climate roles"; the interest pills are

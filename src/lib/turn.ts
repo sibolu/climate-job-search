@@ -16,6 +16,8 @@
  *              knowledge: no reference catalogue, no web (D44, D61).
  * - `explore`  `Explore F3: …` → the drill-down on that field. A message
  *              with no field id is answered with a list of fields to pick.
+ *              The browser never sends it (only scripts do, D39), and it is
+ *              the one step that still reads the Supabase reference tables.
  * - `queries`  one LinkedIn search per selected role, for every role with
  *              `Selected: yes`; a `selectedRoles` input (technical-plan.md D47).
  * - `revise`   one piece of "Tried it" feedback → revised queries and an
@@ -373,6 +375,10 @@ export function turnErrorMessage(error: unknown): string {
     case "LlmToolPolicyError":
     case "LlmSessionIdError":
       return "The server is misconfigured for model calls. Tell the person running this pilot.";
+    // Discovery reads no catalogue (D61), but `explore`, which only scripts
+    // send, still reads the reference tables through the same route.
+    case "ReferenceReadError":
+      return "The reference collection is unavailable right now. Try again in a minute.";
     case "APIConnectionError":
     case "APIConnectionTimeoutError":
       return "I could not reach the model service. Check your connection and try again.";

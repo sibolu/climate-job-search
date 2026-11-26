@@ -863,6 +863,48 @@ describe("memory mode validation (technical-plan.md D61)", () => {
     expect(hasUrl("See WWW.example.org")).toBe(true);
   });
 
+  it("leaves no broken brackets, keeps citations next to a URL, and keeps ordinary words", () => {
+    const cases: [string, string][] = [
+      ["Data from C1 (https://a.com, https://b.com) shows", "Data from C1 shows"],
+      ["Your work (C1; https://vimeo.com/x) transfers.", "Your work (C1) transfers."],
+      ["Your work (https://a.com, C1) transfers.", "Your work (C1) transfers."],
+      ["Your C1 skills matter at http://x.org/a_(b) today", "Your C1 skills matter today"],
+      ["Your film work (https://a.com,C1) transfers.", "Your film work (C1) transfers."],
+      ["Open source https://github.com/x tools from C1", "Open source tools from C1"],
+      ["Query https://a.com/?a=1,2 works.", "Query works."],
+      ["Read [x](https://a.com/b_(c)) now, per C1.", "Read x now, per C1."],
+    ];
+    for (const [input, expected] of cases) expect(stripUrls(input).text).toBe(expected);
+  });
+
+  it("strips URLs from names and titles, and counts only what is kept", () => {
+    const base = memoryOutput().fields[0]!;
+    const v = validateOutput(
+      {
+        fields: [
+          {
+            ...base,
+            name: "Impact media (www.example.org)",
+            roles: [
+              { title: "Producer – https://x.com", companies: ["Example Coalition"], why: "Same field craft as C1." },
+              { title: "Editor", companies: ["https://example.org/a"], why: "No citation here." },
+            ],
+          },
+          { ...base, name: "Another field", fit: "Uncited, see https://example.org/a and https://example.org/b." },
+          { ...base, name: "https://example.org/only-a-link" },
+        ],
+      },
+      profile,
+    );
+    expect(v.fields.map((f) => f.name)).toEqual(["Impact media"]);
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Producer"]);
+    expect(v.dropped.fieldsUncited).toBe(1);
+    expect(v.dropped.fieldsSurplus).toBe(1);
+    expect(v.dropped.rolesUncited).toBe(1);
+    // The name's and the kept title's URLs only: not the uncited field's two or the uncited role's one.
+    expect(v.dropped.textUrlsStripped).toBe(2);
+  });
+
   it("removes URLs from the model's prose, counts them, and keeps the citations", () => {
     const v = validateOutput(
       memoryOutput({

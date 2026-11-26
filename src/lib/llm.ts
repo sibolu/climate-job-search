@@ -527,15 +527,22 @@ export const USAGE_FLUSH_TIMEOUT_MS = 5_000;
 
 /** Usage-row writes started but not yet settled; each removes itself when it does. */
 const pendingUsageWrites = new Set<Promise<void>>();
+/**
+ * The same writes grouped by the abort signal of the call that started them,
+ * so one turn waits only for its own rows (`runTurn` puts the turn's signal
+ * on every request it makes).
+ */
+const pendingUsageWritesBySignal = new WeakMap<AbortSignal, Set<Promise<void>>>();
 
 /**
  * Starts the usage-row write without blocking the call: the caller never awaits
  * it, so telemetry can never cost the user their turn, and a failure is a
  * `console.warn` with the error code only and nothing else. The write is
- * tracked until it settles, so a serverless route can keep the function alive
- * until it lands via {@link usageWritesSettled} (technical-plan.md D64).
+ * tracked, under the call's `signal` when it has one, until it settles, so a
+ * serverless route can keep the function alive until it lands via
+ * {@link usageWritesSettled} (technical-plan.md D64).
  */
-function recordUsage(sink: UsageSink, row: UsageRow): void {
+function recordUsage(sink: UsageSink, row: UsageRow, signal: AbortSignal | undefined): void {
   const warn = (error: unknown): void => {
     console.warn(`llm_usage row not written (${errorCode(error)}); the turn was unaffected`);
   };
@@ -546,20 +553,38 @@ function recordUsage(sink: UsageSink, row: UsageRow): void {
     warn(error);
     return;
   }
-  pendingUsageWrites.add(write);
-  void write.finally(() => pendingUsageWrites.delete(write));
+  const sets = [pendingUsageWrites];
+  if (signal !== undefined) {
+    let scoped = pendingUsageWritesBySignal.get(signal);
+    if (scoped === undefined) {
+      scoped = new Set();
+      pendingUsageWritesBySignal.set(signal, scoped);
+    }
+    sets.push(scoped);
+  }
+  for (const set of sets) set.add(write);
+  void write.finally(() => {
+    for (const set of sets) set.delete(write);
+  });
 }
 
 /**
- * Resolves once every usage-row write pending at call time has settled, or
- * after `timeoutMs`, whichever comes first. Never rejects and logs nothing of
- * its own (a failed write already warned in {@link recordUsage}). The turn
- * route awaits it inside `after()` so Vercel does not suspend the function
- * before the last call's row is inserted (technical-plan.md D64).
+ * Resolves once the usage-row writes pending at call time have settled, or
+ * after `timeoutMs`, whichever comes first. With `signal`, only the writes of
+ * calls made with that signal count, so a turn is never held up by another
+ * turn's insert in the same instance; without it, every pending write counts.
+ * Never rejects and logs nothing of its own (a failed write already warned in
+ * {@link recordUsage}). The turn route awaits it inside `after()` with the
+ * turn's signal so Vercel does not suspend the function before the last
+ * call's row is inserted (technical-plan.md D64).
  */
-export async function usageWritesSettled(timeoutMs: number = USAGE_FLUSH_TIMEOUT_MS): Promise<void> {
-  if (pendingUsageWrites.size === 0) return;
-  const writes = Promise.allSettled([...pendingUsageWrites]);
+export async function usageWritesSettled(
+  signal?: AbortSignal,
+  timeoutMs: number = USAGE_FLUSH_TIMEOUT_MS,
+): Promise<void> {
+  const pending = signal === undefined ? pendingUsageWrites : pendingUsageWritesBySignal.get(signal);
+  if (pending === undefined || pending.size === 0) return;
+  const writes = Promise.allSettled([...pending]);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, timeoutMs);
@@ -929,7 +954,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
     const recordOnce = (durationMs: number): void => {
       if (recorded) return;
       recorded = true;
-      recordUsage(usageSink, usageRow(request, counts, durationMs));
+      recordUsage(usageSink, usageRow(request, counts, durationMs), request.signal);
     };
 
     try {
