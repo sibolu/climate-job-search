@@ -102,6 +102,7 @@ describe("profileSummary", () => {
     expect(summary.searches.items.length).toBeGreaterThan(0);
     for (const search of summary.searches.items) {
       expect(summary.selectedRoles.items.map((r) => r.title)).toContain(search.roleTitle);
+      expect(search.fieldName).not.toBe("");
       expect(search.query.trim()).not.toBe("");
     }
     // Years are never shown (technical-plan.md D57).

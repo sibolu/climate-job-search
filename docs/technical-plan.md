@@ -1461,6 +1461,37 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     - Not in this decision: any choice between managing and practising on
       the Roles or Searches screen; rewriting stored role titles.
 
+74. **Phase 2h review fixes (2026-11-27, G2h.2).** `/code-review` on
+    `phase-2h` found what D72 and D73 left open. Fixed:
+    - **A role listed away from its field carries the field's name.** D72
+      lets one occupation sit under two fields, so two ticked "Data
+      science" roles read the same wherever no field heading is above
+      them. `SearchLine` in `profile-summary.ts` gains `fieldName`, the
+      drawer's Searches rows show it after a middle dot and are keyed by
+      title, field and query (the summary carries no raw ids), and the
+      Searches screen's "no search yet" note comes from
+      `missingSearchesNote` in `screens.ts` (title · field). This touches
+      two components, which D72 expected not to need.
+    - **Dropped roles are counted.** `DroppedCounts` gains `rolesSurplus`:
+      a role beyond `MAX_ROLES_PER_FIELD` (now 3) or repeating an earlier
+      role in its field. Both were left out without a count; the discover
+      message now says "N roles beyond the number shown per field".
+    - **The discover message lists only live roles.** `fieldBlock` in
+      `turn.ts` skips a role marked dropped (D58), which every re-run on a
+      profile with old job titles now leaves beside its replacement.
+    - **Occupations named for lead or staff keep their first word.**
+      "lead remediation", "lead service line", "lead pipe" and "staff
+      augmentation" join `LEVEL_WORD_OCCUPATIONS`, since D72's sentence
+      case puts such a word first.
+    - **`pnpm try:discover` fails on a focus in a title.** `hasTitleFocus`
+      (a comma or a bracket) joins `endsInManager` as a reported, not
+      repaired, D72 check.
+    - Not changed: a ticked old-title role is still dropped and un-ticked
+      when a run returns its occupation (D72, "stored profiles are not
+      migrated"), and a field whose only role was dropped still reaches
+      the Roles screen with its "No roles under this field yet." state;
+      `pnpm try:discover` already fails on a field with no role.
+
 ---
 
 ## 6. Verification log

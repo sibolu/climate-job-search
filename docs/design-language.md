@@ -182,6 +182,11 @@ in it, whether the person does the work or manages people who do
 - Rejected: *Data Science Manager*; *Senior Data Scientist, program
   measurement*.
 - Accepted: *Data science*, under the field's heading.
+- Wherever a role is listed away from its field's heading (the profile
+  drawer's Searches, the "no search yet" note), the field's name goes
+  beside it after a middle dot, *Data science · Carbon markets*: the same
+  occupation can be ticked under two fields, and two bare *Data science*
+  lines would not say which is which (technical-plan.md D74).
 
 ## Voice
 

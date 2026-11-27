@@ -8,7 +8,7 @@
  */
 
 import type { Profile } from "@/lib/profile";
-import { copyKey, searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
+import { copyKey, missingSearchesNote, searchCards, selectedRolesNote, writeSearchesLabel } from "@/lib/screens";
 import { canWriteQueries } from "@/lib/workspace";
 
 import QueryCard from "./QueryCard";
@@ -66,7 +66,7 @@ export default function Searches({
               ? "1 ticked role has no search yet"
               : `${missing.length} ticked roles have no search yet`}
           </div>
-          <p className="cc-note">{missing.map((card) => card.role.title).join(", ")}</p>
+          <p className="cc-note">{missingSearchesNote(missing)}</p>
           <div className="cc-cta-row">
             <button
               type="button"

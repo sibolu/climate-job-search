@@ -47,7 +47,7 @@ import {
 } from "./elicit";
 import { exploreField } from "./explore";
 import type { Llm, StructuredRequest, StreamTextRequest } from "./llm";
-import { activeCards, type Field, type MoveType, parseProfile, type Profile, type Query, serializeProfile } from "./profile";
+import { activeCards, type Field, isDropped, type MoveType, parseProfile, type Profile, type Query, serializeProfile } from "./profile";
 import { generateQueries, type GenerateQueriesResult, reviseQueries, type ReviseQueriesResult } from "./queries";
 import type { AnswerPill, TurnRequest, TurnResponse } from "./session";
 import { exploreChatText } from "./workspace";
@@ -128,7 +128,8 @@ const MOVE_LABEL: Record<MoveType, string> = {
 };
 
 function fieldBlock(profile: Profile, field: Field): string {
-  const roles = profile.roles.filter((r) => r.fieldId === field.id);
+  // A role this run dropped (D58) is not listed beside the one that replaced it.
+  const roles = profile.roles.filter((r) => r.fieldId === field.id && !isDropped(r));
   const lines = [
     `**${field.id}: ${field.name}**${field.move === undefined ? "" : ` — ${MOVE_LABEL[field.move]}`}`,
     `- Fit: ${field.fit}`,
@@ -163,6 +164,7 @@ export function discoverMessage(result: DiscoverResult): string {
   const leftOut = [
     uncited > 0 ? `${count(uncited, "suggestion")} that cited none of your experience cards` : "",
     dropped.rolesLevelTitled > 0 ? `${count(dropped.rolesLevelTitled, "role")} titled by rank rather than occupation` : "",
+    dropped.rolesSurplus > 0 ? `${count(dropped.rolesSurplus, "role")} beyond the number shown per field` : "",
     dropped.fieldsSurplus > 0 ? `${count(dropped.fieldsSurplus, "field")} beyond the number shown` : "",
   ].filter((reason) => reason !== "");
   if (leftOut.length > 0) parts.push(`Left out: ${leftOut.join("; ")}.`);

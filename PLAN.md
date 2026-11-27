@@ -31,12 +31,13 @@ in each phase's table. Every phase also starts with your kickoff prompt
   so choose the merge date against the demo on 2026-12-01: either issue
   codes before it or merge after it.
 - **Phase 2h (roles as occupations), now, G2h.2:** steps 2h.1 (D72) and
-  2h.2 (D73) are done on `phase-2h`, not pushed, and G2h.1 is done: you
-  ran the full flow on your own resume on 2026-11-27 and the roles and
-  searches read as expected. Next: open a fresh session for G2h.2
-  (`/code-review` on `phase-2h`, fixes, the PR); the merge is yours. It
-  changes what fellows see on the Roles screen, so choose the merge date
-  against the demo on 2026-12-01.
+  2h.2 (D73) are done, G2h.1 is done (you ran the full flow on your own
+  resume on 2026-11-27), and `/code-review` ran on 2026-11-27: its fixes
+  are D74, committed on `phase-2h`, and the PR is open. Next: merge it.
+  It changes what fellows see on the Roles screen, and a fellow's roles
+  ticked before the merge are un-ticked by their next "Find climate
+  roles" run (D72), so choose the merge date against the demo on
+  2026-12-01.
 - **2c.2 (after the demo):** set up dataset access in a separate session
   (O*NET first; then BLS, ILOSTAT and the OECD data API; ESCO is a proposed
   addition for the EU side, strike it if you disagree). Then kick off 2c.3
@@ -597,7 +598,7 @@ when they read the postings.
 | 2h.1 | Discovery writes occupations. `discover.ts`: both system prompts (memory and catalogue, so the two evaluation arms name roles the same way; a catalogue role keeps its `ref` and takes the occupation as its title) and both role schemas' `title` description ask for the occupation by the rules above; "Do not repeat the same role across fields" becomes "the same occupation may sit under more than one field, each with its own why"; "2-4 per field" becomes "1-3". Level stripping, the rank drop and the per-field dedupe in `validateOutput` stay as they are. One new pure helper, unit-tested, reports a title that still ends in "Manager"; `validateOutput` leaves such a role in place, because code cannot repair it ("Product Manager" and "Data Science Manager" resolve differently), and `pnpm try:discover` exits non-zero on one. A unit test pins what happens to a ticked old-title role when a run returns its occupation instead. **Same commit:** D72 in the technical plan (or the next free number) with a dated note on D48; a principle in `docs/design-language.md` (a role label is an occupation in sentence case; the industry comes from the field); the discovery box in `docs/data-flow.html`; the `try:discover` row in CLAUDE.md; the role example in `profile.ts`'s header comment. Live calls: about eight `discover` runs at $0.23 each | Claude (Fable) | `pnpm try:discover` passes on the three fixture profiles (`data-scientist.md`, `videographer.md`, `web-designer.md`) and on a copy of the data-scientist profile rewritten in the scratchpad so its cards describe leading a team (fictional, never committed): no title ends in "Manager" or carries a level word, and the team-lead profile gets "Data science", not a people-manager title; tests, lint and build pass | `[DONE]` |
 | 2h.2 | Searches from an occupation. `queries.ts`: step 1 of the build order (the title group) starts from the occupation and writes two to four job titles employers post for it, joined with OR, including the people-manager title where the occupation has one; a role still stored as a job title, with or without a focus after a comma, is read as its occupation. `NO_LEVEL_WORDS` is unchanged: "manager" is not a level word, so "data science manager" is already allowed in a query. The made-up example shape is updated to match. **Same commit:** D73 in the technical plan (or the next free number): a search covers both tracks; the searches box in `docs/data-flow.html` if it describes the title group. Live calls: about five `queries` runs at $0.04 each | Claude (Fable) | `pnpm try:queries --tick` passes on two of 2h.1's output profiles with two roles ticked in each, with no level-word warning, and every title group holds at least two titles, a people-manager title among them where the occupation has one (the worker quotes the four searches in its report); one run on the old-title fixture `src/lib/__fixtures__/queries/engineer.md` still passes; tests, lint and build pass | `[DONE]` |
 | G2h.1 | Try it on your own resume in the browser: "Find climate roles", read the list, tick three roles, write the searches and open two on LinkedIn | **`YOU`** | You confirm the roles read as occupations and the searches return practitioner and manager postings, or you list what reads wrong | `[DONE]` 2026-11-27: full flow run, results as expected |
-| G2h.2 | `/code-review`; PR for `phase-2h`. No `/security-review`: the phase touches no auth, input handling or Supabase | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes; the merge is yours | Findings fixed and committed on `phase-2h`; PR merged | `[TODO]` |
+| G2h.2 | `/code-review`; PR for `phase-2h`. No `/security-review`: the phase touches no auth, input handling or Supabase | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes; the merge is yours | Findings fixed and committed on `phase-2h`; PR merged | `[IN PROGRESS]` 2026-11-27: review done, fixes committed (D74), PR open; the merge is yours |
 
 Order: 2h.1 then 2h.2 on `phase-2h`, one commit each, no worktrees; 2h.2's
 check reads 2h.1's output. The branch is cut from `main` after the

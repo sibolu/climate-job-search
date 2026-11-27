@@ -48,6 +48,8 @@ export interface SelectedRoleLine {
 
 export interface SearchLine {
   roleTitle: string;
+  /** The role's field name; empty when the field is unknown. One occupation can be ticked under two fields (D72), so the title alone does not say which. */
+  fieldName: string;
   query: string;
 }
 
@@ -143,7 +145,11 @@ export function profileSummary(profile: Profile): ProfileSummary {
   for (const role of roles) {
     const query = liveQueryForRole(profile, role.id);
     if (query === undefined || query.query.trim() === "") continue;
-    searches.push({ roleTitle: role.title.trim(), query: query.query.trim() });
+    searches.push({
+      roleTitle: role.title.trim(),
+      fieldName: fieldNameOf(profile, role.fieldId),
+      query: query.query.trim(),
+    });
   }
 
   return {

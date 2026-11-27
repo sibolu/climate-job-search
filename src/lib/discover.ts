@@ -197,8 +197,12 @@ export const LEVEL_WORD_OCCUPATIONS: readonly string[] = [
   "documentary director",
   "lead generation",
   "lead abatement",
+  "lead remediation",
+  "lead service line",
+  "lead pipe",
   "lead-acid",
   "staff development",
+  "staff augmentation",
   "senior living",
   "senior services",
 ];
@@ -302,6 +306,19 @@ const ENDS_IN_MANAGER_RE = /\bmanager[\s\p{P}]*$/iu;
  */
 export function endsInManager(title: string): boolean {
   return ENDS_IN_MANAGER_RE.test(title);
+}
+
+const FOCUS_RE = /[,()[\]]/;
+
+/**
+ * True when the title carries a focus after a comma or in brackets: "Product
+ * Manager, carbon markets", "Data science (MRV)". A role title is the
+ * occupation alone and what is particular to the field belongs in the "why"
+ * (technical-plan.md D72). Like {@link endsInManager} it is reported, not
+ * repaired: `pnpm try:discover` fails on one.
+ */
+export function hasTitleFocus(title: string): boolean {
+  return FOCUS_RE.test(title);
 }
 
 // ---------------------------------------------------------------------------
@@ -605,6 +622,8 @@ export interface DroppedCounts {
   rolesUncited: number;
   /** Roles dropped because the title is a rank with no occupation left under it (technical-plan.md D48). */
   rolesLevelTitled: number;
+  /** Roles beyond {@link MAX_ROLES_PER_FIELD} in their field, or repeating an earlier role in it. */
+  rolesSurplus: number;
   /** Catalogue mode: entries removed from `sources` as not listed in the catalogue, blocked, or malformed. */
   sourcesRemoved: number;
   /** Both modes: URLs removed from the text of kept fields and roles, where nothing may carry one (technical-plan.md D44, D61, D66). */
@@ -622,6 +641,7 @@ function zeroDropped(): DroppedCounts {
     fieldsUncited: 0,
     rolesUncited: 0,
     rolesLevelTitled: 0,
+    rolesSurplus: 0,
     sourcesRemoved: 0,
     textUrlsStripped: 0,
     fieldsSurplus: 0,
@@ -989,7 +1009,10 @@ export function validateOutput(
     const seenRoles = new Set<string>();
     let roleUrlsStripped = 0;
     for (const [i, r] of draft.roles.entries()) {
-      if (roles.length >= MAX_ROLES_PER_FIELD) break;
+      if (roles.length >= MAX_ROLES_PER_FIELD) {
+        dropped.rolesSurplus += 1;
+        continue;
+      }
       const title = stripLevelWords(r.title);
       if (hasLevelHead(title) || (title === "" && r.title.trim() !== "")) {
         dropped.rolesLevelTitled += 1;
@@ -998,7 +1021,10 @@ export function validateOutput(
       // No title at all (possibly one that was only a URL).
       if (title === "") continue;
       const rKeys = identityKeys(r.ref, title);
-      if (rKeys.some((k) => seenRoles.has(k))) continue;
+      if (rKeys.some((k) => seenRoles.has(k))) {
+        dropped.rolesSurplus += 1;
+        continue;
+      }
       if (citedActiveCardIds(r.why, profile).length === 0) {
         dropped.rolesUncited += 1;
         continue;
@@ -1256,10 +1282,10 @@ function writeResult(
 
 /** One line for logs and the CLI: counts only, never content. */
 export function droppedSummary(d: DroppedCounts): string {
-  const total = d.fieldsUncited + d.rolesUncited + d.rolesLevelTitled + d.fieldsSurplus;
+  const total = d.fieldsUncited + d.rolesUncited + d.rolesLevelTitled + d.rolesSurplus + d.fieldsSurplus;
   return (
     `${String(total)} dropped (fields: ${String(d.fieldsUncited)} uncited, ${String(d.fieldsSurplus)} surplus; ` +
-    `roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesLevelTitled)} titled by rank; ${String(d.sourcesRemoved)} source URLs removed, ${String(d.textUrlsStripped)} URLs stripped from text; ` +
+    `roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesLevelTitled)} titled by rank, ${String(d.rolesSurplus)} surplus; ${String(d.sourcesRemoved)} source URLs removed, ${String(d.textUrlsStripped)} URLs stripped from text; ` +
     `${String(d.evidenceDropped)} evidence lines, ${String(d.asksDropped)} asks dropped)`
   );
 }

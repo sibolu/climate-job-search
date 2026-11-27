@@ -61,6 +61,7 @@ import {
   discoverFields,
   droppedSummary,
   endsInManager,
+  hasTitleFocus,
   hasLevelWord,
   hasUrl,
 } from "../src/lib/discover";
@@ -224,6 +225,7 @@ async function main(): Promise<void> {
     // It names the work ("Data science"), not one job in it; code cannot repair
     // "… Manager", so validation leaves it and this check fails on it (D72).
     if (endsInManager(r.title)) problems.push(`${r.id} has a title ending in "Manager", not an occupation`);
+    if (hasTitleFocus(r.title)) problems.push(`${r.id} has a focus after a comma or in brackets in its title`);
     if ([r.title, r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
     if (catalogue === undefined) {
       if (r.extra[REF_KEY] !== undefined) problems.push(`${r.id} carries a Ref`);
@@ -236,8 +238,8 @@ async function main(): Promise<void> {
   if (problems.length > 0) fail(`FAILED (${mode} mode): ${problems.join("; ")}`);
   process.stderr.write(
     catalogue === undefined
-      ? "PASS (memory mode): every field has a fit level, sector and an ask; every field and role cites a card; no Ref, no source and no URL written; no role title carries a level word or ends in \"Manager\"\n"
-      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs, with no URL in its text; no role title carries a level word or ends in \"Manager\"\n",
+      ? "PASS (memory mode): every field has a fit level, sector and an ask; every field and role cites a card; no Ref, no source and no URL written; no role title carries a level word, ends in \"Manager\" or carries a focus\n"
+      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs, with no URL in its text; no role title carries a level word, ends in \"Manager\" or carries a focus\n",
   );
 }
 

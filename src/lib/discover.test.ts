@@ -48,6 +48,7 @@ import {
   validateOutput,
   MAX_ROLES_PER_FIELD,
   endsInManager,
+  hasTitleFocus,
 } from "./discover";
 import { CLIMATE_AREAS } from "./elicit";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
@@ -725,7 +726,7 @@ describe("the two system prompts (technical-plan.md D61)", () => {
   // message hash also moves if the videographer fixture or a renderer does.
   // The prompt hash was re-pinned once, when both arms began naming a role by
   // its occupation, one to three per field (technical-plan.md D72).
-  it("the catalogue arm's prompt and message are byte for byte what they were before memory mode", () => {
+  it("the catalogue arm's prompt and message are pinned", () => {
     expect(sha256(DISCOVER_SYSTEM_PROMPT_CATALOGUE)).toBe(
       "66b7095d83fcd66a598347e4a20d8fa0977e81f3031ceceaf17bdc74b81bf9f5",
     );
@@ -863,6 +864,30 @@ describe("a role title is the occupation (technical-plan.md D72)", () => {
       ALLOWED,
     );
     expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video production", "Communications", "Community engagement"]);
+    expect(v.dropped.rolesSurplus).toBe(1);
+  });
+
+  it("validation counts a role repeating an earlier one in its field as surplus", () => {
+    const profile = fixture("videographer");
+    const v = validateOutput(output({ roles: ["Video production", "Senior Video production"].map(role) }), profile, ALLOWED);
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video production"]);
+    expect(v.dropped.rolesSurplus).toBe(1);
+  });
+
+  it("occupations that start with Lead or Staff keep their first word", () => {
+    for (const title of ["Lead remediation", "Lead service line replacement", "Lead pipe inspection", "Staff augmentation"]) {
+      expect(stripLevelWords(title)).toBe(title);
+      expect(hasLevelWord(title)).toBe(false);
+    }
+  });
+
+  it("hasTitleFocus reports a focus after a comma or in brackets, and only that", () => {
+    for (const title of ["Product Manager, carbon markets", "Data science (MRV)", "Policy analysis [EU]"]) {
+      expect(hasTitleFocus(title)).toBe(true);
+    }
+    for (const title of ["Data science", "Wind turbine service", "Operations and maintenance", "Lead-acid recycling", ""]) {
+      expect(hasTitleFocus(title)).toBe(false);
+    }
   });
 
   // Stored profiles are not migrated: a role saved under a job title and the

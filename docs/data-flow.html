@@ -278,9 +278,9 @@
           <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles, each citing cards, whose title is the occupation ("Data science", not a job title; one to three per field; the same occupation may sit under more than one field, D72); example organisations as plain text. No <code>Ref</code> and no source URL is written (D61). A re-run replaces the list: fields and roles it does not return are marked <code>Dropped</code> and un-ticked, never deleted (D58)</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT_MEMORY · discover.ts:430</a></div>
-          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:586</a></div>
-          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:1216</a></div>
+          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT_MEMORY · discover.ts:447</a></div>
+          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:603</a></div>
+          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:1242</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -299,7 +299,7 @@
           <li>Strip any URL from field and role text, with or without a scheme, in both modes (D66; memory mode has no sources)</li>
           <li>Cap at 7 fields, drop duplicates</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:963</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:983</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Fields</span><span class="chip w">Role Shortlist</span></div>
@@ -372,7 +372,7 @@
           <li>Empty text, or a repeat of a judged query → the turn fails, nothing written</li>
           <li>Each role's untried query replaced in place; extra untried ones retired as superseded; judged ones and unticked roles' queries left alone</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:589</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:545</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Queries</span></div>
