@@ -1658,3 +1658,20 @@ Searches left all four rows in one session: `cards` (Opus 5.5, $0.0491),
 $0.2295, 47.3s) and `queries` (Opus 5.5, 1,571 / 1,183, $0.0408, 13.2s);
 $0.334 for the loop. Read with `supabase db query --linked`. The earlier
 session's two rows stay as they were.
+
+**Step 2e.5: the budget on the local stack (2026-11-26).** Against the
+local Supabase stack and `pnpm dev`, with one throwaway code from
+`pnpm codes:add --cap 0.01`, entered through `POST /api/enter`, then
+`cards` turns on `src/lib/__fixtures__/resumes/data-scientist.txt` with
+curl. The first turn did not complete: `extractCards` ran ($0.0386, the
+charge landed before the next read) and `inferPreferences` was refused,
+so the reply was the `exhausted` sentence after one progress line. A cap
+lower than one call's cost stops a turn between its calls, and the cards
+the first call made are not returned. With the cap raised to $1
+(`codes:set`), one `cards` turn completed in 18.1s with a `final` event
+($0.0418, two `llm_usage` rows). Set back to $0.01, `codes:list` showed a
+total of $0.080389 against the $0.01 cap. The next turn came back in
+0.016s as a progress line and one `error` event with the `exhausted`
+sentence; the session's `llm_usage` count, read with the service role, was
+3 before and 3 after, so no model call was made. The dev log showed only
+`turn step=cards failed: LlmBudgetError`. The code row was then deleted.

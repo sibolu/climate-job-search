@@ -24,9 +24,13 @@
  *              explanation.
  *
  * Every model call happens inside the step modules, which all go through
- * `llm.ts`, and every one carries the turn's abort signal, so a browser that
- * goes away stops the call in flight (technical-plan.md D45). Errors are mapped to user-facing sentences by {@link turnErrorMessage},
- * which never includes model text or the request.
+ * `llm.ts`, and every one carries the turn's {@link CallContext}: the abort
+ * signal, so a browser that goes away stops the call in flight
+ * (technical-plan.md D45), and the access code's key from the signed session
+ * cookie, so the call is metered against that code's budget (D68, D69). The
+ * route is the only source of either; `TurnRequest` carries neither. Errors
+ * are mapped to user-facing sentences by {@link turnErrorMessage}, which
+ * never includes model text or the request.
  */
 
 import { cardsSummary, extractCards } from "./cards";
@@ -231,14 +235,30 @@ function messageContent(request: TurnRequest): string {
 // ---------------------------------------------------------------------------
 
 /**
- * The same `Llm` with `signal` on every request, so each step module's calls
- * stop when the turn is abandoned without the modules knowing about it.
+ * What every model call in a turn carries besides its own request, set by the
+ * route and never by the browser's body: the abort signal (technical-plan.md
+ * D45) and the access code's key from the signed session cookie (D68). No key
+ * means the operator passcode, whose calls are not metered (D69).
  */
-export function withSignal(llm: Llm, signal: AbortSignal | undefined): Llm {
-  if (signal === undefined) return llm;
+export interface CallContext {
+  signal?: AbortSignal;
+  codeKey?: string;
+}
+
+/**
+ * The same `Llm` with the turn's context on every request, so each step
+ * module's calls stop when the turn is abandoned and are charged to the
+ * access code without the modules knowing about either. Each field is set
+ * only when defined; with neither, the same `llm` comes back.
+ */
+export function withCallContext(llm: Llm, context: CallContext): Llm {
+  const extra: CallContext = {};
+  if (context.signal !== undefined) extra.signal = context.signal;
+  if (context.codeKey !== undefined) extra.codeKey = context.codeKey;
+  if (Object.keys(extra).length === 0) return llm;
   return {
-    streamText: (request: StreamTextRequest) => llm.streamText({ ...request, signal }),
-    structured: (request) => llm.structured({ ...request, signal } as StructuredRequest<typeof request.schema>),
+    streamText: (request: StreamTextRequest) => llm.streamText({ ...request, ...extra }),
+    structured: (request) => llm.structured({ ...request, ...extra } as StructuredRequest<typeof request.schema>),
   };
 }
 
@@ -246,10 +266,10 @@ export async function runTurn(
   request: TurnRequest,
   deps?: TurnDeps,
   onProgress: Progress = () => undefined,
-  signal?: AbortSignal,
+  context: CallContext = {},
 ): Promise<TurnResponse> {
   const base = deps ?? (await defaultDeps());
-  const d: TurnDeps = { ...base, llm: () => withSignal(base.llm(), signal) };
+  const d: TurnDeps = { ...base, llm: () => withCallContext(base.llm(), context) };
   const { sessionId } = request;
   const { profile, warnings } = parseProfile(request.profileMd);
   const note = warningsNote(warnings);
@@ -379,6 +399,8 @@ export function turnErrorMessage(error: unknown): string {
     // send, still reads the reference tables through the same route.
     case "ReferenceReadError":
       return "The reference collection is unavailable right now. Try again in a minute.";
+    case "LlmBudgetError":
+      return budgetMessage(error);
     case "APIConnectionError":
     case "APIConnectionTimeoutError":
       return "I could not reach the model service. Check your connection and try again.";
@@ -390,4 +412,24 @@ export function turnErrorMessage(error: unknown): string {
   if (status === 401 || status === 403) return "The server's model credentials were rejected. Tell the person running this pilot.";
   if (typeof status === "number" && status >= 500) return "The model service had a problem. Try again in a minute.";
   return "Something went wrong on the server. Your message is still here; try again.";
+}
+
+/** What the person still has, said in every budget sentence: the code ran out, their work did not. */
+const STILL_HERE = "Everything you have so far is still in this browser, and you can save a copy from Your profile.";
+
+/**
+ * One sentence per `LlmBudgetError` reason (technical-plan.md D69). Read
+ * defensively, since `turnErrorMessage` takes `unknown`: an unrecognised
+ * reason gets the `unavailable` sentence, which asks only for a retry.
+ */
+function budgetMessage(error: unknown): string {
+  const reason = typeof error === "object" && error !== null && "reason" in error ? (error as { reason: unknown }).reason : undefined;
+  switch (reason) {
+    case "exhausted":
+      return `This access code has used up its budget, so I can't run that. ${STILL_HERE}`;
+    case "inactive":
+      return `This access code is no longer active, so I can't run that. ${STILL_HERE} Ask the person who invited you for a new code.`;
+    default:
+      return `I couldn't check this access code's budget just now, so nothing was run. ${STILL_HERE} Try again in a minute.`;
+  }
 }
