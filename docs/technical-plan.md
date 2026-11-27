@@ -1411,7 +1411,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       `discover.test.ts` pins this (a ticked "Video Producer" is dropped
       and un-ticked; "Video production" is appended unticked). Until that
       run an old-title role can still be ticked and searched, so the search
-      prompt has to read both forms; that is step 2h.2, still to come.
+      prompt reads both forms (D73).
     - Not in this decision: rewriting titles in stored profiles; a choice
       between managing and practising, or any seniority choice, on the
       Roles screen ("Seniority as a choice" stays in `docs/backlog.md`);
@@ -1420,6 +1420,46 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       format or to a component. `src/lib/explore.ts` (reached only by
       scripts, D39) keeps its own `MAX_ROLES_PER_FIELD = 4` and its "2-4
       roles" line.
+
+73. **A search covers both tracks (2026-11-27, step 2h.2).** Follows D72.
+    The person has not been asked whether they want to manage people or do
+    the work, so one search has to return both kinds of posting, and they
+    decide when they read them. Step 1 of `QUERIES_SYSTEM_PROMPT`'s build
+    order (the title group) now starts from the role's occupation and
+    writes two to four job titles employers post for it, joined with OR:
+    the title of someone who does the work, the title of someone who
+    manages the people doing it where the occupation has one, and an
+    alternate title for the same work when employers commonly use one. For
+    "Data science": `"data scientist" OR "data science manager"`.
+    - An occupation that is itself managing ("Product management") is
+      covered by its own title ("product manager") and needs no second
+      manager title. An occupation with no commonly posted people-manager
+      title (many skilled trades) gets none invented.
+    - "Manager" in a posted title names a job, not a level: `NO_LEVEL_WORDS`
+      and the level lists `discover.ts` owns are unchanged (D48 stands).
+      Senior, Lead, Head of, Director and the rest stay out of query text.
+    - A role still stored under a job title from an earlier run, with or
+      without a focus after a comma or in brackets ("Staff Data Scientist,
+      program measurement"), is read as its occupation (data science) and
+      gets the same title group; the focus may still feed the field group
+      (step 2).
+    - The made-up example shape in the prompt is now `(recruiter OR
+      "talent acquisition specialist" OR "recruiting manager") AND (solar
+      OR "community solar" OR "energy storage")`.
+    - The uniqueness rule now says: two roles in the same field share field
+      terms, so their title groups must differ; the same occupation can sit
+      under more than one field, those roles share a title group, and it is
+      their field terms that must differ.
+    - `REVISE_SYSTEM_PROMPT` (the scripts-only `revise` step, D51) said
+      "Build the query from role titles…", which would have built from
+      "Data science" itself; it now says to build from the job titles
+      employers post for the role's occupation (doing the work and, where
+      the occupation has one, managing the people who do it).
+    - No code logic, schema, signature, test or script changed.
+      `scripts/try-queries.ts` is untouched and does not check the title
+      group; the live check in §6 was read by hand.
+    - Not in this decision: any choice between managing and practising on
+      the Roles or Searches screen; rewriting stored role titles.
 
 ---
 
@@ -1857,3 +1897,52 @@ the local stack (the first attempt ran against unseeded tables and so
 exercised no `Ref`), also exited 0: nine roles, and a catalogue role keeps
 its `Ref` under the occupation, e.g. `climate-risk-data-scientist` and
 `regen-ag-agronomy-data-scientist` are both titled "Data science".
+
+### Phase 2h: the 2h.2 search runs (2026-11-27)
+
+`pnpm try:queries --tick` on `claude-opus-5-5`, after D73, about $0.04 a
+run. Every run exited 0 on the first prompt draft with no level-word
+warning. Two of 2h.1's output profiles with two roles ticked in each, and
+the old-title fixture `src/lib/__fixtures__/queries/engineer.md`:
+
+- team-lead, Data science (Energy-efficiency and demand-side program
+  evaluation): `("data scientist" OR "data science manager") AND ("energy
+  efficiency" OR "demand response" OR weatherization OR "measurement and
+  verification")`
+- team-lead, Forecasting (Electricity load and renewable generation
+  forecasting): `("forecasting analyst" OR "forecasting manager" OR
+  "forecasting scientist") AND ("electricity load" OR "power markets" OR
+  "energy trading" OR "grid operations")`
+- web-designer, Product design (Utility customer engagement and
+  demand-side software): `("product designer" OR "UX designer" OR "design
+  manager") AND (utility OR utilities OR "demand response" OR "energy
+  efficiency")`
+- web-designer, Web design (Carbon accounting and sustainability reporting
+  software): `("web designer" OR "webflow developer" OR "web design
+  manager") AND ("carbon accounting" OR emissions OR "ESG reporting" OR
+  decarbonization)`
+- engineer, Senior Mechanical Engineer, electrification studies:
+  `("mechanical engineer" OR "HVAC engineer" OR "mechanical engineering
+  manager") AND ("building electrification" OR "heat pump" OR "building
+  decarbonization" OR "heat pump retrofit")`
+- engineer, Electrification Project Engineer: `("project engineer" OR
+  "project engineering manager") AND ("building electrification" OR "heat
+  pump" OR "electrification retrofit" OR MEP)`
+- engineer, Senior Product Engineer, residential heat pumps: `("product
+  engineer" OR "product development engineer" OR "product engineering
+  manager") AND ("heat pump" OR "heat pumps" OR refrigerant OR "low GWP")`
+
+Every title group holds two or three titles with a people-manager title
+among them, and the old job titles were read as their occupations with the
+level word left out. Open points:
+
+- "web design manager" is an uncommon posted title, and "webflow
+  developer" is a tool-named alternate.
+- No tested occupation was one where managing is the work or one with no
+  manager title, so those two branches of step 1 are unexercised live.
+- A fourth run with `--revise` on the fixture exited 0, but the one search
+  the revise step added carried four practitioner titles and no manager
+  title (scripts-only path, D51; left as is).
+- Whether the searches return practitioner and manager postings on
+  LinkedIn is for the user to judge at gate G2h.1: no agent opens LinkedIn
+  (the PRD forbids it).

@@ -350,12 +350,12 @@
         <h3>Every ticked role, grouped by field → one LinkedIn query per role</h3>
         <ul class="io">
           <li><b>In:</b> skills from <code>activeSkills</code> (accepted unless removed), climate interests; per field with a ticked role: sector, summary, fit, chips, an answer to its question if an older profile holds one (no screen writes one now), searches already judged in it; the ticked roles</li>
-          <li><b>Out:</b> one LinkedIn query and a rationale for each ticked role id</li>
+          <li><b>Out:</b> one LinkedIn query and a rationale for each ticked role id; the query's title group is two to four job titles employers post for the role's occupation, joined with OR: someone who does the work and, where the occupation has one, someone who manages the people doing it, so one search returns both kinds of posting. A role still stored under an old job title is read as its occupation (D73)</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:194</a></div>
-          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:360</a></div>
-          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:858</a></div>
+          <div><span>System prompt</span><a href="../src/lib/queries.ts">QUERIES_SYSTEM_PROMPT · queries.ts:200</a></div>
+          <div><span>User message</span><a href="../src/lib/queries.ts">buildGenerateMessage · queries.ts:366</a></div>
+          <div><span>Call site</span><a href="../src/lib/queries.ts">generateQueries · queries.ts:864</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -372,7 +372,7 @@
           <li>Empty text, or a repeat of a judged query → the turn fails, nothing written</li>
           <li>Each role's untried query replaced in place; extra untried ones retired as superseded; judged ones and unticked roles' queries left alone</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:583</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/queries.ts">validateRoleDrafts, applyRoleDrafts · queries.ts:589</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Queries</span></div>
