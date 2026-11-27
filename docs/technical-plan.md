@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D68, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D69, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1248,6 +1248,38 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     local work only. There is no rate limiting on `/api/enter`: an 80-bit
     code makes guessing pointless. D5 (one shared passcode) is superseded
     for invited people by this decision.
+
+69. **Every model call made under an access code is checked against the
+    code's budget before it runs and charged its cost after (2026-11-26,
+    Phase 2e.4).** The check lives in `src/lib/llm.ts` because every model
+    call goes through it: `CallRequest.codeKey` carries the code's derived
+    key (from the signed session cookie, never from the request body), and
+    `runCall` reads the code's budget once per logical call — not per
+    `pause_turn` continuation, not per SDK retry — after the session-id and
+    tool checks and before any request. It fails closed: `LlmBudgetError`
+    with reason `exhausted` (total at or over the cap), `inactive`
+    (disabled, unknown, or a key that is not 32 hex characters, refused
+    without a read) or `unavailable` (the read rejected, or outlasted
+    `BUDGET_READ_TIMEOUT_MS`, 5s, so a hung ledger cannot hold a turn
+    open); its message names the step and the reason, never the key, cap
+    or total, and a refused call writes no usage row and no charge because
+    nothing was billed. A caller abort during the read is still
+    `LlmCancelledError`. The charge is `costUsd` added through
+    `BudgetLedger.addSpend` in `recordOnce`, the one place the usage row is
+    recorded, so an aborted or failed call that was billed is charged too
+    (D45), and it is tracked in the same pending sets as the row, so
+    `usageWritesSettled(signal)` in the route's `after()` waits for both
+    (D64, D65); a zero-cost call is not charged. The overshoot bound: the
+    check is before a call and the charge after it, so a code can go over
+    its cap by the calls already in flight when it crosses — one call in
+    ordinary use, cents — and the next call is refused. A failed charge is a
+    `console.warn` with the error code only, never the key or the amount,
+    and never fails the call; it undercounts, which is accepted. An
+    organisation-level spend limit in the Claude Console stays as the
+    backstop for both. A keyless call (the operator passcode, the `try:*`
+    scripts, `smoke:llm`) is not metered and never touches the ledger.
+    `llm_usage` is unchanged: `UsageRow` gains no field, the key never
+    reaches a row or a log line, and no row is linked to a code (D22).
 
 ---
 
