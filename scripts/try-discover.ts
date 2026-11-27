@@ -22,7 +22,8 @@
  * from Supabase (the local stack must be running) and handed to
  * `discoverFields`. Its checks are the ones this script made before memory
  * mode existed: the same as above, except that a `Ref` and sources are
- * expected, and every source must be a URL the catalogue lists.
+ * expected, and every source must be a URL the catalogue lists. The text is
+ * checked for URLs exactly as in memory mode (D66).
  *
  * In both modes a card the fit text cites with no evidence line of its own
  * is a warning, not a failure: `validateOutput` keeps such a field and no
@@ -178,21 +179,21 @@ async function main(): Promise<void> {
   if (result.fields.length < 4) problems.push(`expected >=4 fields, got ${String(result.fields.length)}`);
   for (const f of result.fields) {
     if (citedActiveCardIds(f.fit, result.profile).length === 0) problems.push(`${f.id} cites no card`);
+    // Every string the screens render, names included, in both modes (technical-plan.md D44, D61, D66).
+    const shown = [
+      f.name,
+      f.sector,
+      f.summary,
+      f.fit,
+      f.uncertain,
+      ...f.chips,
+      ...f.evidence.map((e) => e.why),
+      ...(f.ask === undefined ? [] : [f.ask.question, f.ask.placeholder]),
+    ];
+    if (shown.some((text) => hasUrl(text))) problems.push(`${f.id} has a URL in its text`);
     if (catalogue === undefined) {
       if (f.extra[REF_KEY] !== undefined) problems.push(`${f.id} carries a Ref`);
       if (f.sources.length > 0) problems.push(`${f.id} has a source`);
-      // Every string the screens render, names included (technical-plan.md D44, D61).
-      const shown = [
-        f.name,
-        f.sector,
-        f.summary,
-        f.fit,
-        f.uncertain,
-        ...f.chips,
-        ...f.evidence.map((e) => e.why),
-        ...(f.ask === undefined ? [] : [f.ask.question, f.ask.placeholder]),
-      ];
-      if (shown.some((text) => hasUrl(text))) problems.push(`${f.id} has a URL in its text`);
     } else {
       for (const u of f.sources) if (!catalogue.sourceUrls.has(u)) problems.push(`${f.id} cites a non-catalogue URL`);
     }
@@ -211,10 +212,10 @@ async function main(): Promise<void> {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
     // A title names the occupation, never a level (technical-plan.md D48).
     if (hasLevelWord(r.title)) problems.push(`${r.id} has a level word in its title`);
+    if ([r.title, r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
     if (catalogue === undefined) {
       if (r.extra[REF_KEY] !== undefined) problems.push(`${r.id} carries a Ref`);
       if (r.sources.length > 0) problems.push(`${r.id} has a source`);
-      if ([r.title, r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
     } else {
       for (const u of r.sources) if (!catalogue.sourceUrls.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
     }
@@ -224,7 +225,7 @@ async function main(): Promise<void> {
   process.stderr.write(
     catalogue === undefined
       ? "PASS (memory mode): every field has a fit level, sector and an ask; every field and role cites a card; no Ref, no source and no URL written; no role title carries a level word\n"
-      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs; no role title carries a level word\n",
+      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs, with no URL in its text; no role title carries a level word\n",
   );
 }
 

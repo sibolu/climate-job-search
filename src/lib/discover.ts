@@ -11,14 +11,16 @@
  *   organisations from its own knowledge. The user message carries the active
  *   cards, the stated preferences, the skills and the fields already in the
  *   profile, nothing else. The output schema has no `ref` and no `sources`,
- *   so no `Ref` and no source URL is ever written, and a URL the model puts
- *   in its prose anyway is removed and counted.
+ *   so no `Ref` and no source URL is ever written.
  * - **Catalogue mode** runs only when the caller passes
  *   `DiscoverOptions.catalogue` (`pnpm try:discover --catalogue`; the
  *   evaluation's next arm). {@link DISCOVER_SYSTEM_PROMPT_CATALOGUE} and the
  *   user message add the compact reference catalogue. A source URL survives
- *   only if the catalogue lists it, so a URL recalled from memory is never
- *   shown in either mode.
+ *   only if the catalogue lists it.
+ *
+ * A URL recalled from memory is never shown in either mode: one the model
+ * puts in its prose is removed and counted, with or without a scheme
+ * (technical-plan.md D66).
  *
  * This module does not read the reference tables: a caller that wants the
  * catalogue arm builds the reader and hands it in.
@@ -564,7 +566,7 @@ export function buildDiscoverMessage(profile: Profile, catalogue?: Catalogue): s
 
 // ---------------------------------------------------------------------------
 // Post-validation: nothing uncited, no source the catalogue does not list,
-// and in memory mode no URL at all
+// no URL in any text, and in memory mode no URL at all
 // ---------------------------------------------------------------------------
 
 export interface DroppedCounts {
@@ -575,9 +577,9 @@ export interface DroppedCounts {
   rolesLevelTitled: number;
   /** Catalogue mode: entries removed from `sources` as not listed in the catalogue, blocked, or malformed. */
   sourcesRemoved: number;
-  /** Memory mode: URLs removed from the text of kept fields and roles, where nothing may carry one (technical-plan.md D44, D61). */
+  /** Both modes: URLs removed from the text of kept fields and roles, where nothing may carry one (technical-plan.md D44, D61, D66). */
   textUrlsStripped: number;
-  /** Fields beyond {@link MAX_FIELDS}, duplicating an earlier field, or with no name (memory mode: none left once URLs are removed). */
+  /** Fields beyond {@link MAX_FIELDS}, duplicating an earlier field, or with no name (none left once URLs are removed). */
   fieldsSurplus: number;
   /** Evidence entries dropped for citing no active card, being blank, or repeating a card. */
   evidenceDropped: number;
@@ -632,9 +634,10 @@ export function cleanCatalogueSources(
 }
 
 /**
- * A link: anything with a scheme or a leading "www.". A bare name such as
- * "350.org" is what an organisation is called, not a link, and is left alone.
- * A comma or semicolon ends the link when a space, the end, or a card ID
+ * A link: anything with a scheme or a leading "www.", and, through
+ * {@link BARE_LINK_RE}, a bare host with a path ("rmi.org/insights"). A bare
+ * name such as "350.org" is what an organisation is called, not a link, and
+ * is left alone. A comma or semicolon ends the link when a space, the end, or a card ID
  * follows ("https://a.org,C1" keeps its citation), and a balanced "(…)" stays
  * inside it ("…/Grid_(power)"), unless it is a lone card ID.
  */
@@ -642,6 +645,28 @@ const URL_SOURCE =
   "(?:https?:\\/\\/|www\\.)" +
   "(?:[^\\s<>()\\[\\]\"',;]|[,;](?!\\s|$|C\\d)|\\((?!C\\d+\\))[^\\s<>()\\[\\]\"']*\\))+";
 const URL_RE = new RegExp(URL_SOURCE, "i");
+/**
+ * A link written with no scheme and no "www.": a host and the start of a path
+ * ("rmi.org/insights", "energy.gov/eere", "gov.uk/guidance"). The slash is
+ * what makes it a link: "350.org" alone is a name. Three guards keep ordinary
+ * prose out. The host is lower case, so "ASP.NET/C#" and "Socket.IO/REST" are
+ * skills, not links; it ends in a top-level domain from a fixed list, so
+ * "node.js/typescript" is one too; and the path starts with a lower-case
+ * letter or a digit, so "350.org/Sunrise Movement" is two organisations. Not
+ * case-insensitive, on purpose. It matches only up to the slash:
+ * {@link withSchemes} puts "https://" in front and {@link URL_SOURCE} takes
+ * the link from there.
+ */
+const BARE_LINK_SOURCE =
+  "(?<![\\w.\\/:@-])(?:[a-z0-9-]+\\.)+" +
+  "(?:com|org|net|gov|edu|int|mil|io|co|ai|app|dev|info|earth|energy|eu|uk|us|ca|au|nz|de|fr|nl|ch|se|no|dk|in)" +
+  "\\/(?=[a-z0-9])";
+const BARE_LINK_RE = new RegExp(BARE_LINK_SOURCE);
+const BARE_LINKS_RE = new RegExp(BARE_LINK_SOURCE, "g");
+/** The text with "https://" put in front of every schemeless link, so one pattern removes both kinds. */
+function withSchemes(text: string): string {
+  return text.replace(BARE_LINKS_RE, "https://$&");
+}
 /** `[label](url)`: the label is the text, the URL goes. */
 const MARKDOWN_LINK_RE = new RegExp(`\\[([^\\]]*)\\]\\(\\s*${URL_SOURCE}\\s*\\)`, "gi");
 /**
@@ -675,7 +700,7 @@ const GAP_RE = new RegExp(`\\s*${GAP}`, "g");
 
 /** True when the text carries a link {@link stripUrls} would remove. */
 export function hasUrl(text: string): boolean {
-  return URL_RE.test(text);
+  return URL_RE.test(text) || BARE_LINK_RE.test(text);
 }
 
 /**
@@ -688,7 +713,7 @@ export function hasUrl(text: string): boolean {
  */
 export function stripUrls(text: string): { text: string; removed: number } {
   let removed = 0;
-  const gapped = text
+  const gapped = withSchemes(text)
     .replace(MARKDOWN_LINK_RE, (_match, label: string) => {
       removed += 1;
       return label;
@@ -819,8 +844,8 @@ function identityKeys(ref: string | null | undefined, name: string): string[] {
 
 const NO_SOURCES: ReadonlySet<string> = new Set<string>();
 
-/** A draft ready for validation, with the URLs stripped from it in memory mode (none in catalogue mode). */
-interface MemoryDraft {
+/** A draft of either mode ready for validation, with the URLs stripped from its text. */
+interface PreparedDraft {
   draft: FieldDraftCatalogue;
   /** URLs stripped from the field's own text, counted only if the field is kept. */
   urlsStripped: number;
@@ -829,12 +854,16 @@ interface MemoryDraft {
 }
 
 /**
- * A memory-mode draft in the shape validation works on: no ref, no sources,
- * and every string the screens render, names and titles included, run
- * through {@link stripUrls} (technical-plan.md D44, D61). The counts are held
- * back so only what survives validation adds to `textUrlsStripped`.
+ * A draft of either mode in the shape validation works on, with every string
+ * the screens render, names and titles included, run through
+ * {@link stripUrls}: no URL the model wrote into its prose is shown in either
+ * mode (technical-plan.md D44, D61, D66). A catalogue-mode draft keeps its
+ * refs and its `sources`, which validation then filters against the
+ * catalogue; a memory-mode draft comes out with no ref and no sources. The
+ * counts are held back so only what survives validation adds to
+ * `textUrlsStripped`.
  */
-function memoryDraft(draft: FieldDraftMemory): MemoryDraft {
+function prepareDraft(draft: FieldDraftMemory | FieldDraftCatalogue, catalogueMode: boolean): PreparedDraft {
   let count = 0;
   const strip = (text: string): string => {
     const { text: clean, removed } = stripUrls(text);
@@ -846,11 +875,11 @@ function memoryDraft(draft: FieldDraftMemory): MemoryDraft {
     count = 0;
     const role = {
       ...r,
-      ref: null,
+      ref: catalogueMode && "ref" in r ? r.ref : null,
       title: strip(r.title),
       companies: r.companies.map(strip),
       why: strip(r.why),
-      sources: [],
+      sources: catalogueMode && "sources" in r ? r.sources : [],
     };
     roleUrlsStripped.push(count);
     return role;
@@ -858,7 +887,7 @@ function memoryDraft(draft: FieldDraftMemory): MemoryDraft {
   count = 0;
   const field: FieldDraftCatalogue = {
     ...draft,
-    ref: null,
+    ref: catalogueMode && "ref" in draft ? draft.ref : null,
     name: strip(draft.name),
     sector: strip(draft.sector),
     summary: strip(draft.summary),
@@ -867,7 +896,7 @@ function memoryDraft(draft: FieldDraftMemory): MemoryDraft {
     evidence: draft.evidence.map((e) => ({ ...e, why: strip(e.why) })),
     uncertainties: draft.uncertainties.map(strip),
     ask: { ...draft.ask, question: strip(draft.ask.question), placeholder: strip(draft.ask.placeholder) },
-    sources: [],
+    sources: catalogueMode && "sources" in draft ? draft.sources : [],
     roles,
   };
   return { draft: field, urlsStripped: count, roleUrlsStripped };
@@ -876,17 +905,19 @@ function memoryDraft(draft: FieldDraftMemory): MemoryDraft {
 /**
  * Drops (and counts) anything uncited and caps sizes, in both modes.
  *
- * With `catalogueSources` (catalogue mode) it strips and counts every source
- * the catalogue does not list. A field or role left with no source is kept:
- * it is one the model named from its own knowledge.
+ * In both modes every URL in what the model wrote (names and titles
+ * included) is removed before citations are looked for, so a card ID that
+ * appears only inside a URL is not a citation (technical-plan.md D66).
+ * `textUrlsStripped` counts only the URLs of fields and roles that are kept;
+ * a field whose name was nothing but a URL is dropped as surplus.
+ *
+ * With `catalogueSources` (catalogue mode) it also strips and counts every
+ * source the catalogue does not list. A field or role left with no source is
+ * kept: it is one the model named from its own knowledge.
  *
  * Without it (memory mode, technical-plan.md D61) there is no catalogue
- * filter: every field and role comes out with no ref and no sources, fields
- * are deduped by name, and every URL in what the model wrote (names and
- * titles included) is removed before citations are looked for, so a card ID
- * that appears only inside a URL is not a citation. `textUrlsStripped` counts
- * only the URLs of fields and roles that are kept; a field whose name was
- * nothing but a URL is dropped as surplus.
+ * filter: every field and role comes out with no ref and no sources, and
+ * fields are deduped by name.
  *
  * Role titles lose their level modifiers before anything else looks at them
  * (technical-plan.md D48), so "Senior Data Scientist" and "Data Scientist" in
@@ -904,11 +935,9 @@ export function validateOutput(
   const seen = new Set<string>();
   const allowedSources = catalogueSources ?? NO_SOURCES;
   for (const raw of output.fields) {
-    // A ref counts only in catalogue mode; in memory mode identity is the name,
-    // once any URL is out of it.
-    const catalogueDraft = catalogueSources !== undefined && "ref" in raw ? raw : undefined;
-    const { draft, urlsStripped, roleUrlsStripped: roleUrls }: MemoryDraft =
-      catalogueDraft === undefined ? memoryDraft(raw) : { draft: catalogueDraft, urlsStripped: 0, roleUrlsStripped: [] };
+    // A ref counts only in catalogue mode; in memory mode identity is the name.
+    // Either way, once any URL is out of the text.
+    const { draft, urlsStripped, roleUrlsStripped: roleUrls } = prepareDraft(raw, catalogueSources !== undefined);
     const keys = identityKeys(draft.ref, draft.name);
     if (fields.length >= MAX_FIELDS || draft.name.trim() === "" || keys.some((k) => seen.has(k))) {
       dropped.fieldsSurplus += 1;
@@ -931,7 +960,7 @@ export function validateOutput(
         dropped.rolesLevelTitled += 1;
         continue;
       }
-      // No title at all (in memory mode, possibly one that was only a URL).
+      // No title at all (possibly one that was only a URL).
       if (title === "") continue;
       const rKeys = identityKeys(r.ref, title);
       if (rKeys.some((k) => seenRoles.has(k))) continue;

@@ -113,6 +113,27 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   be checked in the evals, or leave it to the prompt. Settle with the
   evaluation spec, and ask whether fellows miss an area.
   *(2026-11-19 walkthrough; narrowed 2026-11-25, D61)*
+- **A re-run keeps a role only if its wording is unchanged.** Since D61
+  the app's discovery has no catalogue ref, so `applyDiscovery` matches a
+  field the model keeps by its exact name and a role by its exact title
+  (case aside). When "Find climate roles" is pressed a second time and the
+  model words a kept field or role differently ("Grid interconnection at
+  utilities" → "…at utilities and developers"), it gets a new id and the
+  old one is marked dropped and un-ticked (D58), so the person's ticks on
+  it are lost. The model is shown `F1 <name>` for existing fields and is
+  not shown existing roles at all. The fix is a change to what the model
+  is asked for: list the existing roles under each field in the user
+  message, add a nullable "id of the field / role this keeps" to the
+  memory schema, match on that id before the name, and drop a draft that
+  maps to a rejected field (no screen sets `rejected` since D50, so that
+  half cannot happen in the app today). It changes the baseline arm's
+  request, needs its own decision, and needs a live check: `try:discover`
+  run twice on the same profile, with ids and ticks compared. **When:**
+  together with the database behind field and role generation. Once
+  fields and roles come from stored records, their ids give a re-run a
+  stable key to match on, so this fix is designed with that work rather
+  than ahead of it. Not needed for the 2026-12-01 demo.
+  *(found 2026-11-26, Gate 2d code review; deferred by the user the same day)*
 - **"Get more fields" / "get more roles".** A second discovery pass that
   excludes what is already on the profile and returns the next tranche.
   Needs a rule for ranking old and new together (order is resolved on

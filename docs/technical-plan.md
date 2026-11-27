@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D65, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D66, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1151,6 +1151,30 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     that is their object. `turnErrorMessage` keeps its `ReferenceReadError`
     sentence: `explore`, which only scripts send (D39), still reads the
     reference tables through the route.
+
+66. **A link needs no scheme, and text is stripped of URLs in both
+    discovery modes (2026-11-26, Gate 2d code review, second pass).**
+    `stripUrls` and `hasUrl` used to see a link only where it began with
+    `http(s)://` or `www.`, so "rmi.org/insights" in a field's summary was
+    shown, and `try:discover` passed it. A bare host followed by a path now
+    counts as a link (`BARE_LINK_RE` in `discover.ts`); the slash is what
+    makes it one, so "350.org" alone stays a name. Three guards keep
+    ordinary prose out: the host is lower case ("ASP.NET/C#" is a skill),
+    it ends in a top-level domain from a fixed list ("node.js/typescript"),
+    and the path starts with a lower-case letter or a digit
+    ("350.org/Sunrise Movement" is two organisations). A link on a
+    top-level domain outside the list, written with no scheme, still gets
+    through; the list is the place to add one. Catalogue mode used to
+    filter only `sources`, so a URL the model wrote into a fit, summary or
+    why was written to the profile, against what D44 and D61 say.
+    `validateOutput` now runs every draft through `prepareDraft` (was
+    `memoryDraft`), which strips URLs from the same strings in both modes
+    and keeps a catalogue draft's refs and `sources`; `textUrlsStripped`
+    counts both modes, and `try:discover --catalogue` fails on a URL in the
+    text as memory mode does. The catalogue arm's request (prompt, message,
+    schema) is unchanged. Not done here: a memory-mode re-run still matches
+    a kept field or role by its exact name or title (`docs/backlog.md` §2,
+    "A re-run keeps a role only if its wording is unchanged").
 
 ---
 

@@ -877,6 +877,61 @@ describe("memory mode validation (technical-plan.md D61)", () => {
     for (const [input, expected] of cases) expect(stripUrls(input).text).toBe(expected);
   });
 
+  it("removes a link written with no scheme, and leaves names and skills alone (technical-plan.md D66)", () => {
+    const links: [string, string][] = [
+      ["See rmi.org/insights for more (C1).", "for more (C1)."],
+      ["Your C1 work matches energy.gov/eere programmes.", "Your C1 work matches programmes."],
+      ["Listed on gov.uk/guidance/heat-networks, per C1.", "Listed on, per C1."],
+      ["Read [the C1 series](iea.org/reports/x) first.", "Read the C1 series first."],
+      ["C1 is this work (rmi.org/insights).", "C1 is this work."],
+    ];
+    for (const [input, expected] of links) {
+      expect(hasUrl(input)).toBe(true);
+      expect(stripUrls(input)).toEqual({ text: expected, removed: 1 });
+    }
+    // One link, not two: the host inside a query string is part of the link around it.
+    expect(stripUrls("C1 https://a.org/r?u=rmi.org/x counts.")).toEqual({ text: "C1 counts.", removed: 1 });
+    const kept = [
+      "350.org hires for this.",
+      "Groups such as 350.org/Sunrise Movement hire for this.",
+      "Built on ASP.NET/C# and Node.js/TypeScript (C1).",
+      "Socket.IO/REST services and node.js/typescript tooling.",
+      "Ask jobs@example.org/hr about C1.",
+      "U.S./Canada grid work and/or policy, e.g./i.e. C1.",
+    ];
+    for (const text of kept) {
+      expect(hasUrl(text)).toBe(false);
+      expect(stripUrls(text)).toEqual({ text, removed: 0 });
+    }
+  });
+
+  it("strips URLs from catalogue-mode text too, keeping refs and catalogue sources (technical-plan.md D66)", () => {
+    const base = output().fields[0]!;
+    const v = validateOutput(
+      {
+        fields: [
+          {
+            ...base,
+            fit: `${base.fit} (see https://made-up.org/a)`,
+            summary: `${base.summary} More at rmi.org/insights.`,
+            roles: base.roles.map((r) => ({ ...r, why: `${r.why} See https://made-up.org/b.` })),
+          },
+        ],
+      },
+      profile,
+      ALLOWED,
+    );
+    expect(v.fields).toHaveLength(1);
+    const field = v.fields[0]!;
+    expect(field.ref).toBe(base.ref);
+    expect(field.sources).toEqual(["https://example.org/regen"]);
+    expect(field.fit).toBe(base.fit.trim());
+    expect([field.fit, field.summary, ...field.roles.map((r) => r.why)].some((text) => hasUrl(text))).toBe(false);
+    // Two from the field's text, one from the one role that is kept.
+    expect(v.dropped.textUrlsStripped).toBe(2 + field.roles.length);
+    expect(field.roles).toHaveLength(1);
+  });
+
   it("strips URLs from names and titles, and counts only what is kept", () => {
     const base = memoryOutput().fields[0]!;
     const v = validateOutput(

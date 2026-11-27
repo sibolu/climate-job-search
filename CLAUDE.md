@@ -69,7 +69,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md (the pasted text kept under `## Inputs`, D56), non-zero if a card lacks S/A/R or an area of expertise, or any expertise phrase runs over six words (D48) |
-| `pnpm try:discover <profile.md> [out.md] [--catalogue] [--interest=<area>[,<area>…]]` | Stage 1.4 live, no web (D44) → ranked fields and roles. By default memory mode, as the app runs it (D61): no Supabase stack needed; non-zero if any field or role lacks a card citation, carries a `Ref` or a source, has a URL in its text, or a role title carries a level word (D48). `--catalogue` runs the evaluation's catalogue arm instead, reading the local Supabase stack; non-zero if any lacks a card citation, cites a URL the catalogue does not list, or carries a level word. A cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
+| `pnpm try:discover <profile.md> [out.md] [--catalogue] [--interest=<area>[,<area>…]]` | Stage 1.4 live, no web (D44) → ranked fields and roles. By default memory mode, as the app runs it (D61): no Supabase stack needed; non-zero if any field or role lacks a card citation, carries a `Ref` or a source, has a URL in its text, or a role title carries a level word (D48). `--catalogue` runs the evaluation's catalogue arm instead, reading the local Supabase stack; non-zero if any lacks a card citation, cites a URL the catalogue does not list, has a URL in its text (D66), or carries a level word. A cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
 | `pnpm try:queries <profile.md> [out.md] [--tick R1,R4] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--tick` ticks those roles first, as the Roles screen would; `--revise` then revises from a scripted "bad fit" feedback |
 | `pnpm research:check-links [path…]` | Phase 2c: every URL in `docs/research/**/*.md` (or the paths given) is requested once; non-zero if one is on a blocked domain or does not resolve; 401/403/429 are reported as refused, not failed (technical-plan.md D59) |
@@ -265,11 +265,11 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   app, no catalogue** (D61): `turn.ts` calls `discoverFields` without
   `DiscoverOptions.catalogue`, so it runs `DISCOVER_SYSTEM_PROMPT_MEMORY` on
   the cards, skills and preferences alone. The memory schema has no `ref` and
-  no `sources`, the validator strips any URL from field and role text, and
-  example companies are plain text. The catalogue path
+  no `sources`, and example companies are plain text. The catalogue path
   (`DISCOVER_SYSTEM_PROMPT_CATALOGUE`, sources restricted to URLs the
   catalogue lists) is an evaluation arm reached only by
-  `pnpm try:discover --catalogue`.
+  `pnpm try:discover --catalogue`. In both modes the validator strips any
+  URL from field and role text, with or without a scheme (D66).
 - **Structured outputs** send
   `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
   the rest of the app uses (docs/technical-plan.md D12). The wrapper records usage and

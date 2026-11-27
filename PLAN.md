@@ -21,6 +21,11 @@ in each phase's table. Every phase also starts with your kickoff prompt
   does not wait for the demo. After the merge, if you changed Vercel's
   production branch, set it back to `main`. Then G2d.2, the demo on
   2026-12-01.
+- **Phase 2e (a spend cap per access code), after PR #7 merges, 2e.0:**
+  the changed data rule is approved (2026-11-26); choose the cap per code.
+  Then kick off in a fresh session
+  (`Execute Phase 2e per PLAN.md with a cap of $<n> per code. Commit each
+  step on branch phase-2e. Stop at the gate.`); it stops at G2e.1.
 - **2c.2 (after the demo):** set up dataset access in a separate session
   (O*NET first; then BLS, ILOSTAT and the OECD data API; ESCO is a proposed
   addition for the EU side, strike it if you disagree). Then kick off 2c.3
@@ -58,11 +63,15 @@ retraining question, per-field follow-up questions, job-alert steps.
 
 ## Phases
 
-Phases are in execution order, with two exceptions. Phase 2d was added on
-2026-11-25 and runs before Phase 2c continues, so it sits in front of it; 2c
+The sections below are in label order, which is not quite execution order.
+Phase 2d was added on 2026-11-25 and runs before Phase 2c continues; 2c
 keeps its letter because its branch, decisions (D59, D60) and research paths
-already carry it. Phase 2e (the evaluation foundation) runs alongside 2c
-after the demo and sits after it; 2f needs both.
+already carry it. Phase 2e (a spend cap per access code) was planned on
+2026-11-26 and waits only for PR #7. Phase 2f (the evaluation foundation)
+runs alongside 2c after the demo; 2g needs both. On 2026-11-26 the
+evaluation foundation and the arm comparison were relabelled from 2e and 2f
+to 2f and 2g to make room; nothing had been built or branched under the old
+letters.
 
 ### Phase 0 — Foundations `[DONE]`
 
@@ -213,6 +222,80 @@ titles. **Revisit later:** how the user tells us whether a field interests
 them at all, now that the Interesting / Unsure / Not for me row is gone
 (`docs/backlog.md` §2).
 
+### Phase 2c — Reference data research `[PAUSED: resumes at 2c.2 after G2d.2]`
+
+Replaces the placeholder reference collection in `data/*.yaml` with
+researched industry and occupation data. The placeholder files are ignored
+throughout: no worker reads them as a starting point. Agreed 2026-11-23.
+Paused 2026-11-25 for Phase 2d. Since 2d the app reads no catalogue at
+run time (D61): 2c.8 still writes the researched data into `data/*.yaml`,
+which the evaluation's catalogue arm reads, and whether the app switches to
+it is decided from the evaluation (spec after the demo).
+
+**Scope.** US plus EU. Professional career switchers only (trades are in
+`docs/backlog.md` §2). Adaptation and resilience are tagged inside each
+area, not an area of their own.
+
+**Areas (ten).** The six `CLIMATE_AREAS` (Circular Economy, Built
+Environment, Transportation, Energy, Food & Agriculture, Carbon Removal)
+plus four added for the research: Climate Finance (including climate risk,
+insurance and carbon markets); Industry & Materials (steel, cement,
+chemicals, hydrogen, industrial heat); Nature & Water (conservation,
+forestry, oceans, water systems); Corporate Sustainability & Climate
+Services (carbon accounting, disclosure, climate data and software, policy
+and advocacy). No area was cut at G2c.1; whether Climate Finance and
+Corporate Sustainability stay is decided at G2c.2, once the dataset
+exploration shows whether occupation data can see them. Which of the four
+become pills in the UI is decided outside this phase.
+
+**Rules for every worker.**
+- Research output goes to `docs/research/`, never straight into `data/`.
+- The 2c.1 source survey is archived in `docs/archive/2c.1-source-survey/`
+  (gitignored, local only; the committed copy is in git history at
+  `9bad65f`). It surveyed reports, which D60 set aside, so no worker reads
+  it as a starting point. What later steps need from it is written into
+  their rows below.
+- Datasets, not reports (D60). Fields and roles come from datasets read
+  through their API or an MCP server. No worker extracts figures or lists
+  from an analysis page or a report; a report is named only as how a
+  dataset was found.
+- Every row carries its geography (US, EU or both) and a retrieval date.
+- Every claim carries a URL. A script checks that each URL resolves and is
+  not on a blocked domain before a gate; an Opus worker spot-checks a
+  sample of claims against their sources.
+- Company career pages may be read in a bounded way: at most 10 companies
+  per field, recording title, function and URL only, no posting text.
+- Companies are chosen by fixed criteria, set in the 2c.4 brief and reused
+  unchanged in 2c.5: US and EU; a mix of startups, scale-ups, incumbents
+  and nonprofits; a public careers page; named on at least one published
+  list.
+- LinkedIn's Green Skills Report is not used.
+
+**Sequencing.** 2c runs before 3.1, so the evaluation judges discovery on
+the researched data.
+
+| Step | What | Who | Done when | Status |
+|---|---|---|---|---|
+| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/archive/2c.1-source-survey/`; every URL resolves and none is on a blocked domain (checked by script) | `[DONE]` (2026-11-23: 31 scorecards in five files; `pnpm research:check-links` passes with 10 sites refusing automated checks (D59); 10 claims spot-checked, 4 corrected; recommendation in `docs/archive/2c.1-source-survey/recommendation.md`) |
+| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation (`docs/archive/2c.1-source-survey/recommendation.md`) | Choices recorded here | `[DONE]` (2026-11-23: datasets first, read through their APIs; the O*NET database is the main starting point, extending to BLS and ILOSTAT, with the OECD's derived datasets explored as a separate step (D60). This replaces the per-area report backbone in the recommendation. No area cut; the Climate Finance and Corporate Sustainability choice moves to G2c.2) |
+| 2c.2 | Dataset access, by API or an MCP server. First the O*NET database (https://www.onetcenter.org/database.html) through O*NET Web Services: it is the main starting point. Then the BLS public data API, ILOSTAT, and the OECD data API for 2c.3b. Proposed addition: the ESCO API, the EU counterpart joined to O*NET by the official crosswalk. Keys live in `.env.local`, never committed | **`YOU`**, in a separate session | Each source answers one test query from this repo; O*NET alone is enough to start 2c.3 | `[TODO]` |
+| 2c.3 | Dataset exploration, starting from O*NET: catalogue the tables that matter (occupations, tasks, alternate and reported titles, the green tags as a hint only), then what BLS and ILOSTAT add (employment by occupation and industry) and, if connected, ESCO (its O*NET crosswalk is a CSV at https://esco.ec.europa.eu/en/use-esco/other-crosswalks). The green tags are a hint only because the survey found them unchanged since about 2012. For each source: the finest industry and occupation level, geography and latest year. Answers two questions: can the data name roles at the level the app shows, and can it tie a role to a climate field, since O*NET is keyed by occupation, not by field. Ends in a proposed pull spec (which tables, which codes, which filters). If no dataset can name fields, the spec says so and proposes a taxonomy dataset (the EU Taxonomy) for that layer | Claude (Sonnet explores, Opus writes the spec) | Catalogue and pull spec under `docs/research/datasets/` | `[TODO]` |
+| 2c.3b | OECD derived datasets, explored on their own: what the OECD data API offers beyond the O*NET and BLS data it is built from (for example green-task measures by country or region), and whether any of it is worth adding to the pull spec. A side step: it can run alongside 2c.3 and does not hold up G2c.2 | Claude (Sonnet, low effort) | A short note under `docs/research/datasets/` saying "add these tables" or "nothing to add" | `[TODO]` |
+| G2c.2 | Finalise the data to pull; decide whether Climate Finance and Corporate Sustainability stay | **`YOU`** with the orchestrator's pull spec | Spec approved or corrected, recorded here | `[TODO]` |
+| 2c.4 | Pilot two areas end to end, Energy (best data) and Carbon Removal (worst), from data pulled under the approved spec: fields, a field × function matrix of roles, top companies, real titles from a bounded career-page read. Appends the career-page decision to `docs/technical-plan.md` §5 | Claude (Sonnet gathers, Opus reconciles) | Both areas written up under `docs/research/areas/` in one agreed format; empty matrix cells say "none found" or "not looked" | `[TODO]` |
+| G2c.3 | Review the pilot format before the fan-out | **`YOU`** | Format approved or corrected | `[TODO]` |
+| 2c.5 | Remaining areas in the approved format, one worker per area | Claude (Sonnet gathers, Opus reconciles) | Every area written up; link check passes | `[TODO]` |
+| 2c.6 | Verification against Climatebase jobs: check whether each posted job fits one of the researched roles, to catch what the datasets missed. The list is pre-filtered for fellows and not comprehensive, so it tests for gaps, not for coverage. **No worker fetches climatebase.org** (PRD hard constraint; it is a blocked domain). You supply a bounded list of titles and employers, kept in gitignored `userdata/` and never committed, seeded or cited. A role found only this way is sourced elsewhere before it enters the reference set. Appends the decision to `docs/technical-plan.md` §5 | **`YOU`** supply the list; Claude (Sonnet matches, Opus reviews the misses) | `docs/research/verification.md`: the share of jobs that fit a role, and each miss marked "add a role", "add a field" or "out of scope" | `[TODO]` |
+| 2c.7 | Synthesis: one consolidated reference set, the 2c.6 misses resolved, and a schema recommendation (occupation codes on roles, a companies table, or the current three files unchanged) | Claude (Fable) | `docs/research/synthesis.md` | `[TODO]` |
+| G2c.4 | Approve the reference set and decide the schema | **`YOU`** | Decision recorded in `docs/technical-plan.md` §5 | `[TODO]` |
+| 2c.8 | Implement the first round of research into `data/*.yaml` (and the schema, if it changes) | Claude (Opus) | `pnpm seed` and `pnpm db:check-rls` pass; `try:discover` cites only catalogue URLs | `[TODO]` |
+
+2c.8 is a fit for the `Workflow` tool (a deterministic fan-out with a
+schema per area); it runs that way only if you opt in ("use a workflow for
+step 2c.8"). The schema decision is deliberately left to G2c.4. Steps after
+G2c.1 were renumbered on 2026-11-23 when the dataset steps (2c.2, 2c.3) and
+the verification step (2c.6) were added; none had started.
+
 ### Phase 2d — Memory-only discovery, hosted demo `[IN PROGRESS]`
 
 Agreed 2026-11-25 for the demo, first set for 2026-11-28 and moved to 2026-12-01. Discovery runs on Claude Fable
@@ -289,81 +372,116 @@ and the pilot kit (3.3, 3.4); alternate titles per role for the search
 prompt; selecting the catalogue per run (`docs/backlog.md` §6, decided with
 the evaluation); removing the catalogue code or the reference tables.
 
-### Phase 2c — Reference data research `[PAUSED: resumes at 2c.2 after G2d.2]`
+### Phase 2e — A spend cap per access code `[TODO]`
 
-Replaces the placeholder reference collection in `data/*.yaml` with
-researched industry and occupation data. The placeholder files are ignored
-throughout: no worker reads them as a starting point. Agreed 2026-11-23.
-Paused 2026-11-25 for Phase 2d. Since 2d the app reads no catalogue at
-run time (D61): 2c.8 still writes the researched data into `data/*.yaml`,
-which the evaluation's catalogue arm reads, and whether the app switches to
-it is decided from the evaluation (spec after the demo).
+Planned 2026-11-26. Each invited person gets their own access code, and each
+code has a dollar cap on the model calls made under it, so one person cannot
+use up the pilot's credits. It replaces the per-session cap planned for 3.3:
+the session id is made in the browser and "Start over" makes a new one, so a
+cap keyed on it stops nobody. The phase runs on branch `phase-2e`, cut from
+`main` after PR #7 merges; it does not wait for 2c or 2f.
 
-**Scope.** US plus EU. Professional career switchers only (trades are in
-`docs/backlog.md` §2). Adaptation and resilience are tagged inside each
-area, not an area of their own.
+**How it works.**
 
-**Areas (ten).** The six `CLIMATE_AREAS` (Circular Economy, Built
-Environment, Transportation, Energy, Food & Agriculture, Carbon Removal)
-plus four added for the research: Climate Finance (including climate risk,
-insurance and carbon markets); Industry & Materials (steel, cement,
-chemicals, hydrogen, industrial heat); Nature & Water (conservation,
-forestry, oceans, water systems); Corporate Sustainability & Climate
-Services (carbon accounting, disclosure, climate data and software, policy
-and advocacy). No area was cut at G2c.1; whether Climate Finance and
-Corporate Sustainability stay is decided at G2c.2, once the dataset
-exploration shows whether occupation data can see them. Which of the four
-become pills in the UI is decided outside this phase.
+- **Codes.** A code is generated, never chosen: 16 random characters (80
+  bits), shown as `XXXX-XXXX-XXXX-XXXX`. The database holds only a key
+  derived from it, the first 32 hex characters of its SHA-256, so a code
+  cannot be read back from the database. A code this long cannot be guessed,
+  which is why no server secret goes into the key and rotating
+  `PASSCODE_COOKIE_SECRET` cannot reset anyone's total.
+- **One table, `access_codes`.** Columns: `code_key` (32 hex, CHECK on the
+  shape), `cap_usd`, `spent_usd`, `disabled`, `created_at`. No label, no
+  name, no session id, no time of last use: nowhere to put free text. Who
+  holds which code is known only to you and is written nowhere in the repo
+  or the database.
+- **How the app reaches it.** The app still holds only the publishable key
+  and the table is closed to it (RLS on, no grants, no policies). Two
+  `SECURITY DEFINER` functions are the only way in: `access_code_budget(key)`
+  returns the cap, the total and the disabled flag, or no row for an unknown
+  key; `access_code_add_spend(key, usd)` adds a non-negative amount. Anyone
+  can call them with the public key, but only with a 32-hex key they cannot
+  guess, and the worst a tester can do with their own is use up their own
+  budget.
+- **Entry.** `/api/enter` normalises what was typed, derives the key and
+  asks `access_code_budget`. A known code that is not disabled gets a session
+  cookie carrying its key: `v2.<expiry>.<key>.<hmac>`. A code that has
+  reached its cap is still let in, because the person's profile is in their
+  browser and they must be able to read and export it; it is the next model
+  call that is refused. `APP_PASSCODE` stays as an optional operator
+  passcode for you and for local work; its sessions carry no key and are not
+  metered.
+- **Metering.** The key travels from the signed cookie, never from the
+  request body, through `runTurn` into `llm.ts`. Before each logical call
+  `llm.ts` reads the budget and refuses with a typed error when the total
+  has reached the cap, the code is disabled or unknown, or the budget cannot
+  be read (it fails closed). After the call, at the point where the usage
+  row is recorded, it adds `costUsd` to the total; an aborted call is added
+  too, since it is billed (D45). The write is tracked with the usage row, so
+  the turn route's `after()` waits for both (D64, D65). A call with no key
+  (the operator passcode, the `try:*` scripts) is not metered.
+- **What the cap guarantees.** The check is before a call and the charge
+  after it, so a code can go over by the calls already in flight when it
+  crosses the cap: one call in ordinary use, cents. A failed charge is a
+  `console.warn` with the error code and undercounts. Keep an
+  organisation-level spend limit in the Claude Console as the backstop for
+  both.
+- **`llm_usage` is not touched.** No column is added and no row is linked to
+  a code; it stays anonymous as D22 describes.
+
+**The data rule changes (approved by you as written, 2026-11-26).** CLAUDE.md says
+"The only server-side write is the anonymous `llm_usage` row". After this
+phase it reads: "There are two server-side writes: the anonymous `llm_usage`
+row, and one running dollar total per access code (`access_codes.spent_usd`).
+Neither holds content or identity. An access-code row is a derived key, a
+cap, a total, a disabled flag and a creation time." What you gain is the
+cap. What changes is that you can see how much each code has spent, and you
+know who holds each code.
 
 **Rules for every worker.**
-- Research output goes to `docs/research/`, never straight into `data/`.
-- The 2c.1 source survey is archived in `docs/archive/2c.1-source-survey/`
-  (gitignored, local only; the committed copy is in git history at
-  `9bad65f`). It surveyed reports, which D60 set aside, so no worker reads
-  it as a starting point. What later steps need from it is written into
-  their rows below.
-- Datasets, not reports (D60). Fields and roles come from datasets read
-  through their API or an MCP server. No worker extracts figures or lists
-  from an analysis page or a report; a report is named only as how a
-  dataset was found.
-- Every row carries its geography (US, EU or both) and a retrieval date.
-- Every claim carries a URL. A script checks that each URL resolves and is
-  not on a blocked domain before a gate; an Opus worker spot-checks a
-  sample of claims against their sources.
-- Company career pages may be read in a bounded way: at most 10 companies
-  per field, recording title, function and URL only, no posting text.
-- Companies are chosen by fixed criteria, set in the 2c.4 brief and reused
-  unchanged in 2c.5: US and EU; a mix of startups, scale-ups, incumbents
-  and nonprofits; a public careers page; named on at least one published
-  list.
-- LinkedIn's Green Skills Report is not used.
 
-**Sequencing.** 2c runs before 3.1, so the evaluation judges discovery on
-the researched data.
+- The CLAUDE.md hard constraints, verbatim in each brief, with the data rule
+  above in its new wording.
+- `access_codes` and `llm_usage` never gain a content or identity column.
+  Nothing logs a code, a key or a request body; a failed write logs the
+  error code only.
+- The key reaches `llm.ts` only from the signed cookie. `TurnRequest` gains
+  no field.
+- No new Supabase client: the app uses `anonClient().rpc(...)`;
+  `serviceClient()` is used by `scripts/access-codes.ts` and
+  `scripts/check-rls.ts` only.
+- Each step appends its own decision to `docs/technical-plan.md` §5 in the
+  same commit, under the next free number at that time (D67 if nothing else
+  has landed).
+- Any user-facing string is checked against `docs/design-language.md`
+  first.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2c.1 | Source survey: one worker per source family (US federal; EU; international bodies; NGO and academic; climate-tech taxonomies and company lists). Each fills the same scorecard per source: coverage of the areas, granularity, last update and cadence, format and licence, geography, trades-versus-professional skew, and whether an official US–EU occupation crosswalk exists | Claude (Sonnet, low effort) | Scorecards under `docs/archive/2c.1-source-survey/`; every URL resolves and none is on a blocked domain (checked by script) | `[DONE]` (2026-11-23: 31 scorecards in five files; `pnpm research:check-links` passes with 10 sites refusing automated checks (D59); 10 claims spot-checked, 4 corrected; recommendation in `docs/archive/2c.1-source-survey/recommendation.md`) |
-| G2c.1 | Pick the backbone source per area and cut any area the survey showed to be thin | **`YOU`** with the orchestrator's recommendation (`docs/archive/2c.1-source-survey/recommendation.md`) | Choices recorded here | `[DONE]` (2026-11-23: datasets first, read through their APIs; the O*NET database is the main starting point, extending to BLS and ILOSTAT, with the OECD's derived datasets explored as a separate step (D60). This replaces the per-area report backbone in the recommendation. No area cut; the Climate Finance and Corporate Sustainability choice moves to G2c.2) |
-| 2c.2 | Dataset access, by API or an MCP server. First the O*NET database (https://www.onetcenter.org/database.html) through O*NET Web Services: it is the main starting point. Then the BLS public data API, ILOSTAT, and the OECD data API for 2c.3b. Proposed addition: the ESCO API, the EU counterpart joined to O*NET by the official crosswalk. Keys live in `.env.local`, never committed | **`YOU`**, in a separate session | Each source answers one test query from this repo; O*NET alone is enough to start 2c.3 | `[TODO]` |
-| 2c.3 | Dataset exploration, starting from O*NET: catalogue the tables that matter (occupations, tasks, alternate and reported titles, the green tags as a hint only), then what BLS and ILOSTAT add (employment by occupation and industry) and, if connected, ESCO (its O*NET crosswalk is a CSV at https://esco.ec.europa.eu/en/use-esco/other-crosswalks). The green tags are a hint only because the survey found them unchanged since about 2012. For each source: the finest industry and occupation level, geography and latest year. Answers two questions: can the data name roles at the level the app shows, and can it tie a role to a climate field, since O*NET is keyed by occupation, not by field. Ends in a proposed pull spec (which tables, which codes, which filters). If no dataset can name fields, the spec says so and proposes a taxonomy dataset (the EU Taxonomy) for that layer | Claude (Sonnet explores, Opus writes the spec) | Catalogue and pull spec under `docs/research/datasets/` | `[TODO]` |
-| 2c.3b | OECD derived datasets, explored on their own: what the OECD data API offers beyond the O*NET and BLS data it is built from (for example green-task measures by country or region), and whether any of it is worth adding to the pull spec. A side step: it can run alongside 2c.3 and does not hold up G2c.2 | Claude (Sonnet, low effort) | A short note under `docs/research/datasets/` saying "add these tables" or "nothing to add" | `[TODO]` |
-| G2c.2 | Finalise the data to pull; decide whether Climate Finance and Corporate Sustainability stay | **`YOU`** with the orchestrator's pull spec | Spec approved or corrected, recorded here | `[TODO]` |
-| 2c.4 | Pilot two areas end to end, Energy (best data) and Carbon Removal (worst), from data pulled under the approved spec: fields, a field × function matrix of roles, top companies, real titles from a bounded career-page read. Appends the career-page decision to `docs/technical-plan.md` §5 | Claude (Sonnet gathers, Opus reconciles) | Both areas written up under `docs/research/areas/` in one agreed format; empty matrix cells say "none found" or "not looked" | `[TODO]` |
-| G2c.3 | Review the pilot format before the fan-out | **`YOU`** | Format approved or corrected | `[TODO]` |
-| 2c.5 | Remaining areas in the approved format, one worker per area | Claude (Sonnet gathers, Opus reconciles) | Every area written up; link check passes | `[TODO]` |
-| 2c.6 | Verification against Climatebase jobs: check whether each posted job fits one of the researched roles, to catch what the datasets missed. The list is pre-filtered for fellows and not comprehensive, so it tests for gaps, not for coverage. **No worker fetches climatebase.org** (PRD hard constraint; it is a blocked domain). You supply a bounded list of titles and employers, kept in gitignored `userdata/` and never committed, seeded or cited. A role found only this way is sourced elsewhere before it enters the reference set. Appends the decision to `docs/technical-plan.md` §5 | **`YOU`** supply the list; Claude (Sonnet matches, Opus reviews the misses) | `docs/research/verification.md`: the share of jobs that fit a role, and each miss marked "add a role", "add a field" or "out of scope" | `[TODO]` |
-| 2c.7 | Synthesis: one consolidated reference set, the 2c.6 misses resolved, and a schema recommendation (occupation codes on roles, a companies table, or the current three files unchanged) | Claude (Fable) | `docs/research/synthesis.md` | `[TODO]` |
-| G2c.4 | Approve the reference set and decide the schema | **`YOU`** | Decision recorded in `docs/technical-plan.md` §5 | `[TODO]` |
-| 2c.8 | Implement the first round of research into `data/*.yaml` (and the schema, if it changes) | Claude (Opus) | `pnpm seed` and `pnpm db:check-rls` pass; `try:discover` cites only catalogue URLs | `[TODO]` |
+| 2e.0 | Approve the changed data rule above (approved as written, 2026-11-26) and choose the cap per code. $3 is about nine full loops at the $0.334 measured on 2026-11-26, so six codes cost $18 at most | **`YOU`** | You kick off the phase with the cap in the prompt | `[TODO]` (the cap is still to choose) |
+| 2e.1 | Table and ledger. A new migration `supabase/migrations/<timestamp>_access_codes.sql`: the table with its CHECKs, RLS on with every grant revoked from `anon` and `authenticated`, the two functions (`SECURITY DEFINER`, `set search_path = ''`, execute granted to `anon` and `authenticated` and revoked from `public`; `access_code_add_spend` rejects a null, negative or NaN amount and does nothing for an unknown key), and table and column comments in the manner of `llm_usage`. `pnpm db:reset && pnpm db:types`. New `src/lib/budget.ts`: a `BudgetLedger` interface (`read(codeKey)` → cap, total, disabled, or `null`; `addSpend(codeKey, usd)`), `supabaseBudgetLedger()` over `anonClient().rpc`, `memoryBudgetLedger()` for tests, and a pure `budgetVerdict` (allowed, exhausted, inactive) with unit tests. `scripts/check-rls.ts` gains a group: anon cannot select, insert, update or delete `access_codes`; both functions run for anon; an unknown key reads as no row and adds nothing; a negative amount is refused; the row it creates through the service role is cleaned up. The decision: the table, why no label, why the per-session cap is dropped | Claude (Opus) | `pnpm db:check-rls` passes on the local stack with the new group; `database.types.ts` regenerated and committed; `pnpm test`, `pnpm lint`, `pnpm build` pass | `[TODO]` |
+| 2e.2 | Codes and their script. New `src/lib/access-code.ts`, Web Crypto only so it runs in the proxy: `generateAccessCode()`, `normalizeAccessCode()` (trim, upper-case, drop dashes and spaces), `accessCodeKey()` (SHA-256, first 32 hex), `isAccessCodeKey()`, with unit tests. New `scripts/access-codes.ts` on `serviceClient()` and three commands in `package.json`: `pnpm codes:add --cap <usd> [--count <n>]` prints each new code once beside the first 8 characters of its key and stores only the key; `pnpm codes:list` prints key prefix, cap, total, disabled and created; `pnpm codes:set <key-prefix> [--cap <usd>] [--disable\|--enable]`. `--cap` is required: no default cap is written into code | Claude (Opus) | On the local stack `codes:add --cap 1 --count 2` prints two codes, `codes:list` shows two rows at $0, `codes:set` changes a cap and disables a code; a code typed in lower case with spaces derives the same key; tests, lint and build pass | `[TODO]` |
+| 2e.3 | The gate. `passcode.ts`: `SESSION_VERSION` becomes `v2`, the token carries a scope (a code key, or a fixed marker for the operator passcode), and `verifySession` becomes `readSession`, returning the session (`{ codeKey: string \| null }`) or `null`; every caller and test is renamed with it. `proxy.ts` uses it and is otherwise unchanged. `/api/enter`: the operator passcode is compared first, in constant time, when `APP_PASSCODE` is set (it no longer has to be); otherwise the code is normalised, its key derived and `BudgetLedger.read` asked; an unknown or disabled code gets today's 401; an unreachable ledger gets a 503 with a plain sentence; the form field is renamed from `passcode` to `code`. `src/app/enter/page.tsx` asks for "your access code". The decision: codes hashed with no server secret, the v2 cookie, the unmetered operator passcode | Claude (Opus) | `passcode.test.ts` and the enter route's tests cover: a v1 cookie is refused, a v2 cookie round-trips its key, a tampered key fails the HMAC, a known code enters, a disabled or unknown code is refused, a capped-out code still enters, the operator passcode enters with no key; tests, lint and build pass | `[TODO]` |
+| 2e.4 | Metering in `llm.ts`. `CallRequest` gains an optional `codeKey`; `CreateLlmOptions` gains `budget?: BudgetLedger`, defaulting to `supabaseBudgetLedger()`. In `runCall`, after the session-id and tool checks and before any request: with a key, read the budget and throw a new `LlmBudgetError` whose `reason` is `exhausted`, `inactive` or `unavailable`. In `recordOnce`: with a key, add `costUsd` through the ledger, tracked in the same pending set as the usage row so `usageWritesSettled` waits for it; a failure is a `console.warn` with the error code. No key: neither happens. The decision: the check per logical call, failing closed, the overshoot bound | Claude (Opus) | `llm.test.ts` with the memory ledger: a call under the cap runs and the total rises by its `costUsd`; a call at the cap makes no API request; an aborted call is still charged; an unreadable ledger refuses; a keyless call never touches the ledger; `usageWritesSettled` resolves only after the charge; tests, lint and build pass | `[TODO]` |
+| 2e.5 | The turn. `turn.ts`: `withSignal` becomes `withCallContext` (signal and key), `runTurn` takes the key, and `turnErrorMessage` gains one sentence per `LlmBudgetError` reason, each saying that what the person has is still in their browser. `/api/turn` reads the session from the cookie with `readSession` (read the Next 16 docs for cookies in a route handler first), answers 401 without one, and passes the key on. Then one run on the local stack with the real ledger: a code capped at $0.01, `/api/enter` and two `cards` turns by `curl`, about $0.05 | Claude (Opus) | `turn.test.ts` and `route.test.ts` cover the key reaching every step's calls and the three sentences; in the local run the first turn completes, `codes:list` shows a total above the cap, and the second turn returns the budget sentence without a model call; tests, lint and build pass | `[TODO]` |
+| 2e.6 | Docs. CLAUDE.md: the data rule in its new wording everywhere it is stated, the commands table (`codes:*`), the environment table (`APP_PASSCODE` optional, operator only), "Passcode gate" (codes, the v2 token, `readSession`), "Supabase" (the fourth table, the fourth service-role script, the two functions), "LLM calls" (`codeKey`, `LlmBudgetError`, the ledger). `docs/technical-plan.md`: §1 "Access" and "Cost telemetry", the §3 module map (`budget.ts`, `access-code.ts`, `scripts/access-codes.ts`), a note on D4 and D5 pointing at the new decisions. `docs/data-flow.html`: the new store, the read before each call and the write after it. `docs/deploy.md`: issuing codes, reading totals, raising a cap, disabling a code, what the operator passcode is for. `docs/backlog.md` §5: the spend-control item, with showing cost in the UI left open. `.env.example` | Claude (Opus) | `grep -rn "only server-side write" CLAUDE.md docs src` returns nothing stale; every command in the docs runs as written on the local stack; tests, lint and build pass | `[TODO]` |
+| G2e.1 | `/code-review` and `/security-review` (the phase touches auth, input handling and Supabase); PR for `phase-2e` | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2e` | `[TODO]` |
+| 2e.7 | Production, before the merge. `supabase db push` of the one new migration, then `pnpm db:check-rls` against production with the service key from your shell, never from the repo. The migration only adds, so the deployed app keeps working | Claude (Opus), in a session where your CLI is linked to the production project | The migration is applied and `db:check-rls` passes against production | `[TODO]` |
+| G2e.2 | Merge and issue codes. Merge the PR. In your own terminal, never in a Claude session: `pnpm codes:add --cap <usd> --count <n>` against production, and keep the list of who has which code outside the repo. Decide whether `APP_PASSCODE` stays in Vercel: it is uncapped, so remove it or keep it to yourself. Then one check on the production URL with a code capped at $0.50: run loops until it is refused | **`YOU`** | A turn is refused with the budget sentence, your profile is still there, `codes:list` shows the total just over $0.50, and a wrong code is refused at `/enter` | `[TODO]` |
 
-2c.8 is a fit for the `Workflow` tool (a deterministic fan-out with a
-schema per area); it runs that way only if you opt in ("use a workflow for
-step 2c.8"). The schema decision is deliberately left to G2c.4. Steps after
-G2c.1 were renumbered on 2026-11-23 when the dataset steps (2c.2, 2c.3) and
-the verification step (2c.6) were added; none had started.
+Order: 2e.1 to 2e.6 in sequence on `phase-2e`, one commit each, no
+worktrees: each step builds on the one before (2e.2 on the table, 2e.3 on
+both, 2e.5 on 2e.3 and 2e.4). The kickoff session stops at G2e.1. 2e.7 runs
+after the review fixes and before the merge. Live calls: 2e.5 only, about
+$0.05. Deploying this signs everyone out once, because the cookie version
+changes; people come back in with their new code.
 
-### Phase 2e — Evaluation foundation `[TO SPEC]`
+Not in 2e, by decision: showing a person their remaining budget or the
+session's cost (`docs/backlog.md` §5); caps that reset by month; a cheaper
+model or effort once a code is near its cap; a web page for issuing codes
+(the script is the only writer); rate limiting on `/api/enter` (an 80-bit
+code makes guessing pointless); any change to `llm_usage`.
+
+### Phase 2f — Evaluation foundation `[TO SPEC]`
 
 Agreed in outline 2026-11-25; the rows are the proposed shape and are
 filled in with you in a spec session after the demo. **In plain terms:**
@@ -392,18 +510,18 @@ content.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2e.1 | Call outcomes in production. `llm_usage` gains `outcome` (`ok`, `timeout`, `cancelled`, `refusal`, `truncated`, `pause_limit`, `output_invalid`, `api_error`; CHECK), `http_status` (smallint, null when no response), `error_code` (closed vocabulary of the SDK error class names and the `Llm*Error` names; CHECK), `retries` (smallint), `request_id` (Anthropic's `request-id` header, 1–80 chars; it identifies the API request, not a person). `llm.ts` writes one row per logical call whether it succeeded or not; `USAGE_ROW_KEYS` and its guard test updated; the route's console line carries outcome, status and request id and still never the message. New migration, `db:types`, `db:check-rls`. Decision appended: outcome and status codes are not content | Claude (Opus) | A forced timeout, a refusal fixture and a 429 from a stubbed client each write a row with the right outcome and zero tokens; `smoke:llm` reads back `outcome = ok`; tests, lint, build pass | `[TO SPEC]` |
-| 2e.2 | Runner with record and replay. `evals/runner/` (TypeScript): `pnpm eval:run --step <name> --arm memory or catalogue --profiles <dir> --out evals/runs/<id>` runs one step over every profile in the directory through the real lib functions and `llm.ts`, with a `recorder` injected through `createLlm` that keeps per call the system prompt hash, the messages, the raw response text, usage, cost, duration, outcome, git sha and the model table, as JSONL; `--replay <run>` re-emits a stored run without calling the API. End-to-end mode chains the steps and freezes the output of each stage as the input of the next. `evals/runs/` gitignored; a committed summary per run holds counts and cost only | Claude (Opus) | A run over the fixtures produces JSONL that a schema test accepts; replay reproduces the profiles byte for byte; no route imports anything under `evals/` | `[TO SPEC]` |
-| 2e.3 | Synthetic corpus. 30–40 fictional resumes across the function vocabulary and both geographies, generated by Claude as invented people (no real individual, D6), reviewed by you for plausibility, frozen per stage under `evals/profiles/`: the resume text, the cards profile, the discovered profile. Real resumes stay in `userdata/`, run locally, never committed | Claude (Opus) generates; **`YOU`** review | Corpus committed with a manifest (function, geography, seniority, notes); every profile passes the try-script checks | `[TO SPEC]` |
-| 2e.4 | Python evaluation package. `evals/python/` managed with `uv`: a JSONL schema check, the structural checks per step ported from the try scripts (card completeness, level-free titles, one search per selected role, the 2b.19 search-specificity check), a rubric judge per step and an end-to-end judge calling Claude through the Python SDK with no tools (a dev-only path like D59; its own decision), aggregation and a report per run. `evals/CLAUDE.md` holds the conventions | Claude (Fable) writes the rubrics; Claude (Opus) the package | `uv run eval score <run>` prints a per-step table and writes the report; the judge never sees the judged step's prompt text | `[TO SPEC]` |
-| 2e.5 | Judge calibration. You label a sample of discovery and search outputs with the rubric; agreement between judge and labels is measured; the rubric is revised until agreement clears the threshold set in the spec | **`YOU`** label; Claude (Fable) revises | Agreement figure recorded in `docs/eval-spec.md` | `[TO SPEC]` |
-| 2e.6 | Batch mode in `llm.ts` for the runner (Message Batches, half price, no streaming), reachable only from the runner | Claude (Opus) | A corpus run completes through batches at the logged cost | `[TO SPEC]` |
-| 2e.7 | Baseline run: the memory arm over the corpus, step level and end to end, scored; numbers and cost in `docs/technical-plan.md` §6 | Claude (Opus) | The baseline table is the first entry in `docs/eval-spec.md` results | `[TO SPEC]` |
-| G2e | Review the baseline and the spec | **`YOU`** | Spec and thresholds approved | `[TO SPEC]` |
+| 2f.1 | Call outcomes in production. `llm_usage` gains `outcome` (`ok`, `timeout`, `cancelled`, `refusal`, `truncated`, `pause_limit`, `output_invalid`, `api_error`; CHECK), `http_status` (smallint, null when no response), `error_code` (closed vocabulary of the SDK error class names and the `Llm*Error` names; CHECK), `retries` (smallint), `request_id` (Anthropic's `request-id` header, 1–80 chars; it identifies the API request, not a person). `llm.ts` writes one row per logical call whether it succeeded or not; `USAGE_ROW_KEYS` and its guard test updated; the route's console line carries outcome, status and request id and still never the message. New migration, `db:types`, `db:check-rls`. Decision appended: outcome and status codes are not content | Claude (Opus) | A forced timeout, a refusal fixture and a 429 from a stubbed client each write a row with the right outcome and zero tokens; `smoke:llm` reads back `outcome = ok`; tests, lint, build pass | `[TO SPEC]` |
+| 2f.2 | Runner with record and replay. `evals/runner/` (TypeScript): `pnpm eval:run --step <name> --arm memory or catalogue --profiles <dir> --out evals/runs/<id>` runs one step over every profile in the directory through the real lib functions and `llm.ts`, with a `recorder` injected through `createLlm` that keeps per call the system prompt hash, the messages, the raw response text, usage, cost, duration, outcome, git sha and the model table, as JSONL; `--replay <run>` re-emits a stored run without calling the API. End-to-end mode chains the steps and freezes the output of each stage as the input of the next. `evals/runs/` gitignored; a committed summary per run holds counts and cost only | Claude (Opus) | A run over the fixtures produces JSONL that a schema test accepts; replay reproduces the profiles byte for byte; no route imports anything under `evals/` | `[TO SPEC]` |
+| 2f.3 | Synthetic corpus. 30–40 fictional resumes across the function vocabulary and both geographies, generated by Claude as invented people (no real individual, D6), reviewed by you for plausibility, frozen per stage under `evals/profiles/`: the resume text, the cards profile, the discovered profile. Real resumes stay in `userdata/`, run locally, never committed | Claude (Opus) generates; **`YOU`** review | Corpus committed with a manifest (function, geography, seniority, notes); every profile passes the try-script checks | `[TO SPEC]` |
+| 2f.4 | Python evaluation package. `evals/python/` managed with `uv`: a JSONL schema check, the structural checks per step ported from the try scripts (card completeness, level-free titles, one search per selected role, the 2b.19 search-specificity check), a rubric judge per step and an end-to-end judge calling Claude through the Python SDK with no tools (a dev-only path like D59; its own decision), aggregation and a report per run. `evals/CLAUDE.md` holds the conventions | Claude (Fable) writes the rubrics; Claude (Opus) the package | `uv run eval score <run>` prints a per-step table and writes the report; the judge never sees the judged step's prompt text | `[TO SPEC]` |
+| 2f.5 | Judge calibration. You label a sample of discovery and search outputs with the rubric; agreement between judge and labels is measured; the rubric is revised until agreement clears the threshold set in the spec | **`YOU`** label; Claude (Fable) revises | Agreement figure recorded in `docs/eval-spec.md` | `[TO SPEC]` |
+| 2f.6 | Batch mode in `llm.ts` for the runner (Message Batches, half price, no streaming), reachable only from the runner | Claude (Opus) | A corpus run completes through batches at the logged cost | `[TO SPEC]` |
+| 2f.7 | Baseline run: the memory arm over the corpus, step level and end to end, scored; numbers and cost in `docs/technical-plan.md` §6 | Claude (Opus) | The baseline table is the first entry in `docs/eval-spec.md` results | `[TO SPEC]` |
+| G2f | Review the baseline and the spec | **`YOU`** | Spec and thresholds approved | `[TO SPEC]` |
 
-### Phase 2f — Arm comparison `[TO SPEC]`
+### Phase 2g — Arm comparison `[TO SPEC]`
 
-After 2e and 2c. **In plain terms:** the experiment. The same resumes go
+After 2f and 2c. **In plain terms:** the experiment. The same resumes go
 through each version of the app, model alone, model with the researched
 catalogue, model with the catalogue plus occupation codes, and through a
 plain frontier assistant with web search as the PRD asks; the scores decide
@@ -412,10 +530,10 @@ changes.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2f.1 | Arms beyond memory: `catalogue` from `data/*.yaml` (the 2c.8 output), `catalogue+codes` if 2c.7 adds occupation codes, and the plain-assistant arm from the old 3.2 recorded in the same JSONL shape | Claude (Opus) | Every arm runs over the corpus through the runner | `[TO SPEC]` |
-| 2f.2 | Comparison: step level for discovery, end to end for the loop, pairwise judging between arms on the same profile, cost and latency per arm | Claude (Opus) runs; Claude (Fable) writes the analysis | Report in `docs/eval-spec.md` results | `[TO SPEC]` |
-| 2f.3 | Prompt hill-climbing on the eval for the arm that ships, with a held-out split | Claude (Fable) | Scores on the held-out split recorded | `[TO SPEC]` |
-| G2f | Decide the data layer and prompts the app ships; record the decision in `docs/technical-plan.md` §5 | **`YOU`** | Decision recorded | `[TO SPEC]` |
+| 2g.1 | Arms beyond memory: `catalogue` from `data/*.yaml` (the 2c.8 output), `catalogue+codes` if 2c.7 adds occupation codes, and the plain-assistant arm from the old 3.2 recorded in the same JSONL shape | Claude (Opus) | Every arm runs over the corpus through the runner | `[TO SPEC]` |
+| 2g.2 | Comparison: step level for discovery, end to end for the loop, pairwise judging between arms on the same profile, cost and latency per arm | Claude (Opus) runs; Claude (Fable) writes the analysis | Report in `docs/eval-spec.md` results | `[TO SPEC]` |
+| 2g.3 | Prompt hill-climbing on the eval for the arm that ships, with a held-out split | Claude (Fable) | Scores on the held-out split recorded | `[TO SPEC]` |
+| G2g | Decide the data layer and prompts the app ships; record the decision in `docs/technical-plan.md` §5 | **`YOU`** | Decision recorded | `[TO SPEC]` |
 
 ### Phase 3 — Evaluation and pilot readiness `[TODO]`
 
@@ -423,12 +541,12 @@ changes.
 |---|---|---|---|---|
 | 3.1 | `evals/`: four synthetic profiles, structural checks, an LLM-judge rubric (grounded, sources real, non-generic, titles level-free, one search per role). The feedback-loop eval and the "revision responsive" criterion return with the feedback milestone (`docs/backlog.md` §4). The result decides whether discovery needs a larger catalogue or bounded search (D44) | Claude (Fable) | `pnpm eval` prints a scored table and cost per run | `[TODO]` |
 | 3.2 | Baseline arm: the same profiles given to plain Opus 5.5 (the app's model) with web search, transcripts saved side by side | Claude (Opus) | Transcripts under `evals/baseline/` | `[TODO]` |
-| 3.3 | Deploy: Vercel production, Supabase production seeded, env vars, passcode, per-session spend cap, feedback form link | **`YOU`** create and link the Vercel and Supabase projects, set the secrets and choose the passcode; Claude (Opus) does the rest | Production URL works from a clean browser; the cap stops calls | `[TODO]` |
+| 3.3 | Deploy: Vercel production, Supabase production seeded, env vars, passcode, feedback form link (the spend cap moved to Phase 2e, per access code) | **`YOU`** create and link the Vercel and Supabase projects, set the secrets and choose the passcode; Claude (Opus) does the rest | Production URL works from a clean browser | `[TODO]` |
 | 3.4 | Pilot kit: in-app intro (what it does, what stays in your browser, how to export), feedback template, known limitations | Claude (Opus) drafts; **`YOU`** review | You approve the intro, template and limitations | `[TODO]` |
 | G3.1 | `/code-review` and `/security-review` (3.3 touches auth and Supabase) | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed | `[TODO]` |
 | G3.2 | Invite the fellows | **`YOU`** | Invitations sent with the URL and passcode | `[TODO]` |
 
-Decided 2026-11-25: 3.1 and 3.2 are replaced by Phases 2e and 2f above.
+Decided 2026-11-25: 3.1 and 3.2 are replaced by Phases 2f and 2g above.
 The rows below are kept until that spec lands and will shrink to the pilot
 work (3.3's remainder, 3.4, the gates).
 
