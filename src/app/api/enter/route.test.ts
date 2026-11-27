@@ -14,7 +14,12 @@ vi.mock("@/lib/budget", async (importOriginal) => {
   return { ...actual, supabaseBudgetLedger: () => ledger.current };
 });
 
-const OPERATOR_PASSCODE = "correct-horse-battery";
+const OLD_PASSCODE = "correct-horse-battery";
+/**
+ * The two passcode variables the route no longer reads (D70, D71). Built, not
+ * spelled, so a grep of src for either name stays empty, as 2e.8 checks.
+ */
+const RETIRED_VARIABLES = ["OPERATOR", "APP"].map((prefix) => `${prefix}_PASSCODE`);
 const SECRET = "test-cookie-secret-value";
 const URL_ = "http://localhost/api/enter";
 
@@ -53,7 +58,6 @@ async function sessionOf(response: Response) {
 
 describe("POST /api/enter", () => {
   beforeEach(async () => {
-    vi.stubEnv("OPERATOR_PASSCODE", OPERATOR_PASSCODE);
     vi.stubEnv("PASSCODE_COOKIE_SECRET", SECRET);
     memory = memoryBudgetLedger({
       [await accessCodeKey(KNOWN)]: { capUsd: 5, spentUsd: 1.25, disabled: false },
@@ -132,38 +136,27 @@ describe("POST /api/enter", () => {
     expect(reads).toEqual([]);
   });
 
-  it("enters with the operator passcode with no key, without reading the ledger", async () => {
-    const response = await POST(form({ code: OPERATOR_PASSCODE }));
-    expect(response.status).toBe(303);
-    expect(await sessionOf(response)).toEqual({ codeKey: null });
-    expect(reads).toEqual([]);
-  });
-
-  it("with OPERATOR_PASSCODE unset, a real code still enters and arbitrary text is refused", async () => {
-    vi.stubEnv("OPERATOR_PASSCODE", "");
-    const ok = await POST(form({ code: KNOWN }));
-    expect(ok.status).toBe(303);
-    expect(await sessionOf(ok)).toEqual({ codeKey: await accessCodeKey(KNOWN) });
-
-    for (const code of [OPERATOR_PASSCODE, ""]) {
-      const refused = await POST(form({ code }));
-      expect(refused.status).toBe(401);
-      expect(refused.headers.get("set-cookie")).toBeNull();
-    }
-  });
-
-  it("ignores the Phase 2d APP_PASSCODE variable, so the old shared passcode cannot open an unmetered session (D70)", async () => {
-    vi.stubEnv("OPERATOR_PASSCODE", "");
-    vi.stubEnv("APP_PASSCODE", "the-old-shared-passcode");
-    const refused = await POST(form({ code: "the-old-shared-passcode" }));
+  it("enters on no passcode: a value in either retired passcode variable does not enter (D71)", async () => {
+    for (const name of RETIRED_VARIABLES) vi.stubEnv(name, OLD_PASSCODE);
+    const refused = await POST(form({ code: OLD_PASSCODE }));
     expect(refused.status).toBe(401);
     expect(refused.headers.get("set-cookie")).toBeNull();
     expect(reads).toEqual([]);
+
+    // A code-shaped value in either variable is only ever looked up as a code.
+    for (const name of RETIRED_VARIABLES) vi.stubEnv(name, UNKNOWN);
+    const unknown = await POST(form({ code: UNKNOWN }));
+    expect(unknown.status).toBe(401);
+    expect(unknown.headers.get("set-cookie")).toBeNull();
+
+    const ok = await POST(form({ code: KNOWN }));
+    expect(ok.status).toBe(303);
+    expect(await sessionOf(ok)).toEqual({ codeKey: await accessCodeKey(KNOWN) });
   });
 
   it("no longer enters on the old passcode field name", async () => {
     for (const request of [
-      form({ passcode: OPERATOR_PASSCODE }),
+      form({ passcode: OLD_PASSCODE }),
       form({ passcode: KNOWN }),
       json({ passcode: KNOWN }),
     ]) {

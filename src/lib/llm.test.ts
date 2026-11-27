@@ -26,7 +26,7 @@ import {
   USAGE_ROW_KEYS,
   assertToolsAllowed,
   costUsd,
-  createLlm,
+  createLlm as createLlmUnkeyed,
   memoryUsageSink,
   usageWritesSettled,
   webTools,
@@ -150,11 +150,26 @@ async function drain(deltas: AsyncIterable<string>): Promise<string[]> {
 
 const SESSION_ID = "0123456789abcdef0123456789abcdef";
 
+/**
+ * Every call must carry an access code key (technical-plan.md D71). Tests
+ * outside the budget section run under this one, against an in-memory ledger
+ * with room to spare, so no test reaches Supabase and none calls keyless.
+ */
+const TEST_KEY = "00112233445566778899aabbccddeeff";
+
+function createLlm(deps: Parameters<typeof createLlmUnkeyed>[0]) {
+  return createLlmUnkeyed({
+    budget: memoryBudgetLedger({ [TEST_KEY]: { capUsd: 1_000_000, spentUsd: 0, disabled: false } }),
+    ...deps,
+  });
+}
+
 const REQUEST = {
   step: "elicit",
   sessionId: SESSION_ID,
   system: "You are a careers assistant.",
   messages: [{ role: "user", content: "hello" }],
+  codeKey: TEST_KEY,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -423,8 +438,10 @@ describe("streamText", () => {
     const llm = createLlm({ client, usageSink: sink, now: () => 0 });
 
     const call = llm.streamText(REQUEST);
-    expect(params).toHaveLength(1); // the request was made synchronously
     const result = await call.final;
+    // Made without textDeltas being read; not synchronously, since the
+    // budget read comes first on every call (technical-plan.md D71).
+    expect(params).toHaveLength(1);
 
     expect(result.text).toBe("never read");
     expect(result.usage).toEqual({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0 });
@@ -1182,19 +1199,23 @@ describe("access-code budget (technical-plan.md D69)", () => {
     }
   });
 
-  it("never touches the ledger for a keyless call", async () => {
-    const { client } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+  it("refuses a keyless call as inactive, with no API request and no ledger read (D71)", async () => {
+    const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
     const read = vi.fn(() => Promise.reject(new Error("must not read")));
     const addSpend = vi.fn(() => Promise.reject(new Error("must not charge")));
     const sink = memoryUsageSink();
     const llm = createLlm({ client, usageSink: sink, budget: { read, addSpend }, now: () => 0 });
-    const call = llm.streamText(REQUEST);
-    await drain(call.textDeltas);
-    await call.final;
+    const keyless = { step: REQUEST.step, sessionId: REQUEST.sessionId, system: REQUEST.system, messages: REQUEST.messages };
+    for (const call of [llm.streamText(keyless).final, llm.structured({ ...keyless, schema: z.object({}) })]) {
+      const error = await refusal(call);
+      expect(error).toBeInstanceOf(LlmBudgetError);
+      expect((error as LlmBudgetError).reason).toBe("inactive");
+    }
     await usageWritesSettled();
+    expect(params).toHaveLength(0);
     expect(read).not.toHaveBeenCalled();
     expect(addSpend).not.toHaveBeenCalled();
-    expect(sink.rows).toHaveLength(1);
+    expect(sink.rows).toHaveLength(0);
   });
 
   it("writes a usage row with exactly the fixed keys and no trace of the key", async () => {

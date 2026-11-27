@@ -19,12 +19,13 @@
  *     logs, stores or forwards prompt or completion text — not in the usage
  *     row, not in an error message, not in a `console.warn` — and never logs
  *     a code's key or amount.
- *   * **Spend is capped per access code** (technical-plan.md D69). Before
- *     each logical call that carries a `codeKey`, the code's budget is read
- *     and the call is refused with {@link LlmBudgetError} when it is spent,
- *     disabled, unknown or unreadable (fail closed); after the call its
- *     `costUsd` is added to the code's total, aborted calls included. A
- *     keyless call (the operator passcode, the scripts) is not metered.
+ *   * **Spend is capped per access code** (technical-plan.md D69, D71).
+ *     Every logical call must carry a `codeKey`; one without is refused with
+ *     {@link LlmBudgetError} `inactive` before any request, so no call is
+ *     unmetered. Before each call the code's budget is read and the call is
+ *     refused when it is spent, disabled, unknown or unreadable (fail
+ *     closed); after the call its `costUsd` is added to the code's total,
+ *     aborted calls included.
  *   * **Cost telemetry is comparable.** One row per logical call (a
  *     `pause_turn` continuation is part of the same logical call and its
  *     tokens are summed), priced from {@link PRICE_PER_MTOK} for the model
@@ -433,7 +434,7 @@ export type LlmBudgetReason = "exhausted" | "inactive" | "unavailable";
 
 /**
  * The call's access code may not make another call: its total has reached
- * its cap (`exhausted`), it is disabled, unknown or malformed (`inactive`),
+ * its cap (`exhausted`), it is missing, disabled, unknown or malformed (`inactive`),
  * or its budget could not be read in time (`unavailable`; the check fails
  * closed). Thrown before any request is made, so nothing was billed and no
  * usage row or charge is written. The message names the step and the reason
@@ -645,17 +646,18 @@ function recordSpend(
 }
 
 /**
- * Reads the code's budget before a metered call and throws unless it may run
- * (technical-plan.md D69). Fails closed: a malformed key is `inactive`
- * without a read; a read that rejects or outlasts `timeoutMs` is
+ * Reads the code's budget before a call and returns the key to charge, or
+ * throws unless the call may run
+ * (technical-plan.md D69). Fails closed: a missing or malformed key is
+ * `inactive` without a read (D71); a read that rejects or outlasts `timeoutMs` is
  * `unavailable`. The caller's `signal` firing mid-read is a cancellation.
  */
-async function assertBudgetAllows(
+async function allowedCodeKey(
   request: CallRequest,
-  codeKey: string,
+  codeKey: string | undefined,
   budget: BudgetLedger,
   timeoutMs: number,
-): Promise<void> {
+): Promise<string> {
   if (!isAccessCodeKey(codeKey)) throw new LlmBudgetError(request.step, "inactive");
   const signal = request.signal;
   if (signal?.aborted === true) throw new LlmCancelledError(request.step);
@@ -688,6 +690,7 @@ async function assertBudgetAllows(
   if (outcome === "unavailable") throw new LlmBudgetError(request.step, "unavailable");
   const verdict = budgetVerdict(outcome.state);
   if (verdict !== "allowed") throw new LlmBudgetError(request.step, verdict);
+  return codeKey;
 }
 
 /**
@@ -789,12 +792,14 @@ export interface CallRequest {
    */
   signal?: AbortSignal;
   /**
-   * The access code's derived key, from the signed session cookie, never from
-   * the request body; absent for the operator passcode and the scripts, which
-   * are not metered. With a key, the call is refused with
-   * {@link LlmBudgetError} unless the code's budget allows it, and its cost is
-   * charged to the code afterwards (technical-plan.md D69). Never logged and
-   * never written to the usage row.
+   * The access code's derived key: from the signed session cookie in the app,
+   * from `ACCESS_CODE` in the scripts, never from the request body. Optional
+   * in the type only because step modules build requests without it and
+   * `withCallContext` adds it; at run time a call without one is refused with
+   * {@link LlmBudgetError} `inactive` (technical-plan.md D71). The call is
+   * refused unless the code's budget allows it, and its cost is charged to
+   * the code afterwards (D69). Never logged and never written to the usage
+   * row.
    */
   codeKey?: string;
 }
@@ -1085,8 +1090,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
   ): Promise<RunOutcome> {
     if (!isSessionId(request.sessionId)) throw new LlmSessionIdError(request.step);
     if (request.tools !== undefined) assertToolsAllowed(request.tools);
-    const codeKey = request.codeKey;
-    if (codeKey !== undefined) await assertBudgetAllows(request, codeKey, budget, budgetReadTimeoutMs);
+    const codeKey = await allowedCodeKey(request, request.codeKey, budget, budgetReadTimeoutMs);
 
     const deadline = AbortSignal.timeout(callTimeoutMs);
     const signal = request.signal === undefined ? deadline : AbortSignal.any([request.signal, deadline]);
@@ -1103,10 +1107,8 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
       recordUsage(usageSink, usageRow(request, counts, durationMs), request.signal);
       // The charge sits with the row, so an aborted call is charged too (D45)
       // and the route's `after()` waits for both (D64, D65, D69).
-      if (codeKey !== undefined) {
-        const usd = costUsd(MODEL_BY_STEP[request.step], counts);
-        if (usd > 0) recordSpend(budget, codeKey, usd, request.signal);
-      }
+      const usd = costUsd(MODEL_BY_STEP[request.step], counts);
+      if (usd > 0) recordSpend(budget, codeKey, usd, request.signal);
     };
 
     try {

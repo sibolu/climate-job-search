@@ -71,12 +71,13 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm db:types` | Regenerate `src/lib/database.types.ts` from the local schema |
 | `pnpm seed` | `data/*.yaml` → Supabase reference tables (mirror, service role) |
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack (reference tables, `llm_usage`, and `access_codes` closed to the browser with only its two budget functions callable); non-zero on any violation |
-| `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
+| `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row, and fail unless the `ACCESS_CODE` code's total rose; skips without an API key |
 | `pnpm codes:add --cap <usd> [--count <n>]` | Issue access codes (service role, D67). Prints each new code once, beside the first 8 characters of its key; stores only the key. `--cap` is required: no default cap exists in code (the pilot uses `--cap 5`) |
 | `pnpm codes:list` | Every code's key prefix, cap, running total, disabled flag and creation time |
 | `pnpm codes:set <key-prefix> [--cap <usd>] [--disable\|--enable]` | Change one code's cap or switch it off/on, found by key prefix. Each `codes:*` command prints the database host it is talking to first |
+| `pnpm try:*` (all four below) | Each needs `ACCESS_CODE` and the local Supabase stack, which holds the code's budget: every call is charged to that code (D71). Each exits non-zero with a plain sentence when `ACCESS_CODE` is missing or malformed, and never prints the code, its key, cap or total |
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md (the pasted text kept under `## Inputs`, D56), non-zero if a card lacks S/A/R or an area of expertise, or any expertise phrase runs over six words (D48) |
-| `pnpm try:discover <profile.md> [out.md] [--catalogue] [--interest=<area>[,<area>…]]` | Stage 1.4 live, no web (D44) → ranked fields and roles. By default memory mode, as the app runs it (D61): no Supabase stack needed; non-zero if any field or role lacks a card citation, carries a `Ref` or a source, has a URL in its text, or a role title carries a level word (D48). `--catalogue` runs the evaluation's catalogue arm instead, reading the local Supabase stack; non-zero if any lacks a card citation, cites a URL the catalogue does not list, has a URL in its text (D66), or carries a level word. A cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
+| `pnpm try:discover <profile.md> [out.md] [--catalogue] [--interest=<area>[,<area>…]]` | Stage 1.4 live, no web (D44) → ranked fields and roles. By default memory mode, as the app runs it (D61): no reference tables read (the stack is still needed for the code's budget); non-zero if any field or role lacks a card citation, carries a `Ref` or a source, has a URL in its text, or a role title carries a level word (D48). `--catalogue` runs the evaluation's catalogue arm instead, reading the local Supabase stack; non-zero if any lacks a card citation, cites a URL the catalogue does not list, has a URL in its text (D66), or carries a level word. A cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
 | `pnpm try:queries <profile.md> [out.md] [--tick R1,R4] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--tick` ticks those roles first, as the Roles screen would; `--revise` then revises from a scripted "bad fit" feedback |
 | `pnpm research:check-links [path…]` | Phase 2c: every URL in `docs/research/**/*.md` (or the paths given) is requested once; non-zero if one is on a blocked domain or does not resolve; 401/403/429 are reported as refused, not failed (technical-plan.md D59) |
@@ -115,11 +116,12 @@ claude mcp add playwright --scope local -- \
   in `.playwright-mcp/` in the repo, which is gitignored: local only, never
   scattered outside the repo. Pass screenshot `filename`s as bare names so
   they land there too; delete the folder whenever you like.
-- Set a local-only `OPERATOR_PASSCODE` (the operator passcode, unmetered) in
-  `.env.local`: the agent types it into the gate's "Access code" field and it
-  lands in the transcript.
-- Flow: `pnpm dev` → `/enter` → operator passcode (or a code from
-  `pnpm codes:add` on the local stack, which is metered) → screen. Prefer
+- Use the local `ACCESS_CODE` in `.env.local` (a code from
+  `pnpm codes:add --cap 5` on the local stack, D71): the agent types it into
+  the gate's "Access code" field and it lands in the transcript, so it must
+  never be a production code. There is no operator passcode.
+- Flow: `pnpm db:start` → `pnpm dev` → `/enter` → the local access code
+  (metered against its $5 cap) → screen. Prefer
   `browser_snapshot` (text) for structure and repeated labels;
   take a screenshot only to judge layout. Close the browser and stop
   `pnpm dev` afterwards. Any turn the browser triggers is a live, billed
@@ -137,12 +139,12 @@ and must never be imported into a client component.
 
 | Variable | Scope | Purpose |
 |---|---|---|
-| `OPERATOR_PASSCODE` | server-only | Optional operator passcode, for the operator and local work only; its sessions carry no code key and are not metered (D68). Phase 2d's `APP_PASSCODE` (the passcode shared with fellows) is deliberately not read, so the old value cannot open an uncapped session (D70). Invited people get access codes from `pnpm codes:add` instead |
 | `PASSCODE_COOKIE_SECRET` | server-only | HMAC key that signs the session cookie |
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | Publishable key: select-only on reference tables, insert-only on `llm_usage`, execute-only on the two access-code budget functions |
 | `SUPABASE_SECRET_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`, `pnpm codes:*`); bypasses RLS |
+| `ACCESS_CODE` | server-only | Scripts only: the access code the `try:*` scripts and `smoke:llm` charge their calls to, read through `scripts/script-access-code.ts` (D71). Locally, one code from `pnpm codes:add --cap 5`, the same one you type at `/enter`. Never printed. There is no operator passcode: neither `OPERATOR_PASSCODE` nor `APP_PASSCODE` is read |
 
 ## Supabase: the reference collection, `llm_usage` and `access_codes`
 
@@ -275,16 +277,18 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   `supabaseBudgetLedger()`, `budgetReadTimeoutMs` to `BUDGET_READ_TIMEOUT_MS`,
   5s); `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
-- **Per-code budget** (docs/technical-plan.md D69): a `CallRequest` may carry
-  `codeKey`. A keyed call reads its budget once per logical call, after the
+- **Per-code budget** (docs/technical-plan.md D69, D71): every call must
+  carry `codeKey` (set by `withCallContext`, never by a step module); a call
+  without one throws `LlmBudgetError` `inactive` before any request. A call
+  reads its budget once per logical call, after the
   session-id and tool checks and before any request, and throws
-  `LlmBudgetError` with `reason` `exhausted`, `inactive` (disabled, unknown or
+  `LlmBudgetError` with `reason` `exhausted`, `inactive` (missing, disabled, unknown or
   malformed key) or `unavailable` (the read failed or hung): it fails closed,
-  and nothing is billed. Where the usage row is recorded, a keyed call adds
+  and nothing is billed. Where the usage row is recorded, the call adds
   its `costUsd` through the ledger — an aborted call too (D45) — tracked in
   the same pending set as the usage row; a failed charge is a `console.warn`
-  with the error code and undercounts. A keyless call (operator passcode,
-  `try:*` scripts, `smoke:llm`) is never metered. The check is before a call
+  with the error code and undercounts. No call is unmetered: the `try:*`
+  scripts and `smoke:llm` charge `ACCESS_CODE`. The check is before a call
   and the charge after it, so a code can overshoot its cap by the calls in
   flight when it crosses it, and the turn in which it crosses can be refused
   between its calls (a `cards` turn makes two) with that turn's output lost;
@@ -364,7 +368,8 @@ pnpm smoke:llm   # one live structured call, then reads its llm_usage row back
 ```
 
 Without `ANTHROPIC_API_KEY` the smoke script prints a skip message and exits 0.
-With a key it needs the local Supabase stack running and
+With a key it needs the local Supabase stack running, `ACCESS_CODE` (the call
+is charged to it, and the script fails unless the code's total rose) and
 `SUPABASE_SECRET_KEY` set, because the read-back uses the service role —
 the publishable key deliberately cannot read `llm_usage`.
 
@@ -383,9 +388,9 @@ for a call made under an access code, that code's running total (D69).
 
 - The route reads the session from the cookie with `readSession` and answers
   `401` without one, then passes `{ signal, codeKey }` as the `CallContext` to
-  `runTurn(request, deps?, onProgress?, context)`. **The code key reaches
-  `llm.ts` only from the signed cookie; `TurnRequest` carries no key.** An
-  operator-passcode session has no key, so its calls are not metered.
+  `runTurn(request, deps, onProgress, context)`. **The code key reaches
+  `llm.ts` only from the signed cookie; `TurnRequest` carries no key.** Every
+  session has a key (D71), so every call is metered.
 
 - The browser names what it wants through `TurnInput`: `message` (the
   pasted text on Start, and "Find climate roles"; the interest pills are
@@ -421,11 +426,11 @@ for a call made under an access code, that code's running total (D69).
   in `src/lib/profile-summary.ts`, both with unit tests; components hold no
   policy.
 
-## Access gate: codes and the operator passcode
+## Access gate: access codes
 
-One access code per invited person, each with its own spend cap, plus an
-optional operator passcode; no accounts (docs/technical-plan.md §1 "Access",
-D5, D68).
+One access code per person, each with its own spend cap, the operator's
+included; no operator passcode and no accounts (docs/technical-plan.md §1
+"Access", D5, D68, D71).
 
 - **`src/proxy.ts`** is the gate. Next.js 16 renamed the `middleware` file
   convention to `proxy`, so the file is `src/proxy.ts` and it exports `proxy`,
@@ -442,20 +447,19 @@ D5, D68).
   dashes and spaces), `isAccessCodeShape()`, `accessCodeKey()` (SHA-256,
   first 32 hex; no server secret, D68) and `isAccessCodeKey()`. Only the key
   is ever stored; the code itself is printed once by `pnpm codes:add`.
-- **`src/lib/passcode.ts`** holds the session logic: `isValidPasscode`
-  (constant time), `signSession(secret, { codeKey })` (`codeKey: string |
-  null`, required) and `readSession`, which returns a `Session`
-  (`{ codeKey: string | null }`) or `null` (HMAC-SHA-256 via the Web Crypto
+- **`src/lib/passcode.ts`** holds the session logic:
+  `signSession(secret, { codeKey })` (`codeKey: string`, required; it throws
+  without a valid key) and `readSession`, which returns a `Session`
+  (`{ codeKey: string }`) or `null` (HMAC-SHA-256 via the Web Crypto
   API, so the code is portable to the Edge runtime). No Node-only imports —
   nothing the gate touches may import `node:*`.
 - The session token is `v2.<expiryUnixSeconds>.<scope>.<hmac>`, where scope
-  is the code's key or `OPERATOR_SCOPE` (`"operator"`). It encodes **no user
+  is the code's key and nothing else (a pre-D71 `operator` scope is refused). It encodes **no user
   data**: a derived key, not the code. Bump `SESSION_VERSION` to invalidate
   every live session; v1 cookies are refused, so the v2 deploy signs
   everyone out once.
-- **`src/app/api/enter/route.ts`** reads the field `code`. If `OPERATOR_PASSCODE`
-  is set it is compared first, in constant time, and a match enters with no
-  key (not metered: for the operator and local work only). Otherwise the text
+- **`src/app/api/enter/route.ts`** reads the field `code`; it reads no
+  passcode variable (neither `OPERATOR_PASSCODE` nor `APP_PASSCODE`, D71). The text
   is normalised, refused if not code-shaped, its key derived and
   `supabaseBudgetLedger().read` asked. A known, not-disabled code enters,
   **including one that has reached its cap**: the profile is in the browser
@@ -463,8 +467,8 @@ D5, D68).
   is refused. Unknown, disabled and malformed codes all get the same `401`;
   an unreadable ledger is a `503` with a plain sentence. Entering sets an
   `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie valid 30 days,
-  then redirects to `/`; a refusal sets no cookie. Nothing typed — passcode,
-  code or key — is ever logged.
+  then redirects to `/`; a refusal sets no cookie. Nothing typed — the code
+  or its key — is ever logged.
 
 ## `profile.md` is the contract (docs/technical-plan.md D9–D12)
 

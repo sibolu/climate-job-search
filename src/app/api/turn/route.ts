@@ -47,8 +47,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Before the body is read: no valid session, no work (the proxy's wording).
   const session = await readSession(request.cookies.get(SESSION_COOKIE_NAME)?.value, process.env.PASSCODE_COOKIE_SECRET);
   if (session === null) return NextResponse.json({ error: "Access code required." }, { status: 401 });
-  // Null is the operator passcode: not metered.
-  const codeKey = session.codeKey ?? undefined;
+  // Every session carries a code key, and every call is metered (D71).
+  const { codeKey } = session;
 
   let body: unknown;
   try {

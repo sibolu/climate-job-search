@@ -25,8 +25,9 @@
  *   pnpm try:queries discovered.md out.md --tick R1,R4,R2
  *
  * It never echoes the profile except as the output the app would store in
- * the browser. Needs `ANTHROPIC_API_KEY`; the usage row insert needs the
- * local Supabase stack and is fire-and-forget.
+ * the browser. Needs `ANTHROPIC_API_KEY`, `ACCESS_CODE` (every call is
+ * charged to that code, technical-plan.md D71) and the local Supabase stack,
+ * which holds the code's budget and the usage rows.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -42,8 +43,11 @@ import {
   levelPhrasesIn,
   reviseQueries,
 } from "../src/lib/queries";
+import { llm } from "../src/lib/llm";
 import { newSessionId } from "../src/lib/session";
 import { liveQueryForRole, selectedRoles } from "../src/lib/workspace";
+
+import { keyedLlm, scriptAccessCodeKey } from "./script-access-code";
 
 const USAGE = "usage: pnpm try:queries <profile.md> [profile.md-out] [--tick R1,R4] [--revise]";
 const REVISE_FLAG = "--revise";
@@ -99,6 +103,7 @@ async function main(): Promise<void> {
   }
   const [input, output] = positional;
   if (input === undefined) fail(USAGE);
+  const codeKey = await scriptAccessCodeKey();
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -117,13 +122,14 @@ async function main(): Promise<void> {
     start = setRoleSelected(start, id, true);
   }
   const sessionId = newSessionId();
+  const keyed = keyedLlm(llm(), codeKey);
   const onInput = (error: unknown): never => {
     if (error instanceof QueriesInputError) fail(error.message);
     if (error instanceof QueriesOutputError) fail(`${error.message} dropped ${droppedSummary(error.dropped)}`);
     throw error;
   };
 
-  const generated = await generateQueries({ sessionId, profile: start }).catch(onInput);
+  const generated = await generateQueries({ sessionId, profile: start }, { llm: keyed }).catch(onInput);
   log(
     `generate: added ${ids(generated.added)}; updated ${ids(generated.updated)}; superseded ${generated.superseded.join(", ") || "-"}`,
   );
@@ -166,7 +172,7 @@ async function main(): Promise<void> {
       sessionId,
       profile,
       feedback: { queryId: target.id, verdict: "bad", reason: FEEDBACK_REASON },
-    }).catch(onInput);
+    }, { llm: keyed }).catch(onInput);
     log(`revise: retired ${revised.retired.join(", ") || "-"}; narrowed ${revised.narrowed.join(", ") || "-"}; added ${ids(revised.added)}`);
     log(`revise: fields ${revised.fieldChanges.map((c) => `${c.id} ${c.from}->${c.to}`).join(", ") || "-"}`);
     log(`revise: dropped ${droppedSummary(revised.dropped)}`);

@@ -60,8 +60,8 @@ the database, so every row in production is reviewable in a pull request,
 plus the anonymous usage rows and one running dollar total per access code;
 no profile or other user data. Access is by one access code per invited
 person, each with a spend cap (`pnpm codes:add --cap <usd>`); there are no
-accounts. Locally, the optional operator passcode (`OPERATOR_PASSCODE`, unmetered)
-is enough.
+accounts and no operator passcode: locally, too, you enter with an access
+code, and every model call, the scripts' included, is charged to one.
 
 ## Run it locally
 
@@ -70,10 +70,11 @@ Supabase stack. An Anthropic API key for model calls.
 
 ```bash
 pnpm install
-cp .env.example .env.local   # set OPERATOR_PASSCODE, PASSCODE_COOKIE_SECRET, ANTHROPIC_API_KEY
+cp .env.example .env.local   # set PASSCODE_COOKIE_SECRET, ANTHROPIC_API_KEY
 pnpm db:start                # local Supabase; copy its URL and keys into .env.local
 pnpm db:reset && pnpm seed   # apply migrations, load data/*.yaml
-pnpm dev                     # http://localhost:3000, then enter OPERATOR_PASSCODE as the access code
+pnpm codes:add --cap 5       # one local access code; put it in .env.local as ACCESS_CODE
+pnpm dev                     # http://localhost:3000, then enter that code at /enter
 ```
 
 Checks: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`. The

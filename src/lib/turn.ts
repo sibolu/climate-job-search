@@ -237,25 +237,24 @@ function messageContent(request: TurnRequest): string {
 /**
  * What every model call in a turn carries besides its own request, set by the
  * route and never by the browser's body: the abort signal (technical-plan.md
- * D45) and the access code's key from the signed session cookie (D68). No key
- * means the operator passcode, whose calls are not metered (D69).
+ * D45) and the access code's key from the signed session cookie (D68). The
+ * key is required: every call is metered, and `llm.ts` refuses one without a
+ * key (D71). The `try:*` scripts set it from `ACCESS_CODE`.
  */
 export interface CallContext {
   signal?: AbortSignal;
-  codeKey?: string;
+  codeKey: string;
 }
 
 /**
  * The same `Llm` with the turn's context on every request, so each step
  * module's calls stop when the turn is abandoned and are charged to the
- * access code without the modules knowing about either. Each field is set
- * only when defined; with neither, the same `llm` comes back.
+ * access code without the modules knowing about either. The signal is set
+ * only when defined; the key always is.
  */
 export function withCallContext(llm: Llm, context: CallContext): Llm {
-  const extra: CallContext = {};
+  const extra: CallContext = { codeKey: context.codeKey };
   if (context.signal !== undefined) extra.signal = context.signal;
-  if (context.codeKey !== undefined) extra.codeKey = context.codeKey;
-  if (Object.keys(extra).length === 0) return llm;
   return {
     streamText: (request: StreamTextRequest) => llm.streamText({ ...request, ...extra }),
     structured: (request) => llm.structured({ ...request, ...extra } as StructuredRequest<typeof request.schema>),
@@ -264,9 +263,9 @@ export function withCallContext(llm: Llm, context: CallContext): Llm {
 
 export async function runTurn(
   request: TurnRequest,
-  deps?: TurnDeps,
+  deps: TurnDeps | undefined,
   onProgress: Progress = () => undefined,
-  context: CallContext = {},
+  context: CallContext,
 ): Promise<TurnResponse> {
   const base = deps ?? (await defaultDeps());
   const d: TurnDeps = { ...base, llm: () => withCallContext(base.llm(), context) };

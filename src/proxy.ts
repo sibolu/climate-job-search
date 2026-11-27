@@ -5,7 +5,7 @@ import { SESSION_COOKIE_NAME, readSession } from "@/lib/passcode";
 
 /**
  * Access gate (technical-plan.md §1 "Access", D68): a signed session cookie
- * minted by `/api/enter` for an access code or the operator passcode.
+ * minted by `/api/enter` for an access code, the only way in (D71).
  *
  * Next.js 16 renamed the `middleware` file convention to `proxy`, so the gate
  * lives in `src/proxy.ts` and exports `proxy` rather than `middleware`.

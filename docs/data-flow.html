@@ -175,7 +175,7 @@
   <li><code>access_codes</code> holds, per code, a derived key, a cap, a running total, a disabled flag and a creation time. No content, no identity. The app reaches it only through the two functions above, with the publishable key; only <code>pnpm codes:*</code> (<a href="../scripts/access-codes.ts">access-codes.ts</a>, service role) issues or changes codes.</li>
   <li>The check and the charge are in <a href="../src/lib/llm.ts">llm.ts</a>, once per API call. A refusal ends the turn with one budget sentence; the profile stays in the browser.</li>
   <li>A code at its cap still enters at <code>/enter</code>, so the person can read and export their profile.</li>
-  <li>Sessions opened with the operator passcode carry no key, and the <code>try:*</code> and <code>smoke:llm</code> scripts pass none: those calls skip both the check and the charge.</li>
+  <li>Every call is metered (technical-plan.md D71): every session carries a code key, there is no operator passcode, and the <code>try:*</code> and <code>smoke:llm</code> scripts charge the code in <code>ACCESS_CODE</code> (<a href="../scripts/script-access-code.ts">script-access-code.ts</a>). A call without a key is refused before any request.</li>
 </ul>
 
 <!-- ───────────── flow 1 ───────────── -->

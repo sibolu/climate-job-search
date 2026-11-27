@@ -68,13 +68,13 @@ describe("POST /api/turn", () => {
   });
 
   it("returns 400 for a body that is not JSON", async () => {
-    const res = await POST(post("nope", await signSession(SECRET, { codeKey: null })));
+    const res = await POST(post("nope", await signSession(SECRET, { codeKey: KEY })));
     expect(res.status).toBe(400);
   });
 
   it("returns 400 for a JSON body that is not a turn request, without echoing it", async () => {
     const body = { sessionId: "not-hex", step: "cards", profileMd: "SECRET", messages: [], input: { kind: "message", content: "hi" } };
-    const res = await POST(post(body, await signSession(SECRET, { codeKey: null })));
+    const res = await POST(post(body, await signSession(SECRET, { codeKey: KEY })));
     expect(res.status).toBe(400);
     expect(await res.text()).not.toContain("SECRET");
   });
@@ -110,20 +110,12 @@ describe("POST /api/turn — the session cookie (technical-plan.md D68, D69)", (
     expect(context.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("hands no key for the operator passcode's session", async () => {
-    await events(await POST(post(TURN, await signSession(SECRET, { codeKey: null }))));
-    expect(contextOfOnlyCall().codeKey).toBeUndefined();
-  });
-
   it("ignores a codeKey in the body: the key comes only from the signed cookie", async () => {
     const forged = "e".repeat(32);
     await events(await POST(post({ ...TURN, codeKey: forged }, await signSession(SECRET, { codeKey: KEY }))));
     expect(contextOfOnlyCall().codeKey).toBe(KEY);
     expect(runTurn.mock.calls[0]![0]).not.toHaveProperty("codeKey");
 
-    runTurn.mockClear();
-    await events(await POST(post({ ...TURN, codeKey: forged }, await signSession(SECRET, { codeKey: null }))));
-    expect(contextOfOnlyCall().codeKey).toBeUndefined();
   });
 
   it("turns a budget refusal into an error event carrying the sentence", async () => {

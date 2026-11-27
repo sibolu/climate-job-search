@@ -13,18 +13,22 @@
  *   pnpm try:explore profile.md F1 out/profile.md
  *
  * It never echoes the profile except as the output the app would store in
- * the browser (the profile and the chat message). Needs `ANTHROPIC_API_KEY`
- * and the local Supabase stack (the reference collection is read from it).
+ * the browser (the profile and the chat message). Needs `ANTHROPIC_API_KEY`,
+ * `ACCESS_CODE` (every call is charged to that code, technical-plan.md D71)
+ * and the local Supabase stack (the code's budget and the reference
+ * collection are read from it).
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
 import { ExploreBlockedFetchError, ExploreInputError, exploreDroppedSummary, exploreField } from "../src/lib/explore";
-import { assertToolsAllowed, webTools } from "../src/lib/llm";
+import { assertToolsAllowed, llm, webTools } from "../src/lib/llm";
 import { parseProfile, serializeProfile } from "../src/lib/profile";
 import { isBlockedSourceHost } from "../src/lib/reference-schema";
 import { newSessionId } from "../src/lib/session";
+
+import { keyedLlm, scriptAccessCodeKey } from "./script-access-code";
 
 const USAGE = "usage: pnpm try:explore <profile.md> <fieldId> [profile.md-out]";
 
@@ -36,6 +40,7 @@ function fail(message: string): never {
 async function main(): Promise<void> {
   const [input, fieldId, output] = process.argv.slice(2);
   if (input === undefined || fieldId === undefined || input === "-h" || input === "--help") fail(USAGE);
+  const codeKey = await scriptAccessCodeKey();
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -54,7 +59,7 @@ async function main(): Promise<void> {
   assertToolsAllowed(tools);
 
   const started = Date.now();
-  const result = await exploreField({ sessionId: newSessionId(), profile: parsed.profile, fieldId }, { tools }).catch(
+  const result = await exploreField({ sessionId: newSessionId(), profile: parsed.profile, fieldId }, { tools, llm: keyedLlm(llm(), codeKey) }).catch(
     (error: unknown) => {
       if (error instanceof ExploreInputError) fail(error.message);
       if (error instanceof ExploreBlockedFetchError) fail(`FAILED: ${error.message}`);

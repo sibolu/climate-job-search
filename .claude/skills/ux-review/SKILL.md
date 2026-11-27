@@ -97,7 +97,10 @@ stage, and say so in the report. Run nothing else that calls the model.
   trigger a billed model call: `ANTHROPIC_API_KEY=disabled pnpm dev`, in
   the background, with its log in `.playwright-mcp/<date>-dev.log`.
 - `browser_resize` to 1440×900. Go to http://localhost:3000/enter and enter
-  the `OPERATOR_PASSCODE` from `.env.local`; it is a local-only value.
+  the `ACCESS_CODE` from `.env.local`, a code issued on the local stack
+  (`pnpm db:start` first, so `/enter` can check it); it is a local-only
+  value and must never be a production code. There is no operator passcode
+  (technical-plan.md D71).
 - Load each profile stage into the browser. State lives in localStorage
   under `SESSION_STORAGE_KEY` in `src/lib/session.ts` (`grep -n` for the
   key and the stored-state interface, then read ~40 lines, not the whole

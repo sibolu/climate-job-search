@@ -16,9 +16,9 @@
  * in the browser, and that now includes the pasted text itself under
  * `## Inputs` (technical-plan.md D56): the whole file is recorded as the
  * resume, the way Start records it, so treat the output like the resume it
- * was made from. Needs `ANTHROPIC_API_KEY`; the anonymous
- * `llm_usage` row needs the local Supabase stack, and a failed insert is a
- * warning, not an error, so the script still works without it.
+ * was made from. Needs `ANTHROPIC_API_KEY`, `ACCESS_CODE` (the call is
+ * charged to that code, technical-plan.md D71) and the local Supabase stack,
+ * which holds the code's budget and the anonymous `llm_usage` row.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -30,6 +30,8 @@ import { parseProfile, serializeProfile } from "../src/lib/profile";
 import { newSessionId, newSessionState } from "../src/lib/session";
 import { recordStartInputs } from "../src/lib/workspace";
 
+import { keyedLlm, scriptAccessCodeKey } from "./script-access-code";
+
 const USAGE = "usage: pnpm try:cards <path-to-resume.txt> [profile.md-out]";
 
 function fail(message: string): never {
@@ -40,6 +42,7 @@ function fail(message: string): never {
 async function main(): Promise<void> {
   const [input, output] = process.argv.slice(2);
   if (input === undefined || input === "-h" || input === "--help") fail(USAGE);
+  const codeKey = await scriptAccessCodeKey();
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -55,7 +58,7 @@ async function main(): Promise<void> {
   const started = Date.now();
   // The browser records what was typed when Start is pressed, before the turn.
   const { profile } = parseProfile(recordStartInputs(newSessionState(), text, "").profileMd);
-  const result = await extractCards(llm(), { sessionId: newSessionId(), text, profile }).catch(
+  const result = await extractCards(keyedLlm(llm(), codeKey), { sessionId: newSessionId(), text, profile }).catch(
     (error: unknown) => {
       if (error instanceof CardsInputError) fail(error.message);
       throw error;

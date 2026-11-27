@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D70, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D71, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -33,7 +33,7 @@ Defaults; a decision in §5 overrides a row here.
 |---|---|---|
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
 | Hosting | Vercel for app and route handlers. Supabase Postgres for the `llm_usage` table, the `access_codes` table (D67) and the reference tables (seeded, not read by the app since D61). Setup in `docs/deploy.md` | Existing subscriptions |
-| Access | One generated access code per invited person, each with a dollar cap; `/api/enter` checks it and sets a signed cookie carrying the code's derived key, checked in `src/proxy.ts`. An optional operator passcode (`OPERATOR_PASSCODE`) enters without a key and is not metered. No accounts (D68) | Gates the pilot and caps each person's spend without identifying anyone |
+| Access | One generated access code per invited person, each with a dollar cap; `/api/enter` checks it and sets a signed cookie carrying the code's derived key, checked in `src/proxy.ts`. There is no operator passcode: every session, the operator's included, carries a code key, and every model call, the scripts' included, is charged to one. No accounts (D68, D71) | Gates the pilot and caps each person's spend without identifying anyone |
 | LLM | Anthropic TS SDK, model per step: `claude-fable-5-2` for `discover`, `claude-opus-5-5` for every other step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on every model. See D44, D45, D52, D62 |
 | Grounding | In the app, the model's own knowledge only: discovery gets the cards, skills and preferences, no catalogue, no URLs (D61). The reference catalogue is kept as an evaluation arm behind `DiscoverOptions.catalogue`, reached only by `pnpm try:discover --catalogue`. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Memory-only is the baseline arm; the app switches to the catalogue only if the evaluation says so (D61); hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
@@ -161,7 +161,8 @@ scripts/
   try-queries.ts       # stage 2b.8 live check (one LinkedIn query per selected role; optional scripted revise)
   check-rls.ts         # asserts the RLS shape against a live stack
   access-codes.ts      # codes:add / codes:list / codes:set; the only writer of codes (service role; 2e.2)
-  smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
+  smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3) and the code is charged (2e.8)
+  script-access-code.ts # ACCESS_CODE -> key for every script call (2e.8, D71)
 docs/
   data-flow.html       # API calls and profile.md reads/writes (keep current)
   technical-plan.md    # this file
@@ -231,7 +232,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    (2026-11-26: superseded for invited people by one access code each,
    D68. The shared passcode survives only as the optional operator
    passcode, `OPERATOR_PASSCODE` (renamed from `APP_PASSCODE` by D70), whose
-   sessions are not metered.)
+   sessions are not metered.) (2026-11-27: the operator passcode is gone
+   too, D71; an access code is the only way in.)
 6. "Example profiles" in the reference collection means role profiles (what
    someone in the role does day to day), never personal profiles, per the
    PRD's consent rule.
@@ -1266,6 +1268,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     local work only. There is no rate limiting on `/api/enter`: an 80-bit
     code makes guessing pointless. D5 (one shared passcode) is superseded
     for invited people by this decision.
+    (2026-11-27: the operator passcode, its `operator` scope and the
+    null-key session are removed by D71; everything else here stands.)
 
 69. **Every model call made under an access code is checked against the
     code's budget before it runs and charged its cost after (2026-11-26,
@@ -1296,6 +1300,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     organisation-level spend limit in the Claude Console stays as the
     backstop for both. A keyless call (the operator passcode, the `try:*`
     scripts, `smoke:llm`) is not metered and never touches the ledger.
+    (2026-11-27: no longer; D71 refuses a keyless call as `inactive`.)
     `llm_usage` is unchanged: `UsageRow` gains no field, the key never
     reaches a row or a log line, and no row is linked to a code (D22).
 
@@ -1313,6 +1318,39 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     the operator needs it, and when set it must be a fresh value, never the
     Phase 2d passcode. Cookies from Phase 2d cannot carry over either: they
     are v1, and D68 refuses every version but v2.
+    (2026-11-27: superseded by D71, which removes the operator passcode, so
+    neither variable is read.)
+
+71. **Every model call is metered: there is no operator passcode, and the
+    scripts need an access code (2026-11-27, step 2e.8, decided at G2e.1
+    after the code review).** Supersedes D68's operator passcode and D70.
+    An unmetered path is a hole whatever its name: D70 made the old
+    passcode inert, but any operator passcode is a shared secret that opens
+    an uncapped session, and keyless script calls bypass the cap the same
+    way. So `/api/enter` accepts only a known, not-disabled access code and
+    reads neither `OPERATOR_PASSCODE` nor `APP_PASSCODE`. `passcode.ts`
+    loses `OPERATOR_SCOPE` and `isValidPasscode`; `Session` is
+    `{ codeKey: string }`, `signSession` throws without a key, and
+    `readSession` refuses the `operator` scope. `SESSION_VERSION` stays
+    `v2`: production only ever issued v1 cookies, and a local operator
+    cookie is refused by the scope check. `CallContext.codeKey` is
+    required and `withCallContext` always sets it. `llm.ts` refuses any
+    call without a `codeKey` with `LlmBudgetError` reason `inactive` before
+    any request or ledger read, so the budget read now precedes every call
+    (a call's request is no longer made synchronously). Unit tests pass a
+    key to an in-memory ledger instead of calling keyless. The scripts
+    (`try:cards`, `try:discover` in both modes, `try:explore`,
+    `try:queries`, `smoke:llm`) read `ACCESS_CODE` (server-only, scripts
+    only) through one helper, `scripts/script-access-code.ts`, which
+    normalises it, checks its shape, derives the key and exits non-zero
+    with a plain sentence when it is missing or malformed; the key reaches
+    every call through `withCallContext`, so the step modules never see it.
+    No script prints the code, its key, cap or total; `smoke:llm` reads the
+    total before and after its call and fails unless it rose. Every script
+    therefore needs the local Supabase stack, which holds the budget. The
+    operator, and agents working locally, use an ordinary code issued with
+    `pnpm codes:add --cap 5` (the same cap as everyone; raising it for
+    agents would be a later decision) and type the same code at `/enter`.
 
 ---
 

@@ -1,40 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  OPERATOR_SCOPE,
-  SESSION_MAX_AGE_SECONDS,
-  isValidPasscode,
-  readSession,
-  signSession,
-} from "./passcode";
+import { SESSION_MAX_AGE_SECONDS, readSession, signSession } from "./passcode";
 
-const PASSCODE = "correct-horse-battery";
 const SECRET = "test-cookie-secret-value";
-
-describe("isValidPasscode", () => {
-  it("accepts the configured passcode", () => {
-    expect(isValidPasscode(PASSCODE, PASSCODE)).toBe(true);
-  });
-
-  it("rejects a wrong passcode", () => {
-    expect(isValidPasscode("wrong-horse-battery", PASSCODE)).toBe(false);
-  });
-
-  it("rejects a passcode that is only a prefix of the real one", () => {
-    expect(isValidPasscode(PASSCODE.slice(0, -1), PASSCODE)).toBe(false);
-  });
-
-  it("rejects empty input", () => {
-    expect(isValidPasscode("", PASSCODE)).toBe(false);
-    expect(isValidPasscode(undefined, PASSCODE)).toBe(false);
-  });
-
-  it("rejects every input when no passcode is configured", () => {
-    expect(isValidPasscode("anything", "")).toBe(false);
-    expect(isValidPasscode("", "")).toBe(false);
-    expect(isValidPasscode("anything", undefined)).toBe(false);
-  });
-});
 
 const KEY = "0123456789abcdef0123456789abcdef";
 const OTHER_KEY = "fedcba9876543210fedcba9876543210";
@@ -68,16 +36,21 @@ describe("signSession / readSession", () => {
     await expect(readSession(token, SECRET)).resolves.toEqual({ codeKey: KEY });
   });
 
-  it("round-trips an operator session with no key, distinguishable from a key", async () => {
-    const token = await signSession(SECRET, { codeKey: null });
-    expect(token.split(".")[2]).toBe(OPERATOR_SCOPE);
-    await expect(readSession(token, SECRET)).resolves.toEqual({ codeKey: null });
-    const keyed = await signSession(SECRET, { codeKey: KEY });
-    expect(await readSession(keyed, SECRET)).not.toEqual(await readSession(token, SECRET));
+  it("refuses a correctly signed cookie with the pre-D71 operator scope", async () => {
+    const expiry = Math.floor(Date.now() / 1000) + 3600;
+    await expect(readSession(await forge(`v2.${expiry}.operator`), SECRET)).resolves.toBeNull();
+  });
+
+  it("throws without a key: no session is minted without one (D71)", async () => {
+    for (const codeKey of [null, undefined, ""]) {
+      await expect(
+        signSession(SECRET, { codeKey: codeKey as unknown as string }),
+      ).rejects.toThrow(/codeKey/);
+    }
   });
 
   it("refuses to sign a code key that is not a key", async () => {
-    for (const codeKey of ["", OPERATOR_SCOPE, "0123456789ABCDEF0123456789ABCDEF", "0123-4567-89AB-CDEF"]) {
+    for (const codeKey of ["operator", "0123456789ABCDEF0123456789ABCDEF", "0123-4567-89AB-CDEF"]) {
       await expect(signSession(SECRET, { codeKey })).rejects.toThrow(/codeKey/);
     }
   });
@@ -93,14 +66,12 @@ describe("signSession / readSession", () => {
     const flipped = `${KEY.slice(0, -1)}${KEY.endsWith("f") ? "e" : "f"}`;
     await expect(readSession(swapScope(token, flipped), SECRET)).resolves.toBeNull();
     await expect(readSession(swapScope(token, OTHER_KEY), SECRET)).resolves.toBeNull();
-    await expect(readSession(swapScope(token, OPERATOR_SCOPE), SECRET)).resolves.toBeNull();
-    const operator = await signSession(SECRET, { codeKey: null });
-    await expect(readSession(swapScope(operator, KEY), SECRET)).resolves.toBeNull();
+    await expect(readSession(swapScope(token, "operator"), SECRET)).resolves.toBeNull();
   });
 
   it("refuses a v2 token whose scope is malformed even with a valid HMAC for it", async () => {
     const expiry = Math.floor(Date.now() / 1000) + 3600;
-    for (const scope of ["", "OPERATOR", "0123456789ABCDEF0123456789ABCDEF", `${KEY}0`, "0123-4567-89AB-CDEF"]) {
+    for (const scope of ["", "operator", "OPERATOR", "0123456789ABCDEF0123456789ABCDEF", `${KEY}0`, "0123-4567-89AB-CDEF"]) {
       await expect(readSession(await forge(`v2.${expiry}.${scope}`), SECRET)).resolves.toBeNull();
     }
     // The forge helper itself mints tokens readSession accepts.
@@ -146,6 +117,6 @@ describe("signSession / readSession", () => {
   });
 
   it("refuses to sign without a secret", async () => {
-    await expect(signSession("", { codeKey: null })).rejects.toThrow(/PASSCODE_COOKIE_SECRET/);
+    await expect(signSession("", { codeKey: KEY })).rejects.toThrow(/PASSCODE_COOKIE_SECRET/);
   });
 });

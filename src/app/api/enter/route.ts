@@ -2,24 +2,19 @@ import { NextResponse } from "next/server";
 
 import { accessCodeKey, isAccessCodeShape, normalizeAccessCode } from "@/lib/access-code";
 import { BudgetLedgerError, budgetVerdict, supabaseBudgetLedger } from "@/lib/budget";
-import {
-  SESSION_COOKIE_NAME,
-  SESSION_MAX_AGE_SECONDS,
-  isValidPasscode,
-  signSession,
-} from "@/lib/passcode";
+import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS, signSession } from "@/lib/passcode";
 
 /**
- * Checks an access code (or the optional operator passcode) and, on success,
- * sets the signed session cookie carrying the code's key (technical-plan.md
- * D68).
+ * Checks an access code and, on success, sets the signed session cookie
+ * carrying the code's key (technical-plan.md D68, D71).
  *
- * Order: (1) when `OPERATOR_PASSCODE` is set, the typed text is compared to it in
- * constant time; a match is an operator session, with no key and not
- * metered. Phase 2d's `APP_PASSCODE` is deliberately not read: its value was
- * the passcode shared with every fellow, and honouring it would give each of
- * them an uncapped session (technical-plan.md D70). (2) Otherwise the text is normalised; anything that cannot be a
- * code is refused without a database round trip. (3) The key is read from the
+ * An access code is the only way in: there is no operator passcode, and no
+ * passcode variable is read (neither the operator's nor Phase 2d's shared
+ * one), so no session is ever unmetered (technical-plan.md D71, superseding
+ * D70).
+ *
+ * Order: (1) the text is normalised; anything that cannot be a
+ * code is refused without a database round trip. (2) The key is read from the
  * budget ledger: unknown or disabled is the same 401 as a malformed code, so
  * the response never says which. A code at its cap still enters, because the
  * person's profile is in their browser and they must be able to read and
@@ -93,7 +88,7 @@ function refuse(request: Request, status: 401 | 503): NextResponse {
       });
 }
 
-async function enter(request: Request, secret: string, codeKey: string | null) {
+async function enter(request: Request, secret: string, codeKey: string) {
   const response = wantsJson(request)
     ? NextResponse.json({ ok: true })
     : NextResponse.redirect(new URL("/", request.url), 303);
@@ -120,14 +115,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const typed = await readTypedCode(request);
-
-  // isValidPasscode rejects an empty typed value and an unset OPERATOR_PASSCODE.
-  if (isValidPasscode(typed, process.env.OPERATOR_PASSCODE)) {
-    return enter(request, secret, null);
-  }
-
-  const normalized = normalizeAccessCode(typed);
+  const normalized = normalizeAccessCode(await readTypedCode(request));
   if (!isAccessCodeShape(normalized)) return refuse(request, 401);
 
   const codeKey = await accessCodeKey(normalized);

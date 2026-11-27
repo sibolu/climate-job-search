@@ -11,7 +11,8 @@
  *
  * **Memory mode is the default, as in the app.** The model names fields,
  * roles and example organisations from its own knowledge and nothing is read
- * from Supabase, so no local stack is needed. The script exits non-zero if
+ * from Supabase but the code's budget (technical-plan.md D71), which still
+ * needs the local stack. The script exits non-zero if
  * any field or role written this run lacks a card citation, carries a `Ref`
  * or a source, or has a URL in its text (a field's fit, summary and
  * uncertainties; a role's why and companies); if any field lacks a role, a
@@ -42,8 +43,9 @@
  *   pnpm try:discover profile.md out/profile.md --catalogue
  *
  * It never echoes the profile except as the output the app would store in
- * the browser. Needs `ANTHROPIC_API_KEY`; `--catalogue` also needs the local
- * Supabase stack.
+ * the browser. Needs `ANTHROPIC_API_KEY`, `ACCESS_CODE` (the call is charged
+ * to that code, technical-plan.md D71) and the local Supabase stack, in both
+ * modes.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -61,8 +63,11 @@ import {
   hasUrl,
 } from "../src/lib/discover";
 import { CLIMATE_AREAS, toggleClimateInterest } from "../src/lib/elicit";
+import { llm } from "../src/lib/llm";
 import { parseProfile, serializeProfile, setClimateInterests } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
+
+import { keyedLlm, scriptAccessCodeKey } from "./script-access-code";
 
 const USAGE =
   "usage: pnpm try:discover <profile.md> [profile.md-out] [--catalogue] [--interest=<area>[,<area>...]]";
@@ -80,7 +85,7 @@ function fail(message: string): never {
 /**
  * The reference tables, read once: the reader `discoverFields` is handed, and
  * the URLs its output may cite. `reference.ts` is imported here, not at the
- * top, so a memory-mode run never loads the Supabase client.
+ * top, so a memory-mode run never reads the reference tables.
  */
 async function readCatalogue(): Promise<{ reader: ReferenceReader; sourceUrls: Set<string> }> {
   const { listFields, listRoles } = await import("../src/lib/reference");
@@ -100,6 +105,7 @@ async function main(): Promise<void> {
   if (input === undefined || unknownFlags.length > 0 || interestFlags.length > 1) fail(USAGE);
   const interestFlag = interestFlags[0];
   const catalogueMode = flags.includes(CATALOGUE_FLAG);
+  const codeKey = await scriptAccessCodeKey();
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -128,13 +134,14 @@ async function main(): Promise<void> {
   const mode = catalogue === undefined ? "memory" : "catalogue";
   process.stderr.write(
     catalogue === undefined
-      ? "mode: memory (the model's own knowledge; nothing read from Supabase)\n"
+      ? "mode: memory (the model's own knowledge; no reference tables read)\n"
       : "mode: catalogue (reference tables read from Supabase)\n",
   );
 
+  const keyed = keyedLlm(llm(), codeKey);
   const result = await discoverFields(
     { sessionId: newSessionId(), profile },
-    catalogue === undefined ? {} : { catalogue: catalogue.reader },
+    catalogue === undefined ? { llm: keyed } : { catalogue: catalogue.reader, llm: keyed },
   ).catch((error: unknown) => {
     if (error instanceof DiscoverInputError) fail(error.message);
     throw error;
