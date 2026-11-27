@@ -31,6 +31,7 @@ const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const GROUP = 4;
 const KEY_HEX_LENGTH = 32;
 const KEY_SHAPE = /^[0-9a-f]{32}$/;
+const CODE_SHAPE = new RegExp(`^[${ALPHABET}]{${ACCESS_CODE_LENGTH}}$`);
 
 /** 16 random characters (80 bits), shown as XXXX-XXXX-XXXX-XXXX. Generated, never chosen. */
 export function generateAccessCode(): string {
@@ -46,6 +47,15 @@ export function generateAccessCode(): string {
 /** Trim, upper-case, drop dashes and all whitespace. Returns the bare 16 characters (or whatever was typed, normalised). */
 export function normalizeAccessCode(typed: string): string {
   return typed.trim().toUpperCase().replace(/[-\s]/g, "");
+}
+
+/**
+ * True only for exactly 16 characters of the alphabet: the bare form
+ * `normalizeAccessCode` returns for a real code. `/api/enter` uses it to
+ * refuse text that cannot be a code without a database round trip.
+ */
+export function isAccessCodeShape(normalized: string): boolean {
+  return CODE_SHAPE.test(normalized);
 }
 
 /**

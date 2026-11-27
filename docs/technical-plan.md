@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D67, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D68, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1214,6 +1214,40 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     cap value is never written into code: it is an argument to the
     operator's script that step 2e.2 adds. `pnpm db:check-rls` asserts the
     closed table and the functions' behaviour (group f).
+
+68. **Each invited person enters with their own access code, and the
+    session cookie carries its key (2026-11-26, Phase 2e.3).** Codes are
+    generated, never chosen: 16 characters (80 bits) shown as
+    `XXXX-XXXX-XXXX-XXXX`, and the database key is the first 32 hex of the
+    SHA-256 of the normalised code (trimmed, upper-cased, dashes and spaces
+    dropped) with no server secret, because a code this long cannot be
+    guessed and rotating `PASSCODE_COOKIE_SECRET` must not reset anyone's
+    total. The cookie is now `v2.<expiry>.<scope>.<hmac>`, the HMAC
+    covering `v2.<expiry>.<scope>`; the scope is the code's key or the
+    marker `operator`, which is not hex and so can never be a key. Signing
+    the scope means the browser cannot swap in another key. Any version but
+    v2 is refused, so deploying this signs everyone out once. The token
+    holds a derived key, never the code. `verifySession` (a boolean) is
+    renamed `readSession` and returns `{ codeKey }` or null; `signSession`
+    requires `codeKey` (null for the operator) so no caller mints a session
+    without deciding, and throws on anything that is not null or a key.
+    `/api/enter` reads the field `code` (was `passcode`) and runs in this
+    order: when `APP_PASSCODE` is set, the typed text is compared to it
+    first in constant time; otherwise the text is normalised, anything not
+    16 characters of the alphabet (`isAccessCodeShape`) is refused without
+    a database round trip, and the key is read through
+    `supabaseBudgetLedger().read`. Three outcomes: enter, with the key in
+    the cookie; the same 401 for an unknown, a disabled and a malformed
+    code, so the response never says which; or a 503 when the ledger cannot
+    be read, logging the error code only, never the typed text, the code or
+    the key. A code that has reached its cap still enters, because the
+    person's profile is in their browser and they must be able to read and
+    export it; it is the next model call that is refused (step 2e.4). The
+    route only reads the ledger. The operator passcode is optional, its
+    sessions carry no key and are not metered, so it is for the operator and
+    local work only. There is no rate limiting on `/api/enter`: an 80-bit
+    code makes guessing pointless. D5 (one shared passcode) is superseded
+    for invited people by this decision.
 
 ---
 

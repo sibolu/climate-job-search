@@ -5,6 +5,7 @@ import {
   accessCodeKey,
   generateAccessCode,
   isAccessCodeKey,
+  isAccessCodeShape,
   normalizeAccessCode,
 } from "./access-code";
 
@@ -78,5 +79,24 @@ describe("isAccessCodeKey", () => {
     expect(isAccessCodeKey(42)).toBe(false);
     expect(isAccessCodeKey(null)).toBe(false);
     expect(isAccessCodeKey(undefined)).toBe(false);
+  });
+});
+
+describe("isAccessCodeShape", () => {
+  it("accepts a generated code once normalised", () => {
+    for (let i = 0; i < 20; i += 1) {
+      expect(isAccessCodeShape(normalizeAccessCode(generateAccessCode()))).toBe(true);
+    }
+    expect(isAccessCodeShape(normalizeAccessCode("0123 4567 89ab cdef"))).toBe(true);
+  });
+
+  it("rejects the wrong length, look-alike letters and un-normalised text", () => {
+    expect(isAccessCodeShape("")).toBe(false);
+    expect(isAccessCodeShape("0123456789ABCDE")).toBe(false);
+    expect(isAccessCodeShape("0123456789ABCDEF0")).toBe(false);
+    for (const ch of "ILOU") expect(isAccessCodeShape(`0123456789ABCDE${ch}`)).toBe(false);
+    expect(isAccessCodeShape("0123456789abcdef")).toBe(false);
+    expect(isAccessCodeShape("0123-4567-89AB-CDEF")).toBe(false);
+    expect(isAccessCodeShape("correct-horse-battery")).toBe(false);
   });
 });
