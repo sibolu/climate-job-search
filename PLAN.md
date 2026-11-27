@@ -19,17 +19,24 @@ in each phase's table. Every phase also starts with your kickoff prompt
   `https://climate-job-search.vercel.app`; 2d.3 and G2d.1 are done, and
   PR #7 merged on 2026-11-26. If you changed Vercel's production branch,
   set it back to `main`. Then G2d.2, the demo on 2026-12-01.
-- **Phase 2e (a spend cap per access code), now, 2e.7:** steps 2e.0 to
+- **Phase 2e (a spend cap per access code), now, G2e.2:** steps 2e.0 to
   2e.6 are done on `phase-2e` (cap chosen: $5 per code) and the PR is open.
   G2e.1 is done: `/code-review` (finding 1 fixed, D70), 2e.8 (D71: no
   operator passcode; every call, scripts included, is charged to an access
   code; your local code is `ACCESS_CODE` in `.env.local`) and
-  `/security-review` (no notable issues). Next: 2e.7 (the one migration to
-  production, in a session where your CLI is linked to it), then G2e.2 (merge, issue codes with
+  `/security-review` (no notable issues). 2e.7 is done (the migration is
+  in production, RLS 35/35). Next: G2e.2 (merge PR #8, issue codes with
   `pnpm codes:add --cap 5 --count <n>` in your own terminal, one of them
   for yourself, and delete `APP_PASSCODE` from Vercel). Merging signs everyone out once and the shared passcode stops being what fellows type,
   so choose the merge date against the demo on 2026-12-01: either issue
   codes before it or merge after it.
+- **Phase 2h (roles as occupations), when you choose:** planned
+  2026-11-27, not started. It waits for the `phase-2e` merge (G2e.2),
+  because 2e.8 changed the same `try:*` scripts. Then kick it off in a
+  fresh session (`Execute Phase 2h per PLAN.md. Commit each step on branch
+  phase-2h. Stop at the gate.`); it stops at G2h.1, where you try it on
+  your own resume. It changes what fellows see on the Roles screen, so
+  choose its date against the demo on 2026-12-01.
 - **2c.2 (after the demo):** set up dataset access in a separate session
   (O*NET first; then BLS, ILOSTAT and the OECD data API; ESCO is a proposed
   addition for the EU side, strike it if you disagree). Then kick off 2c.3
@@ -75,7 +82,9 @@ already carry it. Phase 2e (a spend cap per access code) was planned on
 runs alongside 2c after the demo; 2g needs both. On 2026-11-26 the
 evaluation foundation and the arm comparison were relabelled from 2e and 2f
 to 2f and 2g to make room; nothing had been built or branched under the old
-letters.
+letters. Phase 2h (roles as occupations) was planned on 2026-11-27; it is
+two steps, runs after the `phase-2e` merge and has to land before 2f.3
+freezes the discovered profiles.
 
 ### Phase 0 — Foundations `[DONE]`
 
@@ -470,7 +479,7 @@ know who holds each code.
 | 2e.6 | Docs. CLAUDE.md: the data rule in its new wording everywhere it is stated, the commands table (`codes:*`), the environment table (`APP_PASSCODE` optional, operator only), "Passcode gate" (codes, the v2 token, `readSession`), "Supabase" (the fourth table, the fourth service-role script, the two functions), "LLM calls" (`codeKey`, `LlmBudgetError`, the ledger). `docs/technical-plan.md`: §1 "Access" and "Cost telemetry", the §3 module map (`budget.ts`, `access-code.ts`, `scripts/access-codes.ts`), a note on D4 and D5 pointing at the new decisions. `docs/data-flow.html`: the new store, the read before each call and the write after it. `docs/deploy.md`: issuing codes, reading totals, raising a cap, disabling a code, what the operator passcode is for. `docs/backlog.md` §5: the spend-control item, with showing cost in the UI left open. `.env.example` | Claude (Opus) | `grep -rn "only server-side write" CLAUDE.md docs src` returns nothing stale; every command in the docs runs as written on the local stack; tests, lint and build pass | `[DONE]` 2026-11-26: the grep returns nothing; `codes:add`, `codes:list`, `codes:set` and `db:check-rls` (35/35) ran as written on the local stack; 571 tests, lint and build pass. Also dated notes on D8, and README.md |
 | G2e.1 | `/code-review` and `/security-review` (the phase touches auth, input handling and Supabase); PR for `phase-2e` | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2e` | `[DONE]` 2026-11-27: PR #8 open; `/code-review` finding 1 fixed (D70), then 2e.8 (D71); `/security-review` run after 2e.8, no notable issues found |
 | 2e.8 | Meter everything: no operator passcode, and the scripts need a code (decided at G2e.1 after the code review; supersedes D68's operator passcode and D70). **Gate:** `/api/enter` accepts only a known, not-disabled access code; it reads neither `OPERATOR_PASSCODE` nor `APP_PASSCODE`. `passcode.ts` loses `OPERATOR_SCOPE` and `isValidPasscode`; `Session` becomes `{ codeKey: string }`, `signSession` requires a key, and `readSession` refuses the `operator` scope (no `SESSION_VERSION` bump: production only ever had v1 cookies, and local operator cookies are refused by the scope check). `/api/turn`, `turn.ts` (`CallContext`), `proxy.ts` and `llm.ts` comments follow, with no null-key branch left. **Calls:** `llm.ts` refuses any call without a `codeKey` with `LlmBudgetError` reason `inactive`, before any request, so no call anywhere is unmetered; tests pass a key to a memory ledger instead of calling keyless. **Scripts:** `try:cards`, `try:discover` (both modes), `try:explore`, `try:queries` and `smoke:llm` read `ACCESS_CODE` (server-only, scripts only) from the environment through one new helper, `scripts/script-access-code.ts`: normalise, shape-check, derive the key, and exit non-zero with a plain sentence when it is missing or malformed; the key reaches every call through `withCallContext`, and the step modules stay unaware of it. The code, its key, cap and total are never printed. `smoke:llm` also reads the code's total back and fails unless it rose. Every script now needs the local Supabase stack. **Local setup:** `.env.example` drops `OPERATOR_PASSCODE` and gains `ACCESS_CODE`; issue one local code with `pnpm codes:add --cap 5` (the same cap as everyone, raised for agents only by a later decision) and put it in `.env.local` in place of `OPERATOR_PASSCODE`; the same code is what you and agents type at `/enter`. **Docs, same commit:** D71 in the technical plan (with dated notes on D5, D68 and D70 and the §1 "Access" row); CLAUDE.md (environment table, commands table: which scripts need the stack and `ACCESS_CODE`, the Playwright flow, the gate section, the LLM calls section's keyless-call wording); `.claude/skills/ux-review/SKILL.md`; README's local run; `docs/deploy.md` (operator sections removed, Vercel table, rotating access); `docs/data-flow.html`; this file's G2e.2 row. Live calls: one `pnpm smoke:llm`, about $0.01 | Claude (Opus) | `grep -rn "OPERATOR_PASSCODE\|OPERATOR_SCOPE\|isValidPasscode" src scripts` finds nothing; `route.test.ts`: a value in `APP_PASSCODE` or `OPERATOR_PASSCODE` does not enter; `passcode.test.ts`: an `operator` cookie is refused and `signSession` throws without a key; `llm.test.ts`: a keyless call makes no API request and throws `LlmBudgetError` `inactive`; each `try:*` script exits non-zero with `ACCESS_CODE` unset; `pnpm smoke:llm` passes with the local code and `codes:list` shows its total risen; tests, lint and build pass | `[DONE]` |
-| 2e.7 | Production, before the merge. `supabase db push` of the one new migration, then `pnpm db:check-rls` against production with the service key from your shell, never from the repo. The migration only adds, so the deployed app keeps working | Claude (Opus), in a session where your CLI is linked to the production project | The migration is applied and `db:check-rls` passes against production | `[TODO]` |
+| 2e.7 | Production, before the merge. `supabase db push` of the one new migration, then `pnpm db:check-rls` against production with the service key from your shell, never from the repo. The migration only adds, so the deployed app keeps working | Claude (Opus), in a session where your CLI is linked to the production project | The migration is applied and `db:check-rls` passes against production | `[DONE]` 2026-11-27: only `20261126090000_access_codes.sql` pushed; `check-rls.ts` 35/35 against production with the real secret key, run from your shell (verification log) |
 | G2e.2 | Merge and issue codes. Merge the PR. In your own terminal, never in a Claude session: `pnpm codes:add --cap 5 --count <n>` against production, and keep the list of who has which code outside the repo. Delete `APP_PASSCODE` and, if set, `OPERATOR_PASSCODE` from Vercel (neither is read, 2e.8, D71); do not set `ACCESS_CODE` there (scripts only). Issue yourself a production code the same way, `--cap 5`: there is no operator passcode. Then one check on the production URL with a code capped at $0.50: run loops until it is refused | **`YOU`** | A turn is refused with the budget sentence, your profile is still there, `codes:list` shows the total just over $0.50, and a wrong code is refused at `/enter` | `[TODO]` |
 
 Order: 2e.1 to 2e.6 in sequence on `phase-2e`, one commit each, no
@@ -541,6 +550,69 @@ changes.
 | 2g.2 | Comparison: step level for discovery, end to end for the loop, pairwise judging between arms on the same profile, cost and latency per arm | Claude (Opus) runs; Claude (Fable) writes the analysis | Report in `docs/eval-spec.md` results | `[TO SPEC]` |
 | 2g.3 | Prompt hill-climbing on the eval for the arm that ships, with a held-out split | Claude (Fable) | Scores on the held-out split recorded | `[TO SPEC]` |
 | G2g | Decide the data layer and prompts the app ships; record the decision in `docs/technical-plan.md` §5 | **`YOU`** | Decision recorded | `[TO SPEC]` |
+
+### Phase 2h — Roles as occupations `[TODO]`
+
+Decided 2026-11-27 after reading generated roles. **In plain terms:** a
+role stops being a job title and becomes an occupation. "Data Scientist"
+and "Data Science Manager" are one role, "Data science". The field it sits
+under is the industry, so a role reads as occupation and industry: data
+science in carbon finance. Whether someone manages people or does the work
+themselves is not something the Roles screen asks; the person decides that
+when they read the postings.
+
+**What changes and what does not.**
+
+- **A role's title is the occupation alone**, written as the name of the
+  work in sentence case: "Data science", "Product management", "Policy
+  analysis", "Wind turbine service". Someone who manages people doing an
+  occupation is in that occupation: "Data Scientist", "Data Science
+  Manager" and "Head of Data Science" are all "Data science". Where
+  managing is the work itself, the occupation is named for it: "Product
+  Manager" is "Product management", "Project Manager" is "Project
+  management". No level word (D48 stands) and no focus after a comma or in
+  brackets.
+- **The industry stays the field and is not written into the title.** The
+  Roles screen already lists roles under their field's heading, and the
+  Searches cards and the profile drawer already show the field's name
+  beside the role, so no component changes. `profile.md`'s format does not
+  change: a role's title is still one string.
+- **The same occupation may sit under more than one field.** A role is the
+  pair, so the discovery prompt's "Do not repeat the same role across
+  fields" goes.
+- **One to three roles per field, down from two to four.** With the two
+  tracks merged, a floor of two invites padding.
+- **A search covers both tracks.** It is built from the titles employers
+  post for the occupation, practitioner and people-manager alike:
+  `("data scientist" OR "data science manager" OR …) AND (field terms)`.
+- **Stored profiles are not migrated.** A role stored under a job title
+  does not match the occupation that replaces it (roles are matched by
+  title within a field), so the next "Find climate roles" run lists the
+  occupation as a new, unticked role and marks the old one dropped (D58).
+  Until then an old-title role can still be ticked and searched, so the
+  search prompt has to read both forms.
+
+| Step | What | Who | Done when | Status |
+|---|---|---|---|---|
+| 2h.1 | Discovery writes occupations. `discover.ts`: both system prompts (memory and catalogue, so the two evaluation arms name roles the same way; a catalogue role keeps its `ref` and takes the occupation as its title) and both role schemas' `title` description ask for the occupation by the rules above; "Do not repeat the same role across fields" becomes "the same occupation may sit under more than one field, each with its own why"; "2-4 per field" becomes "1-3". Level stripping, the rank drop and the per-field dedupe in `validateOutput` stay as they are. One new pure helper, unit-tested, reports a title that still ends in "Manager"; `validateOutput` leaves such a role in place, because code cannot repair it ("Product Manager" and "Data Science Manager" resolve differently), and `pnpm try:discover` exits non-zero on one. A unit test pins what happens to a ticked old-title role when a run returns its occupation instead. **Same commit:** D72 in the technical plan (or the next free number) with a dated note on D48; a principle in `docs/design-language.md` (a role label is an occupation in sentence case; the industry comes from the field); the discovery box in `docs/data-flow.html`; the `try:discover` row in CLAUDE.md; the role example in `profile.ts`'s header comment. Live calls: about eight `discover` runs at $0.23 each | Claude (Fable) | `pnpm try:discover` passes on the three fixture profiles (`data-scientist.md`, `videographer.md`, `web-designer.md`) and on a copy of the data-scientist profile rewritten in the scratchpad so its cards describe leading a team (fictional, never committed): no title ends in "Manager" or carries a level word, and the team-lead profile gets "Data science", not a people-manager title; tests, lint and build pass | `[TODO]` |
+| 2h.2 | Searches from an occupation. `queries.ts`: step 1 of the build order (the title group) starts from the occupation and writes two to four job titles employers post for it, joined with OR, including the people-manager title where the occupation has one; a role still stored as a job title, with or without a focus after a comma, is read as its occupation. `NO_LEVEL_WORDS` is unchanged: "manager" is not a level word, so "data science manager" is already allowed in a query. The made-up example shape is updated to match. **Same commit:** D73 in the technical plan (or the next free number): a search covers both tracks; the searches box in `docs/data-flow.html` if it describes the title group. Live calls: about five `queries` runs at $0.04 each | Claude (Fable) | `pnpm try:queries --tick` passes on two of 2h.1's output profiles with two roles ticked in each, with no level-word warning, and every title group holds at least two titles, a people-manager title among them where the occupation has one (the worker quotes the four searches in its report); one run on the old-title fixture `src/lib/__fixtures__/queries/engineer.md` still passes; tests, lint and build pass | `[TODO]` |
+| G2h.1 | Try it on your own resume in the browser: "Find climate roles", read the list, tick three roles, write the searches and open two on LinkedIn | **`YOU`** | You confirm the roles read as occupations and the searches return practitioner and manager postings, or you list what reads wrong | `[TODO]` |
+| G2h.2 | `/code-review`; PR for `phase-2h`. No `/security-review`: the phase touches no auth, input handling or Supabase | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes; the merge is yours | Findings fixed and committed on `phase-2h`; PR merged | `[TODO]` |
+
+Order: 2h.1 then 2h.2 on `phase-2h`, one commit each, no worktrees; 2h.2's
+check reads 2h.1's output. The branch is cut from `main` after the
+`phase-2e` merge: 2e.8 changed the same `try:*` scripts, and they need
+`ACCESS_CODE`. Live calls come to about $2, charged to your local code
+(`discover` $0.23 and `queries` $0.04 a run, measured 2026-11-26). 2h has
+to merge before 2f.3 freezes the discovered profiles, and 2f.4's
+"level-free titles" check gains the ends-in-"Manager" check when that
+phase is specced.
+
+Not in 2h, by decision: rewriting the titles in stored profiles; a choice
+between managing and practising, or any seniority choice, on the Roles
+screen ("Seniority as a choice" stays in `docs/backlog.md`); the titles in
+`data/example_roles.yaml`, which stay job titles because they describe
+role profiles; any change to `profile.md`'s format or to a component.
 
 ### Phase 3 — Evaluation and pilot readiness `[TODO]`
 

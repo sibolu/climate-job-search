@@ -1746,3 +1746,14 @@ total of $0.080389 against the $0.01 cap. The next turn came back in
 sentence; the session's `llm_usage` count, read with the service role, was
 3 before and 3 after, so no model call was made. The dev log showed only
 `turn step=cards failed: LlmBudgetError`. The code row was then deleted.
+
+**Step 2e.7: the access-codes migration in production (2026-11-27).**
+Supabase project `thqugwlqlpflgtndymus`, through the logged-in CLI
+(2.95.4). `supabase db push --dry-run` listed only
+`20261126090000_access_codes.sql`; after `supabase db push`,
+`supabase migration list` shows all four versions applied. The user then
+ran `scripts/check-rls.ts` against production from their own shell, with
+the real secret key read by `read -rs` (never in a file or this session):
+35/35 checks pass, including the `access_codes` group, so the script has
+now passed end to end against production with the service role, which
+2d.3 could not do. The deployed app is unchanged: the migration only adds.
