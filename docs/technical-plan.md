@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D60, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D66, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -32,12 +32,12 @@ Defaults; a decision in §5 overrides a row here.
 | Concern | Choice | Why |
 |---|---|---|
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
-| Hosting | Vercel for app and route handlers. Supabase Postgres for the reference collection only | Existing subscriptions |
+| Hosting | Vercel for app and route handlers. Supabase Postgres for the `llm_usage` table and the reference tables (seeded, not read by the app since D61). Setup in `docs/deploy.md` | Existing subscriptions |
 | Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
-| LLM | Anthropic TS SDK, model per step: `claude-opus-5-5` for every step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on both models. See D44, D45, D52 |
-| Grounding | Supabase reference collection, then the model's own knowledge. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Baseline before a larger roles-and-occupations catalogue; hard constraint still enforced in code |
+| LLM | Anthropic TS SDK, model per step: `claude-fable-5-2` for `discover`, `claude-opus-5-5` for every other step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on every model. See D44, D45, D52, D62 |
+| Grounding | In the app, the model's own knowledge only: discovery gets the cards, skills and preferences, no catalogue, no URLs (D61). The reference catalogue is kept as an evaluation arm behind `DiscoverOptions.catalogue`, reached only by `pnpm try:discover --catalogue`. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Memory-only is the baseline arm; the app switches to the catalogue only if the evaluation says so (D61); hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
-| Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Anon key with select-only RLS | The PRD's one allowed collection, reproducible from the repo |
+| Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Publishable key with select-only RLS. Not read by the app since D61; the catalogue arm of the evaluation reads it | The PRD's one allowed collection, reproducible from the repo |
 | Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
@@ -127,7 +127,7 @@ src/
     reference.ts    # typed reads from the Supabase reference tables (0.4)
     cards.ts        # pasted text → experience cards (1.1)
     elicit.ts       # preference elicitation policy and answer pills (1.2)
-    discover.ts     # fields/roles discovery, no web tools (1.4; D44)
+    discover.ts     # fields/roles discovery, no web tools, memory-only in the app (1.4; D44, D61)
     explore.ts      # field drill-down, example posts, LinkedIn guidance; no UI path (2.2; D39)
     queries.ts      # one LinkedIn query per selected role, and revision from feedback (2.3/2b.8; D47)
     boards.ts       # client-safe board labels, alert steps, query extra keys (2.4; D32)
@@ -168,8 +168,8 @@ evals/                 # synthetic profiles, structural checks, LLM-judge rubric
 ## 4. Risks specific to this project
 
 - **Grounding quality is the hypothesis under test.** Discovery now runs on
-  the reference collection and the model's own knowledge (D44), so a field
-  outside the collection has no source at all. Step 1.4's check counts
+  the model's own knowledge alone (D61), with no source for any field; the
+  reference catalogue is an evaluation arm. Step 1.4's check counts
   citations, not their quality; the LLM judge in 3.1 is where quality gets
   measured, and it is what decides whether a larger catalogue or bounded
   search comes back. Do not skip 3.1.
@@ -205,7 +205,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
    Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
    `claude-opus-5-5`: D44; `queries` and `revise` on `claude-sonnet-5-5`:
-   D46. Superseded by D52: every step on `claude-opus-5-5` again.)
+   D46. Superseded by D52: every step on `claude-opus-5-5` again; then
+   D62: `discover` on `claude-fable-5-2`.)
 3. All user state lives in the browser (`localStorage`) and is resent each
    turn. No accounts, no server-side profiles or transcripts. Consequence: the
    PRD's baseline comparison uses synthetic profiles and the builder's own,
@@ -282,7 +283,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     as any migration. Hand-writing it would let the types drift from the
     schema silently.
 16. **The RLS shape has an executable test.** `pnpm db:check-rls` runs against
-    a live stack and asserts, with the anon key, that the three reference
+    a live stack and asserts, with the publishable key, that the three reference
     tables are readable and not writable, that `llm_usage` is insertable and
     not readable, and that the blocked-domain CHECK rejects a LinkedIn source
     even for the service role. It insists on Postgres `42501` rather than "any
@@ -327,7 +328,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     part of the same logical call: the wrapper resumes it (up to
     `MAX_PAUSE_TURN_CONTINUATIONS = 5`, then `LlmPauseLimitError`), sums the
     token counters across every continuation, and writes a single row. Rows
-    are written fire-and-forget through the anon key, and a failure is a
+    are written fire-and-forget through the publishable key, and a failure is a
     `console.warn` carrying the error *code* only — telemetry must never cost
     the user their turn, and must never be a channel through which content
     leaks. Refused and truncated turns are logged before the error is thrown,
@@ -337,7 +338,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     eagerly and lets it complete even if the consumer stops reading deltas
     (the API reports output tokens only in the final `message_delta`), so
     `final` always settles and the row is exact.
-22. **`llm_usage`'s shape is a CHECK constraint, not a comment.** The anon key
+22. **`llm_usage`'s shape is a CHECK constraint, not a comment.** The publishable key
     is public and INSERT on that table is open by design, so "counters and
     identifiers only" has to be something the database enforces rather than
     something the app promises: `session_id` must match `^[0-9a-f]{32}$` (the
@@ -662,6 +663,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 
     Re-check with the Phase 3 evals (3.1): if recalled fields turn out
     wrong or generic, the catalogue comes first, then bounded search.
+    (Superseded in part by D61: the app no longer reads the catalogue, and
+    "sources are catalogue URLs only" now describes the catalogue arm.)
 
 45. **Every model call streams, has a 3-minute deadline, and stops when the
     browser goes away (2026-09-24).** Supersedes D27's timeout arithmetic and
@@ -837,7 +840,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     terms ("green jobs", "climate careers") instead of the field's own
     vocabulary, so they were too general to be worth the saving.
     - `MODEL_BY_STEP.queries` and `.revise` → `claude-opus-5-5`; all six
-      steps now run on Opus 5.5. `EFFORT_BY_STEP` is unchanged: `explore`
+      steps now run on Opus 5.5 (D62 then moves `discover` to Fable 5.2).
+      `EFFORT_BY_STEP` is unchanged: `explore`
       `high`, every other step `medium`, always sent explicitly.
     - The `ModelId` union and the Sonnet 5.5 row in `PRICE_PER_MTOK` are
       kept, so a later switch is a one-line table change. `costUsd` still
@@ -1057,6 +1061,120 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     (ESCO, the EU Taxonomy, any OECD table) is settled at G2c.2, after the 2c.3
     exploration. A script that calls these APIs is a dev-only fetch path
     like D59: no route can reach it, and it refuses blocked hosts.
+
+61. **Memory-only discovery is the app's behaviour and the baseline arm
+    (2026-11-25, step 2d.2).** The evaluation that follows the demo holds
+    the pipeline constant and changes only what the model is given:
+    nothing, then the O*NET-based catalogue from Phase 2c, then whatever
+    comes after. The app runs the first arm.
+    - A model-generated shared catalogue was considered and rejected: it
+      would be a middle arm (model plus model-written data), not the floor.
+    - **No URL from memory, ever.** The memory schema
+      (`DiscoverOutputSchemaMemory`) has no `ref` and no `sources`, and the
+      validator strips any URL from the free text of fields and roles,
+      counted in `textUrlsStripped`. No `Ref` and no source is written.
+    - Example companies are plain text, never links: well-known
+      organisations the model is sure exist, in the US or the EU, or an
+      organisation type ("a utility's grid-planning team") rather than a
+      guessed name; organisations, never people (D6).
+    - The prompt (`DISCOVER_SYSTEM_PROMPT_MEMORY`) frames climate work by
+      ten areas, the six `CLIMATE_AREAS` plus Climate Finance, Industry &
+      Materials, Nature & Water, and Corporate Sustainability & Climate
+      Services, so coverage does not depend on the six interest pills.
+    - The catalogue path stays behind `DiscoverOptions.catalogue`
+      (`DISCOVER_SYSTEM_PROMPT_CATALOGUE`, byte-identical to the old
+      prompt), reached only by `pnpm try:discover --catalogue` and the
+      evaluation, the way `explore` and `revise` are script-only (D39,
+      D47). The reference tables, `pnpm seed` and `pnpm db:check-rls` stay.
+    - 2c.8 feeds the evaluation's catalogue arm; the app switches to it
+      only if the evaluation says so.
+
+    Supersedes D44's "sources are catalogue URLs only" for the app; it now
+    describes the catalogue arm.
+
+62. **`discover` runs on Claude Fable 5.2 at `medium` (2026-11-25, step
+    2d.1).** `MODEL_BY_STEP.discover` is `claude-fable-5-2`, priced $8 /
+    $40 per MTok, cache read $0.20, cache write $10 (`PRICE_PER_MTOK`,
+    from the model table checked 2026-11-25). The other five steps stay on
+    Opus 5.5 (D52). The request shape is unchanged: adaptive thinking,
+    structured output, streaming. No server-side fallback: a refusal is
+    `LlmRefusalError` and the usual error banner. Fable 5.2 needs an
+    Anthropic organisation with 30-day data retention (`docs/deploy.md`).
+    The 3-minute deadline is unchanged: the two measured memory-mode
+    discovery calls took 61.5s and 78.8s (§6), and it would have been
+    raised for `discover` alone had one passed 150s.
+
+63. **Supabase keys use the publishable / secret names (2026-11-25, Phase
+    2d deploy prep).** Supabase replaced the legacy anon and service-role
+    JWT keys with a publishable key (`sb_publishable_…`) and a secret key
+    (`sb_secret_…`), and the local CLI prints both as `PUBLISHABLE_KEY` and
+    `SECRET_KEY`. The env vars are renamed to match:
+    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`. Each
+    new key runs as the same Postgres role as the key it replaces (`anon`,
+    `service_role`), so RLS, the migrations and `pnpm db:check-rls` are
+    unchanged. `anonClient()` and `serviceClient()` keep their names because
+    they name the role, not the key. Applied migrations still say "anon key"
+    in comments; they are never edited.
+
+64. **The turn route waits for its usage rows before the function ends
+    (2026-11-25, Phase 2d).** In production a full run left `cards` and
+    `elicit` rows but none for `discover` or `queries`, the last call of
+    their turns. The likely cause (Vercel logs were not available): the
+    usage insert was fire-and-forget, the route closed the response right
+    after the last call, and Vercel suspended the function before an insert
+    on a cold connection completed. `recordUsage` in `llm.ts` still never
+    blocks the call, but tracks each write until it settles;
+    `usageWritesSettled(timeoutMs = USAGE_FLUSH_TIMEOUT_MS)` (5s) resolves
+    when every write pending at call time has settled or the timeout
+    passes, and never rejects. `/api/turn` calls `after()` from
+    `next/server`, whose callback waits for the turn's stream `start` to
+    finish (its `finally`, so the disconnect path is covered too, D45) and
+    then awaits `usageWritesSettled()`. The response body is never delayed;
+    only the invocation is extended, by at most 5s. No dependency added
+    (`after` uses the platform's `waitUntil`).
+65. **A turn waits only for its own usage rows, and memory mode strips URLs
+    from every rendered string (2026-11-26, Gate 2d code review).**
+    `recordUsage` also files each write under the call's abort signal, and
+    `usageWritesSettled(signal?, timeoutMs)` with a signal waits only for
+    those writes, so on Fluid compute one turn is never held up to 5s by
+    another turn's insert; `/api/turn` passes its `abort.signal`, which
+    `runTurn` puts on every call (D45). The route resolves `turnDone` first
+    in its `finally`, so nothing that throws there can leave `after()`
+    waiting until `maxDuration`. In memory mode (D61) field names and role
+    titles go through `stripUrls` too, a field left with no name is dropped
+    as surplus, and `textUrlsStripped` counts only kept fields and roles.
+    `stripUrls` ends a link at a comma or semicolon before a space, the end
+    or a card ID (so "https://a.org,C1" keeps its citation), keeps a
+    balanced "(…)" inside a link, removes bracketed link lists with their
+    separators, and treats "source" and "link" as lead-ins only with a
+    colon ("open source" survives); "at" and "via" still go with the URL
+    that is their object. `turnErrorMessage` keeps its `ReferenceReadError`
+    sentence: `explore`, which only scripts send (D39), still reads the
+    reference tables through the route.
+
+66. **A link needs no scheme, and text is stripped of URLs in both
+    discovery modes (2026-11-26, Gate 2d code review, second pass).**
+    `stripUrls` and `hasUrl` used to see a link only where it began with
+    `http(s)://` or `www.`, so "rmi.org/insights" in a field's summary was
+    shown, and `try:discover` passed it. A bare host followed by a path now
+    counts as a link (`BARE_LINK_RE` in `discover.ts`); the slash is what
+    makes it one, so "350.org" alone stays a name. Three guards keep
+    ordinary prose out: the host is lower case ("ASP.NET/C#" is a skill),
+    it ends in a top-level domain from a fixed list ("node.js/typescript"),
+    and the path starts with a lower-case letter or a digit
+    ("350.org/Sunrise Movement" is two organisations). A link on a
+    top-level domain outside the list, written with no scheme, still gets
+    through; the list is the place to add one. Catalogue mode used to
+    filter only `sources`, so a URL the model wrote into a fit, summary or
+    why was written to the profile, against what D44 and D61 say.
+    `validateOutput` now runs every draft through `prepareDraft` (was
+    `memoryDraft`), which strips URLs from the same strings in both modes
+    and keeps a catalogue draft's refs and `sources`; `textUrlsStripped`
+    counts both modes, and `try:discover --catalogue` fails on a URL in the
+    text as memory mode does. The catalogue arm's request (prompt, message,
+    schema) is unchanged. Not done here: a memory-mode re-run still matches
+    a kept field or role by its exact name or title (`docs/backlog.md` §2,
+    "A re-run keeps a role only if its wording is unchanged").
 
 ---
 
@@ -1329,3 +1447,109 @@ for, and it passes; it is the query to watch if the check is tightened.
 Queries were judged by reading them: no job board was opened or searched.
 The UI steps 2b.15–2b.18 were not exercised by this run; the try scripts
 cover the model stages and the profile, not the screens.
+
+### Phase 2d: the 2d.2 memory-only run (2026-11-25)
+
+The loop after 2d.1 and 2d.2 (D61, D62) was run live through the try
+scripts on the same two inputs as 2b.19: the `userdata/` resume (only
+counts, costs and times recorded) and the videographer fixture. Discovery
+ran in memory mode on `claude-fable-5-2` at `medium`; the other steps on
+`claude-opus-5-5`. Each stage ran once, the two inputs in parallel, nothing
+rerun, no prompt changed after the run. One catalogue-arm call was added on
+the fixture for comparison.
+
+| Pass | Step | Result | Tokens (in / cache write / out) | Cost | Time |
+|---|---|---|---|---|---|
+| `userdata/` resume | `try:cards` | 5 cards | 1,573 / 3,053 / 2,249 | $0.0665 | 21.0s |
+| | `try:discover --interest="Energy,Transportation"` (memory, Fable 5.2) | 5 fields, 11 roles, nothing dropped, no level word | 1,913 / 3,818 / 7,476 | $0.3525 | 78.8s |
+| | `try:queries --tick` (4 roles, 4 fields) | 4 LinkedIn queries | 2,132 / 2,171 / 1,093 | $0.0412 | 13.0s |
+| | **Total** | | | **$0.4602** | |
+| Videographer | `try:cards` | 3 cards | 1,014 / 3,053 / 1,251 | $0.0443 | 12.7s |
+| | `try:discover --interest="Food & Agriculture,Energy"` (memory, Fable 5.2) | 5 fields, 14 roles, nothing dropped, no level word | 1,141 / 3,818 / 5,735 | $0.2767 | 61.5s |
+| | `try:queries --tick R1,R4,R7,R10` | 4 LinkedIn queries | 1,700 / 2,171 / 1,076 | $0.0392 | 11.7s |
+| | **Total** | | | **$0.3602** | |
+| Videographer, catalogue arm | `try:discover --catalogue` (Fable 5.2) | 5 fields, 13 roles; 5 `Ref` lines, 7 lines with source URLs | 14,781 / 3,452 / 7,418 | $0.4495 | 79.3s |
+
+The whole run cost $1.27 (the two memory loops $0.82). The checks, on both
+inputs:
+
+- All seven scripts exited 0; both memory discovery calls finished well
+  inside the 180s deadline.
+- **No URL from memory (D61).** Zero `Ref` lines; every `- **Sources:**`
+  label bare (16 of 16 and 19 of 19); zero `http` or `www.` outside
+  `## Inputs`.
+- **Interest order (D54).** Fields in the picked areas with fit strong or
+  some rank first; one or two fields outside them are still listed.
+- **Search quality.** All eight queries pass the 2b.19 check.
+- **Companies.** In the fixture run discovery named 26 organisations and
+  12 organisation types; the reviewing worker judged none non-existent
+  (from model knowledge, unverified), and three were loose fits for their
+  field.
+
+Against 2b.19 (Opus 5.5 with the catalogue), discovery cost $0.35 / $0.28
+against $0.26 / $0.21 in about the same time (78.8s / 61.5s against
+79.8s / 61.6s): a far smaller input (about 2K tokens against 15K) does not
+offset Fable's higher output price. One run per stage, so the numbers are
+rough.
+
+### Phase 2d: the 2d.3 production database (2026-11-25)
+
+Supabase project `thqugwlqlpflgtndymus`, through the logged-in CLI (2.95.4).
+The Vercel half of 2d.3 is not verified: see the last paragraph.
+
+- **Migrations.** `supabase migration list --linked` showed an empty remote;
+  the dry run listed the three files and nothing else; after
+  `supabase db push` all three versions show as applied.
+- **RLS, anon side.** `scripts/check-rls.ts` against production with the
+  publishable key: all 15 anon checks pass (insert-only on `llm_usage`,
+  select-only on the three reference tables, which are empty).
+- **RLS, service-role side.** The script's four service-role checks did not
+  run: the CLI returns the secret key masked, so they failed with
+  `Invalid API key`. The same four were run as SQL in one transaction that
+  was rolled back (`set local role service_role`, then `anon`): the
+  service role can insert into `llm_usage`; a `session_id` that is not 32
+  hex chars, a free-text `step` and a `linkedin.com` source are each
+  rejected with 23514; anon's select on `llm_usage` is refused with 42501.
+  The script itself has not passed end to end with the real secret key.
+- **Left behind: nothing.** The failed run could not delete its one anon
+  probe row; it was deleted by session id. `llm_usage` and
+  `climate_fields` both count 0 rows.
+
+The production domain does not run this branch. `gh api …/deployments`
+shows every production deployment since 2026-09-18 as "Deployment was
+blocked"; the domain serves the 2026-09-13 build (`<html lang="en">` with
+no font classes), where `POST /api/enter` with a wrong passcode returns 500
+instead of 401, the sign of a missing passcode variable in that deployment.
+The gate itself holds there: `/` redirects to `/enter` and `/api/turn`
+returns 401. The `phase-2d` preview of `9272e47` built, but redirects to
+Vercel's login, so nothing on it was checked.
+
+**Later the same day, after the fix.** The cause was a paused Vercel project.
+Unpaused, with `phase-2d` promoted, GitHub shows a successful Production
+deployment of `512b2db` and the domain serves it (font classes on
+`<html>`). From outside, without the passcode: `POST /api/enter` with a
+wrong or an empty passcode returns 401 and sets no cookie; `/` redirects to
+`/enter`; `/api/turn` returns 401 unauthenticated and with a forged
+`cjs_session` cookie. Not checked: anything behind the passcode (the loop,
+the `llm_usage` rows from Vercel, the 800s function limit in practice) and
+the build log's Node and pnpm versions. `llm_usage` held 0 rows at the time
+of writing; the first rows come from the G2d.1 run.
+
+**The G2d.1 run and `llm_usage`.** The user's run through the production
+URL reached Searches with no error. It left two rows in one session, where
+the flow makes at least four calls: `cards` (Opus 5.5, 1,528 in / 2,249 out,
+$0.0664, 18.3s) and `elicit` (Opus 5.5, 2,153 / 201, $0.0176, 3.9s). No
+`discover` row and no `queries` row. The Supabase variables are therefore
+right; what is lost is the insert for the last call of a turn. D64 is the
+fix (the route waits for pending writes inside `after()`); the cause is
+likely, not proven, and the fix is unit-tested but not yet seen working on
+Vercel. It is confirmed when a production run leaves a `discover` and a
+`queries` row.
+
+**D64 confirmed (2026-11-26).** With `d65a92f` promoted (GitHub shows its
+Production deployment at 21:47 UTC), the user's second run through to
+Searches left all four rows in one session: `cards` (Opus 5.5, $0.0491),
+`elicit` (Opus 5.5, $0.0144), `discover` (Fable 5.2, 1,291 in / 4,526 out,
+$0.2295, 47.3s) and `queries` (Opus 5.5, 1,571 / 1,183, $0.0408, 13.2s);
+$0.334 for the loop. Read with `supabase db query --linked`. The earlier
+session's two rows stay as they were.

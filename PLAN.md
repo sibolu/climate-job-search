@@ -15,13 +15,17 @@ in each phase's table. Every phase also starts with your kickoff prompt
 
 ## Waiting on you
 
-- **Phase 2d (the demo on 2026-11-28), now:** kick it off in a fresh session
-  (`Execute Phase 2d per PLAN.md. Commit each step on branch phase-2d. Stop
-  at the gate.`); it stops at G2d.1. For the hosted demo (2d.3) you create
-  and link the Vercel project and a Supabase production project, set the
-  secrets (`APP_PASSCODE`, `PASSCODE_COOKIE_SECRET`, `ANTHROPIC_API_KEY`,
-  the Supabase URL and keys) in Vercel, and choose the passcode; the worker
-  does the rest and needs those to exist, so do it today or tomorrow.
+- **Phase 2d (the demo on 2026-12-01), now, G2d.3:** the demo is live at
+  `https://climate-job-search.vercel.app`; 2d.3 and G2d.1 are done. G2d.3
+  (`/code-review`, `/security-review` in fresh sessions, then merge PR #7)
+  does not wait for the demo. After the merge, if you changed Vercel's
+  production branch, set it back to `main`. Then G2d.2, the demo on
+  2026-12-01.
+- **Phase 2e (a spend cap per access code), after PR #7 merges, 2e.0:**
+  the changed data rule is approved (2026-11-26); choose the cap per code.
+  Then kick off in a fresh session
+  (`Execute Phase 2e per PLAN.md with a cap of $<n> per code. Commit each
+  step on branch phase-2e. Stop at the gate.`); it stops at G2e.1.
 - **2c.2 (after the demo):** set up dataset access in a separate session
   (O*NET first; then BLS, ILOSTAT and the OECD data API; ESCO is a proposed
   addition for the EU side, strike it if you disagree). Then kick off 2c.3
@@ -59,11 +63,15 @@ retraining question, per-field follow-up questions, job-alert steps.
 
 ## Phases
 
-Phases are in execution order, with two exceptions. Phase 2d was added on
-2026-11-25 and runs before Phase 2c continues, so it sits in front of it; 2c
+The sections below are in label order, which is not quite execution order.
+Phase 2d was added on 2026-11-25 and runs before Phase 2c continues; 2c
 keeps its letter because its branch, decisions (D59, D60) and research paths
-already carry it. Phase 2e (the evaluation foundation) runs alongside 2c
-after the demo and sits after it; 2f needs both.
+already carry it. Phase 2e (a spend cap per access code) was planned on
+2026-11-26 and waits only for PR #7. Phase 2f (the evaluation foundation)
+runs alongside 2c after the demo; 2g needs both. On 2026-11-26 the
+evaluation foundation and the arm comparison were relabelled from 2e and 2f
+to 2f and 2g to make room; nothing had been built or branched under the old
+letters.
 
 ### Phase 0 — Foundations `[DONE]`
 
@@ -214,82 +222,6 @@ titles. **Revisit later:** how the user tells us whether a field interests
 them at all, now that the Interesting / Unsure / Not for me row is gone
 (`docs/backlog.md` §2).
 
-### Phase 2d — Memory-only discovery, hosted demo `[TODO]`
-
-Agreed 2026-11-25 for the demo on 2026-11-28. Discovery runs on Claude Fable
-5.2 at `medium` and names fields, roles and example companies from the
-model's own knowledge: no web search, no dataset, no reference catalogue in
-the prompt, no source URL. What it finds is written to the person's profile
-in the browser, as today; nothing about the person is stored anywhere else.
-Searches stay on Opus 5.5 (D52). The app is deployed to a hosted URL for the
-demo (3.3 pulled forward). This is the **baseline arm** for the evaluation
-that follows the demo: the pipeline is held constant and only what the model
-is given changes (nothing → the O*NET-based catalogue from 2c → whatever
-comes after). A model-generated shared catalogue was considered and
-rejected: it would be a middle arm (model plus model-written data), not the
-floor.
-
-**What happens to the catalogue code.** The app stops reading the reference
-tables; Supabase stays for `llm_usage`. The catalogue path in `discover.ts`
-(reading the tables, rendering them into the prompt, restricting sources to
-their URLs) is kept behind an option the try scripts and the later
-evaluation reach, like `explore` and `revise` (D39, D47). `data/*.yaml`,
-`pnpm seed`, `pnpm db:check-rls` and `reference.ts` are unchanged; 2c.8 still
-writes the researched data into them, for the catalogue arm.
-
-**Decided:** run-time discovery on `claude-fable-5-2` at `medium`; the
-interest pills stay the six `CLIMATE_AREAS`, and the prompt frames climate
-work by the ten 2c areas (the six among them by their exact names) so
-coverage does not depend on the pills; the demo is a hosted URL; the
-per-session spend cap stays in 3.3 (the passcode is the demo's guard; watch
-`llm_usage`).
-
-**Rules for every worker.**
-
-- Model memory only in the app. Discovery's prompt carries the cards, the
-  skills, the preferences, the fields already on file and the ten areas,
-  nothing else; no tools. Nothing from `docs/research/`, the 2c.1 survey or
-  `data/*.yaml` goes into it.
-- No URL from memory, ever (D44): the memory-mode output schema has no
-  `sources`, and the validator still removes any URL that appears in free
-  text. The profile's `Sources` key and the Roles screen's source links stay
-  for the catalogue arm; the app writes none.
-- Example companies are shown as plain text, never as links. The prompt
-  asks for well-known organisations the model is sure exist, US and EU, and
-  tells it to name an organisation type ("a utility's grid-planning team")
-  rather than guess a name.
-- Role titles carry no level (D48) and the post-check stays; `Ref` is never
-  written in memory mode.
-- Role profiles, never personal profiles (D6).
-- Deploy touches auth and Supabase production: no secret in the repo, the
-  anon key only in the app, `db:check-rls` run against production before the
-  URL is shared.
-
-| Step | What | Who | Done when | Status |
-|---|---|---|---|---|
-| 2d.1 | Model table. `llm.ts`: `ModelId` gains `claude-fable-5-2`; `PRICE_PER_MTOK` row ($8 in, $40 out, cache read $0.20, cache write $10); `MODEL_BY_STEP.discover = "claude-fable-5-2"`, `EFFORT_BY_STEP.discover = "medium"`; the other five steps unchanged. Adaptive thinking, structured outputs, streaming, the 3-minute deadline and `LlmRefusalError` are unchanged on Fable 5.2 (no server-side fallback: a refusal surfaces as today's error banner). The "every step on Opus 5.5" test becomes a per-step table assertion. CLAUDE.md "Model per step" and "Effort per step" bullets and the §1 LLM row in the same commit | Claude (Opus) | `llm.test.ts` asserts the model, effort and price per step; `pnpm smoke:llm` unchanged; tests, lint, build pass | `[TODO]` |
-| 2d.2 | Memory-only discovery. `discover.ts`: `DiscoverOptions.catalogue?: ReferenceReader` replaces `reference`; absent means memory mode, which is what `turn.ts` passes (it no longer imports or touches `reference.ts`; `ReferenceReadError` leaves `turnErrorMessage`). Memory mode has its own byte-stable system prompt (`DISCOVER_SYSTEM_PROMPT_MEMORY`): the ten areas as the frame, "name real fields and roles you know well", the companies rule above, rules 3–7 as today with every mention of the catalogue removed, the interest rule 5 unchanged in substance; the catalogue prompt is renamed `DISCOVER_SYSTEM_PROMPT_CATALOGUE` and is otherwise untouched. `buildDiscoverMessage` takes the catalogue as an optional argument and leaves the `# Reference catalogue` block out when there is none. The memory-mode output schema drops `ref` and `sources` on fields and roles (less output, a faster turn); `validateOutput` in memory mode skips the catalogue filter and strips any URL found in `fit`, `why` or `summary` (counted in `dropped`). `scripts/try-discover.ts` gains `--catalogue` (reads Supabase, runs the catalogue arm) and defaults to memory mode like the app. Live loop on the `userdata/` resume and the videographer fixture: `try:cards` → `try:discover --interest=…` → `try:queries --tick`, the 2b.19 search-quality check applied again; recorded: duration against the 3-minute deadline, cost per run, fields and roles count, no level word, interest order held. If a discovery call runs past 150s on either input, the worker raises the deadline for `discover` only (a per-step entry, not the global constant) and reports it | Claude (Fable) | Loop runs on both inputs in memory mode; every field cites a card; no `Ref`, no `Sources` written; every query passes the 2b.19 check; `try:discover --catalogue` still runs on the local stack; the discover tests cover both message shapes; tests, lint, build pass | `[TODO]` |
-| 2d.3 | Hosted demo (3.3 pulled forward, minus the spend cap and the feedback link). You create the Vercel project linked to this repo and a Supabase production project, set the env vars from CLAUDE.md in Vercel (server-only ones never `NEXT_PUBLIC_`), choose the passcode. Claude: `supabase db push` of the three migrations to production (no seed needed: the app reads no reference table; the empty tables keep `db:check-rls` meaningful), `pnpm db:check-rls` against production with the service key from your shell, never from the repo; a production build; `/enter` → passcode → full loop on the production URL through the try-script profile; `llm_usage` rows land in production; the Vercel function `maxDuration` matches `MAX_DURATION_SECONDS`. Written up in `docs/technical-plan.md` §1 "Hosting" and a short `docs/deploy.md` (what is where, how to rotate the passcode, how to read `llm_usage`) | **`YOU`** create and link the projects, set the secrets, choose the passcode; Claude (Opus) does the rest | The production URL works from a clean browser: passcode, paste, Highlights, Roles, Searches; a wrong passcode is refused; `db:check-rls` passes against production; no secret in git | `[TODO]` |
-| 2d.4 | Docs. `docs/technical-plan.md`: §1 "LLM" and "Grounding" rows (discovery on Fable 5.2 `medium`, model knowledge only in the app, catalogue kept as an arm) and the "Reference data" row (not read by the app since D61), D61 (memory-only discovery as the baseline arm: why not a generated catalogue, no URLs, companies as text, the catalogue path kept behind an option, 2c.8 feeds the evaluation arm and the app switches only if the evaluation says so; supersedes the D44 sentence on catalogue URLs), D62 (`discover` on Fable 5.2 at `medium`, the price row, the deadline if 2d.2 changed it), §6 entry with the 2d.2 figures; `docs/data-flow.html`: API 3 box (Fable 5.2, no catalogue read, no `Ref`/`Sources` written), the "Reference collection" box marked "not read by the app (D61); evaluation arm", the intro list; CLAUDE.md: the "Discovery has no web tools" bullet, the turn-endpoint paragraph, the Supabase section intro (tables kept, not read at run time), the `try:discover` command row (`--catalogue`); `docs/backlog.md` cross-check (the "Interest areas and the catalogue do not line up" item becomes an evaluation-arm item) | Claude (Opus) | Every doc named here agrees with the code; tests, lint, build pass | `[TODO]` |
-| G2d.1 | Browser run on the production URL with your resume: paste → Highlights → two areas → Roles (read the companies: anything you know to be wrong goes into the gate notes) → Searches → open two on LinkedIn. Then open "Your profile" and confirm no `Ref` and no source line was written | **`YOU`** | You reach Searches with no error; two LinkedIn runs return specific results; notes written (a few lines) | `[TODO]` |
-| G2d.2 | The demo (2026-11-28) | **`YOU`** | Demo given; what to change goes into `docs/backlog.md` or a dated `docs/demo-2026-11-28.md` | `[TODO]` |
-| G2d.3 | `/code-review` and `/security-review` (2d.3 touched auth and Supabase production; 2d.2 changed a prompt's input shape); merge PR #7 | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2d`; merged to `main` | `[TODO]` |
-
-Order: 2d.1 first (one commit, minutes); then 2d.2 and 2d.3 in parallel
-(disjoint: 2d.2 owns `discover.ts`, `turn.ts`, `try-discover.ts` and their
-tests; 2d.3 owns deployment config and `docs/deploy.md`; 2d.3's Claude half
-waits until your projects exist); 2d.4 last. Each step is one commit on
-`phase-2d`, PR #7. The kickoff session stops at G2d.1. Live calls: 2d.2
-(two loops, about $1.50 with discovery on Fable) and 2d.3 (one loop on
-production, about $0.75). If Fable refuses or times out on an input, the
-worker reports it with the stop reason and does not change the prompt to
-get past it.
-
-Not in 2d, by decision: the per-session spend cap, the feedback form link
-and the pilot kit (3.3, 3.4); alternate titles per role for the search
-prompt; selecting the catalogue per run (`docs/backlog.md` §6, decided with
-the evaluation); removing the catalogue code or the reference tables.
-
 ### Phase 2c — Reference data research `[PAUSED: resumes at 2c.2 after G2d.2]`
 
 Replaces the placeholder reference collection in `data/*.yaml` with
@@ -364,7 +296,192 @@ step 2c.8"). The schema decision is deliberately left to G2c.4. Steps after
 G2c.1 were renumbered on 2026-11-23 when the dataset steps (2c.2, 2c.3) and
 the verification step (2c.6) were added; none had started.
 
-### Phase 2e — Evaluation foundation `[TO SPEC]`
+### Phase 2d — Memory-only discovery, hosted demo `[IN PROGRESS]`
+
+Agreed 2026-11-25 for the demo, first set for 2026-11-28 and moved to 2026-12-01. Discovery runs on Claude Fable
+5.2 at `medium` and names fields, roles and example companies from the
+model's own knowledge: no web search, no dataset, no reference catalogue in
+the prompt, no source URL. What it finds is written to the person's profile
+in the browser, as today; nothing about the person is stored anywhere else.
+Searches stay on Opus 5.5 (D52). The app is deployed to a hosted URL for the
+demo (3.3 pulled forward). This is the **baseline arm** for the evaluation
+that follows the demo: the pipeline is held constant and only what the model
+is given changes (nothing → the O*NET-based catalogue from 2c → whatever
+comes after). A model-generated shared catalogue was considered and
+rejected: it would be a middle arm (model plus model-written data), not the
+floor.
+
+**What happens to the catalogue code.** The app stops reading the reference
+tables; Supabase stays for `llm_usage`. The catalogue path in `discover.ts`
+(reading the tables, rendering them into the prompt, restricting sources to
+their URLs) is kept behind an option the try scripts and the later
+evaluation reach, like `explore` and `revise` (D39, D47). `data/*.yaml`,
+`pnpm seed`, `pnpm db:check-rls` and `reference.ts` are unchanged; 2c.8 still
+writes the researched data into them, for the catalogue arm.
+
+**Decided:** run-time discovery on `claude-fable-5-2` at `medium`; the
+interest pills stay the six `CLIMATE_AREAS`, and the prompt frames climate
+work by the ten 2c areas (the six among them by their exact names) so
+coverage does not depend on the pills; the demo is a hosted URL; the
+per-session spend cap stays in 3.3 (the passcode is the demo's guard; watch
+`llm_usage`).
+
+**Rules for every worker.**
+
+- Model memory only in the app. Discovery's prompt carries the cards, the
+  skills, the preferences, the fields already on file and the ten areas,
+  nothing else; no tools. Nothing from `docs/research/`, the 2c.1 survey or
+  `data/*.yaml` goes into it.
+- No URL from memory, ever (D44): the memory-mode output schema has no
+  `sources`, and the validator still removes any URL that appears in free
+  text. The profile's `Sources` key and the Roles screen's source links stay
+  for the catalogue arm; the app writes none.
+- Example companies are shown as plain text, never as links. The prompt
+  asks for well-known organisations the model is sure exist, US and EU, and
+  tells it to name an organisation type ("a utility's grid-planning team")
+  rather than guess a name.
+- Role titles carry no level (D48) and the post-check stays; `Ref` is never
+  written in memory mode.
+- Role profiles, never personal profiles (D6).
+- Deploy touches auth and Supabase production: no secret in the repo, the
+  publishable key only in the app, `db:check-rls` run against production before the
+  URL is shared.
+
+| Step | What | Who | Done when | Status |
+|---|---|---|---|---|
+| 2d.1 | Model table. `llm.ts`: `ModelId` gains `claude-fable-5-2`; `PRICE_PER_MTOK` row ($8 in, $40 out, cache read $0.20, cache write $10); `MODEL_BY_STEP.discover = "claude-fable-5-2"`, `EFFORT_BY_STEP.discover = "medium"`; the other five steps unchanged. Adaptive thinking, structured outputs, streaming, the 3-minute deadline and `LlmRefusalError` are unchanged on Fable 5.2 (no server-side fallback: a refusal surfaces as today's error banner). The "every step on Opus 5.5" test becomes a per-step table assertion. CLAUDE.md "Model per step" and "Effort per step" bullets and the §1 LLM row in the same commit | Claude (Opus) | `llm.test.ts` asserts the model, effort and price per step; `pnpm smoke:llm` unchanged; tests, lint, build pass | `[DONE]` |
+| 2d.2 | Memory-only discovery. `discover.ts`: `DiscoverOptions.catalogue?: ReferenceReader` replaces `reference`; absent means memory mode, which is what `turn.ts` passes (it no longer imports or touches `reference.ts`; `ReferenceReadError` leaves `turnErrorMessage`). Memory mode has its own byte-stable system prompt (`DISCOVER_SYSTEM_PROMPT_MEMORY`): the ten areas as the frame, "name real fields and roles you know well", the companies rule above, rules 3–7 as today with every mention of the catalogue removed, the interest rule 5 unchanged in substance; the catalogue prompt is renamed `DISCOVER_SYSTEM_PROMPT_CATALOGUE` and is otherwise untouched. `buildDiscoverMessage` takes the catalogue as an optional argument and leaves the `# Reference catalogue` block out when there is none. The memory-mode output schema drops `ref` and `sources` on fields and roles (less output, a faster turn); `validateOutput` in memory mode skips the catalogue filter and strips any URL found in `fit`, `why` or `summary` (counted in `dropped`). `scripts/try-discover.ts` gains `--catalogue` (reads Supabase, runs the catalogue arm) and defaults to memory mode like the app. Live loop on the `userdata/` resume and the videographer fixture: `try:cards` → `try:discover --interest=…` → `try:queries --tick`, the 2b.19 search-quality check applied again; recorded: duration against the 3-minute deadline, cost per run, fields and roles count, no level word, interest order held. If a discovery call runs past 150s on either input, the worker raises the deadline for `discover` only (a per-step entry, not the global constant) and reports it | Claude (Fable) | Loop runs on both inputs in memory mode; every field cites a card; no `Ref`, no `Sources` written; every query passes the 2b.19 check; `try:discover --catalogue` still runs on the local stack; the discover tests cover both message shapes; tests, lint, build pass | `[DONE]` (2026-11-25: both loops passed in memory mode for $0.82, discovery 61.5s and 78.8s, so the deadline is unchanged; the catalogue arm still runs. The serializer keeps the bare `- **Sources:**` label for an empty list, as it always has; no entry and no `Ref` is written) |
+| 2d.3 | Hosted demo (3.3 pulled forward, minus the spend cap and the feedback link). You create the Vercel project linked to this repo and a Supabase production project, set the env vars from CLAUDE.md in Vercel (server-only ones never `NEXT_PUBLIC_`), choose the passcode. Claude: `supabase db push` of the three migrations to production (no seed needed: the app reads no reference table; the empty tables keep `db:check-rls` meaningful), `pnpm db:check-rls` against production with the service key from your shell, never from the repo; a production build; `/enter` → passcode → full loop on the production URL through the try-script profile; `llm_usage` rows land in production; the Vercel function `maxDuration` matches `MAX_DURATION_SECONDS`. Written up in `docs/technical-plan.md` §1 "Hosting" and a short `docs/deploy.md` (what is where, how to rotate the passcode, how to read `llm_usage`) | **`YOU`** create and link the projects, set the secrets, choose the passcode; Claude (Opus) does the rest | The production URL works from a clean browser: passcode, paste, Highlights, Roles, Searches; a wrong passcode is refused; `db:check-rls` passes against production; no secret in git | `[DONE]` (2026-11-25: the runbook `docs/deploy.md` is written. Database half done on Supabase project `thqugwlqlpflgtndymus`: the three migrations are applied and the RLS shape holds, technical-plan.md §6. Later that day: the Vercel project was paused, which had blocked every production deployment since 2026-09-18; unpaused and `phase-2d` promoted, the production domain serves `512b2db`. Checked from outside: a wrong or empty passcode is refused with 401 and no cookie, a forged session cookie is refused, `/` redirects to `/enter`, `/api/turn` answers 401 unauthenticated; no secret-shaped string in tracked files. Not done by Claude: the loop behind the passcode, since the production passcode must not land in a transcript. The user's G2d.1 run then worked end to end, but left only the `cards` and `elicit` rows in `llm_usage`: the insert for the last call of a turn was lost, likely to the function being suspended. Fixed in code by D64 (`after()` in the turn route). 2026-11-26: with `d65a92f` promoted, a second run left all four rows, `cards`, `elicit`, `discover`, `queries`, $0.334 for the loop; technical-plan.md §6) |
+| 2d.4 | Docs. `docs/technical-plan.md`: §1 "LLM" and "Grounding" rows (discovery on Fable 5.2 `medium`, model knowledge only in the app, catalogue kept as an arm) and the "Reference data" row (not read by the app since D61), D61 (memory-only discovery as the baseline arm: why not a generated catalogue, no URLs, companies as text, the catalogue path kept behind an option, 2c.8 feeds the evaluation arm and the app switches only if the evaluation says so; supersedes the D44 sentence on catalogue URLs), D62 (`discover` on Fable 5.2 at `medium`, the price row, the deadline if 2d.2 changed it), §6 entry with the 2d.2 figures; `docs/data-flow.html`: API 3 box (Fable 5.2, no catalogue read, no `Ref`/`Sources` written), the "Reference collection" box marked "not read by the app (D61); evaluation arm", the intro list; CLAUDE.md: the "Discovery has no web tools" bullet, the turn-endpoint paragraph, the Supabase section intro (tables kept, not read at run time), the `try:discover` command row (`--catalogue`); `docs/backlog.md` cross-check (the "Interest areas and the catalogue do not line up" item becomes an evaluation-arm item) | Claude (Opus) | Every doc named here agrees with the code; tests, lint, build pass | `[DONE]` (the §1 "Hosting" row points to `docs/deploy.md`; the production write-up is in technical-plan.md §6, "the 2d.3 production database") |
+| G2d.1 | Browser run on the production URL with your resume: paste → Highlights → two areas → Roles (read the companies: anything you know to be wrong goes into the gate notes) → Searches → open two on LinkedIn. Then open "Your profile" and confirm no `Ref` and no source line was written | **`YOU`** | You reach Searches with no error; two LinkedIn runs return specific results; notes written (a few lines) | `[DONE]` (2026-11-26, on `d65a92f`: reached Searches with no error; the LinkedIn searches worked well. LinkedIn still mixes in promoted posts that match the person's LinkedIn profile rather than the query, though much fewer of them; logged in `docs/backlog.md` §3) |
+| G2d.2 | The demo (2026-12-01) | **`YOU`** | Demo given; what to change goes into `docs/backlog.md` or a dated `docs/demo-2026-12-01.md` | `[TODO]` |
+| G2d.3 | `/code-review` and `/security-review` (2d.3 touched auth and Supabase production; 2d.2 changed a prompt's input shape); merge PR #7 | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2d`; merged to `main` (does not wait for G2d.2) | `[TODO]` |
+
+Order: 2d.1 first (one commit, minutes); then 2d.2 and 2d.3 in parallel
+(disjoint: 2d.2 owns `discover.ts`, `turn.ts`, `try-discover.ts` and their
+tests; 2d.3 owns deployment config and `docs/deploy.md`; 2d.3's Claude half
+waits until your projects exist); 2d.4 last. Each step is one commit on
+`phase-2d`, PR #7. The kickoff session stops at G2d.1. Live calls: 2d.2
+(two loops, about $1.50 with discovery on Fable) and 2d.3 (one loop on
+production, about $0.75). If Fable refuses or times out on an input, the
+worker reports it with the stop reason and does not change the prompt to
+get past it.
+
+Not in 2d, by decision: the per-session spend cap, the feedback form link
+and the pilot kit (3.3, 3.4); alternate titles per role for the search
+prompt; selecting the catalogue per run (`docs/backlog.md` §6, decided with
+the evaluation); removing the catalogue code or the reference tables.
+
+### Phase 2e — A spend cap per access code `[TODO]`
+
+Planned 2026-11-26. Each invited person gets their own access code, and each
+code has a dollar cap on the model calls made under it, so one person cannot
+use up the pilot's credits. It replaces the per-session cap planned for 3.3:
+the session id is made in the browser and "Start over" makes a new one, so a
+cap keyed on it stops nobody. The phase runs on branch `phase-2e`, cut from
+`main` after PR #7 merges; it does not wait for 2c or 2f.
+
+**How it works.**
+
+- **Codes.** A code is generated, never chosen: 16 random characters (80
+  bits), shown as `XXXX-XXXX-XXXX-XXXX`. The database holds only a key
+  derived from it, the first 32 hex characters of its SHA-256, so a code
+  cannot be read back from the database. A code this long cannot be guessed,
+  which is why no server secret goes into the key and rotating
+  `PASSCODE_COOKIE_SECRET` cannot reset anyone's total.
+- **One table, `access_codes`.** Columns: `code_key` (32 hex, CHECK on the
+  shape), `cap_usd`, `spent_usd`, `disabled`, `created_at`. No label, no
+  name, no session id, no time of last use: nowhere to put free text. Who
+  holds which code is known only to you and is written nowhere in the repo
+  or the database.
+- **How the app reaches it.** The app still holds only the publishable key
+  and the table is closed to it (RLS on, no grants, no policies). Two
+  `SECURITY DEFINER` functions are the only way in: `access_code_budget(key)`
+  returns the cap, the total and the disabled flag, or no row for an unknown
+  key; `access_code_add_spend(key, usd)` adds a non-negative amount. Anyone
+  can call them with the public key, but only with a 32-hex key they cannot
+  guess, and the worst a tester can do with their own is use up their own
+  budget.
+- **Entry.** `/api/enter` normalises what was typed, derives the key and
+  asks `access_code_budget`. A known code that is not disabled gets a session
+  cookie carrying its key: `v2.<expiry>.<key>.<hmac>`. A code that has
+  reached its cap is still let in, because the person's profile is in their
+  browser and they must be able to read and export it; it is the next model
+  call that is refused. `APP_PASSCODE` stays as an optional operator
+  passcode for you and for local work; its sessions carry no key and are not
+  metered.
+- **Metering.** The key travels from the signed cookie, never from the
+  request body, through `runTurn` into `llm.ts`. Before each logical call
+  `llm.ts` reads the budget and refuses with a typed error when the total
+  has reached the cap, the code is disabled or unknown, or the budget cannot
+  be read (it fails closed). After the call, at the point where the usage
+  row is recorded, it adds `costUsd` to the total; an aborted call is added
+  too, since it is billed (D45). The write is tracked with the usage row, so
+  the turn route's `after()` waits for both (D64, D65). A call with no key
+  (the operator passcode, the `try:*` scripts) is not metered.
+- **What the cap guarantees.** The check is before a call and the charge
+  after it, so a code can go over by the calls already in flight when it
+  crosses the cap: one call in ordinary use, cents. A failed charge is a
+  `console.warn` with the error code and undercounts. Keep an
+  organisation-level spend limit in the Claude Console as the backstop for
+  both.
+- **`llm_usage` is not touched.** No column is added and no row is linked to
+  a code; it stays anonymous as D22 describes.
+
+**The data rule changes (approved by you as written, 2026-11-26).** CLAUDE.md says
+"The only server-side write is the anonymous `llm_usage` row". After this
+phase it reads: "There are two server-side writes: the anonymous `llm_usage`
+row, and one running dollar total per access code (`access_codes.spent_usd`).
+Neither holds content or identity. An access-code row is a derived key, a
+cap, a total, a disabled flag and a creation time." What you gain is the
+cap. What changes is that you can see how much each code has spent, and you
+know who holds each code.
+
+**Rules for every worker.**
+
+- The CLAUDE.md hard constraints, verbatim in each brief, with the data rule
+  above in its new wording.
+- `access_codes` and `llm_usage` never gain a content or identity column.
+  Nothing logs a code, a key or a request body; a failed write logs the
+  error code only.
+- The key reaches `llm.ts` only from the signed cookie. `TurnRequest` gains
+  no field.
+- No new Supabase client: the app uses `anonClient().rpc(...)`;
+  `serviceClient()` is used by `scripts/access-codes.ts` and
+  `scripts/check-rls.ts` only.
+- Each step appends its own decision to `docs/technical-plan.md` §5 in the
+  same commit, under the next free number at that time (D67 if nothing else
+  has landed).
+- Any user-facing string is checked against `docs/design-language.md`
+  first.
+
+| Step | What | Who | Done when | Status |
+|---|---|---|---|---|
+| 2e.0 | Approve the changed data rule above (approved as written, 2026-11-26) and choose the cap per code. $3 is about nine full loops at the $0.334 measured on 2026-11-26, so six codes cost $18 at most | **`YOU`** | You kick off the phase with the cap in the prompt | `[TODO]` (the cap is still to choose) |
+| 2e.1 | Table and ledger. A new migration `supabase/migrations/<timestamp>_access_codes.sql`: the table with its CHECKs, RLS on with every grant revoked from `anon` and `authenticated`, the two functions (`SECURITY DEFINER`, `set search_path = ''`, execute granted to `anon` and `authenticated` and revoked from `public`; `access_code_add_spend` rejects a null, negative or NaN amount and does nothing for an unknown key), and table and column comments in the manner of `llm_usage`. `pnpm db:reset && pnpm db:types`. New `src/lib/budget.ts`: a `BudgetLedger` interface (`read(codeKey)` → cap, total, disabled, or `null`; `addSpend(codeKey, usd)`), `supabaseBudgetLedger()` over `anonClient().rpc`, `memoryBudgetLedger()` for tests, and a pure `budgetVerdict` (allowed, exhausted, inactive) with unit tests. `scripts/check-rls.ts` gains a group: anon cannot select, insert, update or delete `access_codes`; both functions run for anon; an unknown key reads as no row and adds nothing; a negative amount is refused; the row it creates through the service role is cleaned up. The decision: the table, why no label, why the per-session cap is dropped | Claude (Opus) | `pnpm db:check-rls` passes on the local stack with the new group; `database.types.ts` regenerated and committed; `pnpm test`, `pnpm lint`, `pnpm build` pass | `[TODO]` |
+| 2e.2 | Codes and their script. New `src/lib/access-code.ts`, Web Crypto only so it runs in the proxy: `generateAccessCode()`, `normalizeAccessCode()` (trim, upper-case, drop dashes and spaces), `accessCodeKey()` (SHA-256, first 32 hex), `isAccessCodeKey()`, with unit tests. New `scripts/access-codes.ts` on `serviceClient()` and three commands in `package.json`: `pnpm codes:add --cap <usd> [--count <n>]` prints each new code once beside the first 8 characters of its key and stores only the key; `pnpm codes:list` prints key prefix, cap, total, disabled and created; `pnpm codes:set <key-prefix> [--cap <usd>] [--disable\|--enable]`. `--cap` is required: no default cap is written into code | Claude (Opus) | On the local stack `codes:add --cap 1 --count 2` prints two codes, `codes:list` shows two rows at $0, `codes:set` changes a cap and disables a code; a code typed in lower case with spaces derives the same key; tests, lint and build pass | `[TODO]` |
+| 2e.3 | The gate. `passcode.ts`: `SESSION_VERSION` becomes `v2`, the token carries a scope (a code key, or a fixed marker for the operator passcode), and `verifySession` becomes `readSession`, returning the session (`{ codeKey: string \| null }`) or `null`; every caller and test is renamed with it. `proxy.ts` uses it and is otherwise unchanged. `/api/enter`: the operator passcode is compared first, in constant time, when `APP_PASSCODE` is set (it no longer has to be); otherwise the code is normalised, its key derived and `BudgetLedger.read` asked; an unknown or disabled code gets today's 401; an unreachable ledger gets a 503 with a plain sentence; the form field is renamed from `passcode` to `code`. `src/app/enter/page.tsx` asks for "your access code". The decision: codes hashed with no server secret, the v2 cookie, the unmetered operator passcode | Claude (Opus) | `passcode.test.ts` and the enter route's tests cover: a v1 cookie is refused, a v2 cookie round-trips its key, a tampered key fails the HMAC, a known code enters, a disabled or unknown code is refused, a capped-out code still enters, the operator passcode enters with no key; tests, lint and build pass | `[TODO]` |
+| 2e.4 | Metering in `llm.ts`. `CallRequest` gains an optional `codeKey`; `CreateLlmOptions` gains `budget?: BudgetLedger`, defaulting to `supabaseBudgetLedger()`. In `runCall`, after the session-id and tool checks and before any request: with a key, read the budget and throw a new `LlmBudgetError` whose `reason` is `exhausted`, `inactive` or `unavailable`. In `recordOnce`: with a key, add `costUsd` through the ledger, tracked in the same pending set as the usage row so `usageWritesSettled` waits for it; a failure is a `console.warn` with the error code. No key: neither happens. The decision: the check per logical call, failing closed, the overshoot bound | Claude (Opus) | `llm.test.ts` with the memory ledger: a call under the cap runs and the total rises by its `costUsd`; a call at the cap makes no API request; an aborted call is still charged; an unreadable ledger refuses; a keyless call never touches the ledger; `usageWritesSettled` resolves only after the charge; tests, lint and build pass | `[TODO]` |
+| 2e.5 | The turn. `turn.ts`: `withSignal` becomes `withCallContext` (signal and key), `runTurn` takes the key, and `turnErrorMessage` gains one sentence per `LlmBudgetError` reason, each saying that what the person has is still in their browser. `/api/turn` reads the session from the cookie with `readSession` (read the Next 16 docs for cookies in a route handler first), answers 401 without one, and passes the key on. Then one run on the local stack with the real ledger: a code capped at $0.01, `/api/enter` and two `cards` turns by `curl`, about $0.05 | Claude (Opus) | `turn.test.ts` and `route.test.ts` cover the key reaching every step's calls and the three sentences; in the local run the first turn completes, `codes:list` shows a total above the cap, and the second turn returns the budget sentence without a model call; tests, lint and build pass | `[TODO]` |
+| 2e.6 | Docs. CLAUDE.md: the data rule in its new wording everywhere it is stated, the commands table (`codes:*`), the environment table (`APP_PASSCODE` optional, operator only), "Passcode gate" (codes, the v2 token, `readSession`), "Supabase" (the fourth table, the fourth service-role script, the two functions), "LLM calls" (`codeKey`, `LlmBudgetError`, the ledger). `docs/technical-plan.md`: §1 "Access" and "Cost telemetry", the §3 module map (`budget.ts`, `access-code.ts`, `scripts/access-codes.ts`), a note on D4 and D5 pointing at the new decisions. `docs/data-flow.html`: the new store, the read before each call and the write after it. `docs/deploy.md`: issuing codes, reading totals, raising a cap, disabling a code, what the operator passcode is for. `docs/backlog.md` §5: the spend-control item, with showing cost in the UI left open. `.env.example` | Claude (Opus) | `grep -rn "only server-side write" CLAUDE.md docs src` returns nothing stale; every command in the docs runs as written on the local stack; tests, lint and build pass | `[TODO]` |
+| G2e.1 | `/code-review` and `/security-review` (the phase touches auth, input handling and Supabase); PR for `phase-2e` | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2e` | `[TODO]` |
+| 2e.7 | Production, before the merge. `supabase db push` of the one new migration, then `pnpm db:check-rls` against production with the service key from your shell, never from the repo. The migration only adds, so the deployed app keeps working | Claude (Opus), in a session where your CLI is linked to the production project | The migration is applied and `db:check-rls` passes against production | `[TODO]` |
+| G2e.2 | Merge and issue codes. Merge the PR. In your own terminal, never in a Claude session: `pnpm codes:add --cap <usd> --count <n>` against production, and keep the list of who has which code outside the repo. Decide whether `APP_PASSCODE` stays in Vercel: it is uncapped, so remove it or keep it to yourself. Then one check on the production URL with a code capped at $0.50: run loops until it is refused | **`YOU`** | A turn is refused with the budget sentence, your profile is still there, `codes:list` shows the total just over $0.50, and a wrong code is refused at `/enter` | `[TODO]` |
+
+Order: 2e.1 to 2e.6 in sequence on `phase-2e`, one commit each, no
+worktrees: each step builds on the one before (2e.2 on the table, 2e.3 on
+both, 2e.5 on 2e.3 and 2e.4). The kickoff session stops at G2e.1. 2e.7 runs
+after the review fixes and before the merge. Live calls: 2e.5 only, about
+$0.05. Deploying this signs everyone out once, because the cookie version
+changes; people come back in with their new code.
+
+Not in 2e, by decision: showing a person their remaining budget or the
+session's cost (`docs/backlog.md` §5); caps that reset by month; a cheaper
+model or effort once a code is near its cap; a web page for issuing codes
+(the script is the only writer); rate limiting on `/api/enter` (an 80-bit
+code makes guessing pointless); any change to `llm_usage`.
+
+### Phase 2f — Evaluation foundation `[TO SPEC]`
 
 Agreed in outline 2026-11-25; the rows are the proposed shape and are
 filled in with you in a spec session after the demo. **In plain terms:**
@@ -393,18 +510,18 @@ content.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2e.1 | Call outcomes in production. `llm_usage` gains `outcome` (`ok`, `timeout`, `cancelled`, `refusal`, `truncated`, `pause_limit`, `output_invalid`, `api_error`; CHECK), `http_status` (smallint, null when no response), `error_code` (closed vocabulary of the SDK error class names and the `Llm*Error` names; CHECK), `retries` (smallint), `request_id` (Anthropic's `request-id` header, 1–80 chars; it identifies the API request, not a person). `llm.ts` writes one row per logical call whether it succeeded or not; `USAGE_ROW_KEYS` and its guard test updated; the route's console line carries outcome, status and request id and still never the message. New migration, `db:types`, `db:check-rls`. Decision appended: outcome and status codes are not content | Claude (Opus) | A forced timeout, a refusal fixture and a 429 from a stubbed client each write a row with the right outcome and zero tokens; `smoke:llm` reads back `outcome = ok`; tests, lint, build pass | `[TO SPEC]` |
-| 2e.2 | Runner with record and replay. `evals/runner/` (TypeScript): `pnpm eval:run --step <name> --arm memory or catalogue --profiles <dir> --out evals/runs/<id>` runs one step over every profile in the directory through the real lib functions and `llm.ts`, with a `recorder` injected through `createLlm` that keeps per call the system prompt hash, the messages, the raw response text, usage, cost, duration, outcome, git sha and the model table, as JSONL; `--replay <run>` re-emits a stored run without calling the API. End-to-end mode chains the steps and freezes the output of each stage as the input of the next. `evals/runs/` gitignored; a committed summary per run holds counts and cost only | Claude (Opus) | A run over the fixtures produces JSONL that a schema test accepts; replay reproduces the profiles byte for byte; no route imports anything under `evals/` | `[TO SPEC]` |
-| 2e.3 | Synthetic corpus. 30–40 fictional resumes across the function vocabulary and both geographies, generated by Claude as invented people (no real individual, D6), reviewed by you for plausibility, frozen per stage under `evals/profiles/`: the resume text, the cards profile, the discovered profile. Real resumes stay in `userdata/`, run locally, never committed | Claude (Opus) generates; **`YOU`** review | Corpus committed with a manifest (function, geography, seniority, notes); every profile passes the try-script checks | `[TO SPEC]` |
-| 2e.4 | Python evaluation package. `evals/python/` managed with `uv`: a JSONL schema check, the structural checks per step ported from the try scripts (card completeness, level-free titles, one search per selected role, the 2b.19 search-specificity check), a rubric judge per step and an end-to-end judge calling Claude through the Python SDK with no tools (a dev-only path like D59; its own decision), aggregation and a report per run. `evals/CLAUDE.md` holds the conventions | Claude (Fable) writes the rubrics; Claude (Opus) the package | `uv run eval score <run>` prints a per-step table and writes the report; the judge never sees the judged step's prompt text | `[TO SPEC]` |
-| 2e.5 | Judge calibration. You label a sample of discovery and search outputs with the rubric; agreement between judge and labels is measured; the rubric is revised until agreement clears the threshold set in the spec | **`YOU`** label; Claude (Fable) revises | Agreement figure recorded in `docs/eval-spec.md` | `[TO SPEC]` |
-| 2e.6 | Batch mode in `llm.ts` for the runner (Message Batches, half price, no streaming), reachable only from the runner | Claude (Opus) | A corpus run completes through batches at the logged cost | `[TO SPEC]` |
-| 2e.7 | Baseline run: the memory arm over the corpus, step level and end to end, scored; numbers and cost in `docs/technical-plan.md` §6 | Claude (Opus) | The baseline table is the first entry in `docs/eval-spec.md` results | `[TO SPEC]` |
-| G2e | Review the baseline and the spec | **`YOU`** | Spec and thresholds approved | `[TO SPEC]` |
+| 2f.1 | Call outcomes in production. `llm_usage` gains `outcome` (`ok`, `timeout`, `cancelled`, `refusal`, `truncated`, `pause_limit`, `output_invalid`, `api_error`; CHECK), `http_status` (smallint, null when no response), `error_code` (closed vocabulary of the SDK error class names and the `Llm*Error` names; CHECK), `retries` (smallint), `request_id` (Anthropic's `request-id` header, 1–80 chars; it identifies the API request, not a person). `llm.ts` writes one row per logical call whether it succeeded or not; `USAGE_ROW_KEYS` and its guard test updated; the route's console line carries outcome, status and request id and still never the message. New migration, `db:types`, `db:check-rls`. Decision appended: outcome and status codes are not content | Claude (Opus) | A forced timeout, a refusal fixture and a 429 from a stubbed client each write a row with the right outcome and zero tokens; `smoke:llm` reads back `outcome = ok`; tests, lint, build pass | `[TO SPEC]` |
+| 2f.2 | Runner with record and replay. `evals/runner/` (TypeScript): `pnpm eval:run --step <name> --arm memory or catalogue --profiles <dir> --out evals/runs/<id>` runs one step over every profile in the directory through the real lib functions and `llm.ts`, with a `recorder` injected through `createLlm` that keeps per call the system prompt hash, the messages, the raw response text, usage, cost, duration, outcome, git sha and the model table, as JSONL; `--replay <run>` re-emits a stored run without calling the API. End-to-end mode chains the steps and freezes the output of each stage as the input of the next. `evals/runs/` gitignored; a committed summary per run holds counts and cost only | Claude (Opus) | A run over the fixtures produces JSONL that a schema test accepts; replay reproduces the profiles byte for byte; no route imports anything under `evals/` | `[TO SPEC]` |
+| 2f.3 | Synthetic corpus. 30–40 fictional resumes across the function vocabulary and both geographies, generated by Claude as invented people (no real individual, D6), reviewed by you for plausibility, frozen per stage under `evals/profiles/`: the resume text, the cards profile, the discovered profile. Real resumes stay in `userdata/`, run locally, never committed | Claude (Opus) generates; **`YOU`** review | Corpus committed with a manifest (function, geography, seniority, notes); every profile passes the try-script checks | `[TO SPEC]` |
+| 2f.4 | Python evaluation package. `evals/python/` managed with `uv`: a JSONL schema check, the structural checks per step ported from the try scripts (card completeness, level-free titles, one search per selected role, the 2b.19 search-specificity check), a rubric judge per step and an end-to-end judge calling Claude through the Python SDK with no tools (a dev-only path like D59; its own decision), aggregation and a report per run. `evals/CLAUDE.md` holds the conventions | Claude (Fable) writes the rubrics; Claude (Opus) the package | `uv run eval score <run>` prints a per-step table and writes the report; the judge never sees the judged step's prompt text | `[TO SPEC]` |
+| 2f.5 | Judge calibration. You label a sample of discovery and search outputs with the rubric; agreement between judge and labels is measured; the rubric is revised until agreement clears the threshold set in the spec | **`YOU`** label; Claude (Fable) revises | Agreement figure recorded in `docs/eval-spec.md` | `[TO SPEC]` |
+| 2f.6 | Batch mode in `llm.ts` for the runner (Message Batches, half price, no streaming), reachable only from the runner | Claude (Opus) | A corpus run completes through batches at the logged cost | `[TO SPEC]` |
+| 2f.7 | Baseline run: the memory arm over the corpus, step level and end to end, scored; numbers and cost in `docs/technical-plan.md` §6 | Claude (Opus) | The baseline table is the first entry in `docs/eval-spec.md` results | `[TO SPEC]` |
+| G2f | Review the baseline and the spec | **`YOU`** | Spec and thresholds approved | `[TO SPEC]` |
 
-### Phase 2f — Arm comparison `[TO SPEC]`
+### Phase 2g — Arm comparison `[TO SPEC]`
 
-After 2e and 2c. **In plain terms:** the experiment. The same resumes go
+After 2f and 2c. **In plain terms:** the experiment. The same resumes go
 through each version of the app, model alone, model with the researched
 catalogue, model with the catalogue plus occupation codes, and through a
 plain frontier assistant with web search as the PRD asks; the scores decide
@@ -413,10 +530,10 @@ changes.
 
 | Step | What | Who | Done when | Status |
 |---|---|---|---|---|
-| 2f.1 | Arms beyond memory: `catalogue` from `data/*.yaml` (the 2c.8 output), `catalogue+codes` if 2c.7 adds occupation codes, and the plain-assistant arm from the old 3.2 recorded in the same JSONL shape | Claude (Opus) | Every arm runs over the corpus through the runner | `[TO SPEC]` |
-| 2f.2 | Comparison: step level for discovery, end to end for the loop, pairwise judging between arms on the same profile, cost and latency per arm | Claude (Opus) runs; Claude (Fable) writes the analysis | Report in `docs/eval-spec.md` results | `[TO SPEC]` |
-| 2f.3 | Prompt hill-climbing on the eval for the arm that ships, with a held-out split | Claude (Fable) | Scores on the held-out split recorded | `[TO SPEC]` |
-| G2f | Decide the data layer and prompts the app ships; record the decision in `docs/technical-plan.md` §5 | **`YOU`** | Decision recorded | `[TO SPEC]` |
+| 2g.1 | Arms beyond memory: `catalogue` from `data/*.yaml` (the 2c.8 output), `catalogue+codes` if 2c.7 adds occupation codes, and the plain-assistant arm from the old 3.2 recorded in the same JSONL shape | Claude (Opus) | Every arm runs over the corpus through the runner | `[TO SPEC]` |
+| 2g.2 | Comparison: step level for discovery, end to end for the loop, pairwise judging between arms on the same profile, cost and latency per arm | Claude (Opus) runs; Claude (Fable) writes the analysis | Report in `docs/eval-spec.md` results | `[TO SPEC]` |
+| 2g.3 | Prompt hill-climbing on the eval for the arm that ships, with a held-out split | Claude (Fable) | Scores on the held-out split recorded | `[TO SPEC]` |
+| G2g | Decide the data layer and prompts the app ships; record the decision in `docs/technical-plan.md` §5 | **`YOU`** | Decision recorded | `[TO SPEC]` |
 
 ### Phase 3 — Evaluation and pilot readiness `[TODO]`
 
@@ -424,12 +541,12 @@ changes.
 |---|---|---|---|---|
 | 3.1 | `evals/`: four synthetic profiles, structural checks, an LLM-judge rubric (grounded, sources real, non-generic, titles level-free, one search per role). The feedback-loop eval and the "revision responsive" criterion return with the feedback milestone (`docs/backlog.md` §4). The result decides whether discovery needs a larger catalogue or bounded search (D44) | Claude (Fable) | `pnpm eval` prints a scored table and cost per run | `[TODO]` |
 | 3.2 | Baseline arm: the same profiles given to plain Opus 5.5 (the app's model) with web search, transcripts saved side by side | Claude (Opus) | Transcripts under `evals/baseline/` | `[TODO]` |
-| 3.3 | Deploy: Vercel production, Supabase production seeded, env vars, passcode, per-session spend cap, feedback form link | **`YOU`** create and link the Vercel and Supabase projects, set the secrets and choose the passcode; Claude (Opus) does the rest | Production URL works from a clean browser; the cap stops calls | `[TODO]` |
+| 3.3 | Deploy: Vercel production, Supabase production seeded, env vars, passcode, feedback form link (the spend cap moved to Phase 2e, per access code) | **`YOU`** create and link the Vercel and Supabase projects, set the secrets and choose the passcode; Claude (Opus) does the rest | Production URL works from a clean browser | `[TODO]` |
 | 3.4 | Pilot kit: in-app intro (what it does, what stays in your browser, how to export), feedback template, known limitations | Claude (Opus) drafts; **`YOU`** review | You approve the intro, template and limitations | `[TODO]` |
 | G3.1 | `/code-review` and `/security-review` (3.3 touches auth and Supabase) | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed | `[TODO]` |
 | G3.2 | Invite the fellows | **`YOU`** | Invitations sent with the URL and passcode | `[TODO]` |
 
-Decided 2026-11-25: 3.1 and 3.2 are replaced by Phases 2e and 2f above.
+Decided 2026-11-25: 3.1 and 3.2 are replaced by Phases 2f and 2g above.
 The rows below are kept until that spec lands and will shrink to the pilot
 work (3.3's remainder, 3.4, the gates).
 

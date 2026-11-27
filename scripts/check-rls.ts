@@ -107,7 +107,7 @@ function isPermissionDenied(error: PostgrestError | null): boolean {
 // Checks
 // ---------------------------------------------------------------------------
 
-/** (a) A row exists, and the anon key still cannot see it. */
+/** (a) A row exists, and the publishable key still cannot see it. */
 async function checkLlmUsageNotReadable(): Promise<void> {
   const service = serviceClient();
   const seeded = await service.from("llm_usage").insert({

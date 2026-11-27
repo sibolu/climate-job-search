@@ -3,7 +3,7 @@
  *
  * Read-only by design: the tables are written only by `scripts/seed.ts` from
  * `data/*.yaml`, so the repo stays the source of truth and every row in
- * production is reviewable in a pull request. The anon key this module uses
+ * production is reviewable in a pull request. The publishable key this module uses
  * physically cannot write them (select-only RLS).
  *
  * The collection explains fields and roles. It is small, hand-curated and

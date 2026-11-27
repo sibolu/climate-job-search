@@ -1,24 +1,39 @@
 /**
- * Phase 1.4 — discover: profile cards + reference catalogue + the model's own
- * knowledge → ranked climate fields and roles for this person.
+ * Phase 1.4, reworked in 2d.2 — discover: profile cards → ranked climate
+ * fields and roles for this person.
  *
  * One structured `discover` call with no tools does the work (technical-plan.md
- * D44): the byte-stable {@link DISCOVER_SYSTEM_PROMPT} carries the policy, and
- * the user message carries everything per-call (active cards, stated
- * preferences, the compact reference catalogue, and any fields already in the
- * profile). There is no web search: a field outside the catalogue comes from
- * what the model knows, and carries no sources.
+ * D44), in one of two modes (technical-plan.md D61):
  *
- * Post-validation is strict and counted, never silent: a field whose fit does
- * not cite an active card, or a role whose `why` does not, is dropped and
- * reported in `dropped`. A source URL survives only if the catalogue lists
- * it, so a URL the model recalls from memory is never shown. A role title is
- * the plain occupation (technical-plan.md D48): level modifiers are stripped,
- * and a role titled by rank alone is dropped and counted. Profile writes
- * go through `upsertField` / `upsertRole`; a re-run matches an existing field
- * by the reference id stored in `extra.Ref` (or its name) and updates it in
- * place, never renumbering and never downgrading a user-set status back to
- * `candidate`.
+ * - **Memory mode** is what the app runs, and the baseline arm of the
+ *   evaluation. The byte-stable {@link DISCOVER_SYSTEM_PROMPT_MEMORY} frames
+ *   climate work in ten areas, and the model names fields, roles and example
+ *   organisations from its own knowledge. The user message carries the active
+ *   cards, the stated preferences, the skills and the fields already in the
+ *   profile, nothing else. The output schema has no `ref` and no `sources`,
+ *   so no `Ref` and no source URL is ever written.
+ * - **Catalogue mode** runs only when the caller passes
+ *   `DiscoverOptions.catalogue` (`pnpm try:discover --catalogue`; the
+ *   evaluation's next arm). {@link DISCOVER_SYSTEM_PROMPT_CATALOGUE} and the
+ *   user message add the compact reference catalogue. A source URL survives
+ *   only if the catalogue lists it.
+ *
+ * A URL recalled from memory is never shown in either mode: one the model
+ * puts in its prose is removed and counted, with or without a scheme
+ * (technical-plan.md D66).
+ *
+ * This module does not read the reference tables: a caller that wants the
+ * catalogue arm builds the reader and hands it in.
+ *
+ * Post-validation is strict and counted, never silent, in both modes: a field
+ * whose fit does not cite an active card, or a role whose `why` does not, is
+ * dropped and reported in `dropped`. A role title is the plain occupation
+ * (technical-plan.md D48): level modifiers are stripped, and a role titled by
+ * rank alone is dropped and counted. Profile writes go through `upsertField`
+ * / `upsertRole`; a re-run matches an existing field by its name (in
+ * catalogue mode by the reference id stored in `extra.Ref` first) and updates
+ * it in place, never renumbering and never downgrading a user-set status
+ * back to `candidate`.
  */
 
 import { z } from "zod";
@@ -62,11 +77,11 @@ const DESCRIPTION_CHARS = 160;
 /** Reference sources listed per field / role in the catalogue. */
 const CATALOGUE_SOURCES = 2;
 
-/** The `extra` key that links a profile field or role to a reference id. */
+/** The `extra` key that links a profile field or role to a reference id. Written in catalogue mode only. */
 export const REF_KEY = "Ref";
 
 // ---------------------------------------------------------------------------
-// Reference catalogue (injectable so tests need no Supabase)
+// Reference catalogue: catalogue mode only, read by the caller (technical-plan.md D61)
 // ---------------------------------------------------------------------------
 
 export interface CatalogueField {
@@ -87,14 +102,20 @@ export interface CatalogueRole {
   sources: readonly string[] | null;
 }
 
+/**
+ * How a catalogue-mode caller hands the reference tables in. Discovery has no
+ * reader of its own: the script that runs the catalogue arm builds this from
+ * `reference.ts`, and tests pass a fake.
+ */
 export interface ReferenceReader {
   listFields(): Promise<CatalogueField[]>;
   listRoles(): Promise<CatalogueRole[]>;
 }
 
-async function defaultReference(): Promise<ReferenceReader> {
-  const ref = await import("./reference");
-  return { listFields: () => ref.listFields(), listRoles: () => ref.listRoles() };
+/** The catalogue as one catalogue-mode call reads it. */
+export interface Catalogue {
+  fields: readonly CatalogueField[];
+  roles: readonly CatalogueRole[];
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +283,11 @@ export function hasLevelWord(title: string): boolean {
 // Model output schema
 // ---------------------------------------------------------------------------
 
-export const RoleDraftSchema = z.object({
+// The catalogue-mode schemas are the ones sent since D44 and are left as they
+// were, so the catalogue arm's request does not change. The memory-mode
+// schemas below are the same drafts without `ref` and `sources`.
+
+export const RoleDraftSchemaCatalogue = z.object({
   title: z
     .string()
     .describe('The plain occupation with no level word: "Data Scientist", never "Senior Data Scientist" or "Director of Data Science".'),
@@ -273,9 +298,9 @@ export const RoleDraftSchema = z.object({
   why: z.string(),
   sources: z.array(z.string()),
 });
-export type RoleDraft = z.infer<typeof RoleDraftSchema>;
+export type RoleDraftCatalogue = z.infer<typeof RoleDraftSchemaCatalogue>;
 
-export const FieldDraftSchema = z.object({
+export const FieldDraftSchemaCatalogue = z.object({
   /** Reference field id when the field is from the catalogue, else null. */
   ref: z.string().nullable(),
   name: z.string(),
@@ -303,21 +328,46 @@ export const FieldDraftSchema = z.object({
     'The one question whose answer would most change the fit. "key" is a short preference label such as "Content mix"; "placeholder" an example answer.',
   ),
   sources: z.array(z.string()),
-  roles: z.array(RoleDraftSchema),
+  roles: z.array(RoleDraftSchemaCatalogue),
 });
-export type FieldDraft = z.infer<typeof FieldDraftSchema>;
+export type FieldDraftCatalogue = z.infer<typeof FieldDraftSchemaCatalogue>;
 
-export const DiscoverOutputSchema = z.object({
+export const DiscoverOutputSchemaCatalogue = z.object({
   /** Ranked best-fit first. */
-  fields: z.array(FieldDraftSchema),
+  fields: z.array(FieldDraftSchemaCatalogue),
 });
-export type DiscoverOutput = z.infer<typeof DiscoverOutputSchema>;
+export type DiscoverOutputCatalogue = z.infer<typeof DiscoverOutputSchemaCatalogue>;
+
+/**
+ * Memory mode (technical-plan.md D61): the same role draft with no `ref`,
+ * because there is no catalogue to point into, and no `sources`, because a
+ * URL from memory is never shown (technical-plan.md D44). Leaving the keys
+ * out, rather than asking for them empty, also means less output and a
+ * faster turn.
+ */
+export const RoleDraftSchemaMemory = RoleDraftSchemaCatalogue.omit({ ref: true, sources: true });
+export type RoleDraftMemory = z.infer<typeof RoleDraftSchemaMemory>;
+
+export const FieldDraftSchemaMemory = FieldDraftSchemaCatalogue.omit({ ref: true, sources: true }).extend({
+  roles: z.array(RoleDraftSchemaMemory),
+});
+export type FieldDraftMemory = z.infer<typeof FieldDraftSchemaMemory>;
+
+export const DiscoverOutputSchemaMemory = z.object({
+  /** Ranked best-fit first. */
+  fields: z.array(FieldDraftSchemaMemory),
+});
+export type DiscoverOutputMemory = z.infer<typeof DiscoverOutputSchemaMemory>;
 
 // ---------------------------------------------------------------------------
 // Prompts — byte-stable constants; everything per-call goes in the user message
 // ---------------------------------------------------------------------------
 
-export const DISCOVER_SYSTEM_PROMPT = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and a small reference catalogue of climate fields and example roles. You return 4-7 ranked fields, each with 2-4 roles, as JSON.
+/**
+ * The catalogue arm's prompt. Its text is frozen while it serves as an
+ * evaluation arm (technical-plan.md D61): `discover.test.ts` pins its hash.
+ */
+export const DISCOVER_SYSTEM_PROMPT_CATALOGUE = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and a small reference catalogue of climate fields and example roles. You return 4-7 ranked fields, each with 2-4 roles, as JSON.
 
 Rules that decide whether your answer is usable:
 
@@ -334,6 +384,53 @@ Rules that decide whether your answer is usable:
 6. Roles: give 2-4 per field. Each has a title, 1-4 real example companies or organisation types, a "why" that cites cards, and the catalogue's sources when it is a catalogue role. Do not repeat the same role across fields.
 
 The title is the plain occupation and carries no level: "Data Scientist", "Product Manager", "Policy Analyst", "Wind Turbine Technician". The person searches job boards with this title and decides for themselves which level to apply at. A level word narrows that search to one rung and makes a judgement that is not yours to make. This rules out level modifiers (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III), and it rules out titles that are a rank rather than an occupation (Director of X, Head of X, VP of X, Chief X Officer). For a rank, name the occupation underneath it: "Director of Data Science" is "Data Scientist", "Head of Partnerships" is "Partnerships Manager", "Senior Product Manager" is "Product Manager". "Manager" is fine where it is the occupation's own name, as in "Product Manager" or "Project Manager". The catalogue's own titles sometimes carry a rank; when you use such a role, keep its "ref" and write the plain occupation as the title. Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field short of roles.
+
+7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means companies hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. It is shown directly under the field's name, so it says what the name does not and never repeats or paraphrases the name: open with the work itself, what the person would make, run or decide in a normal week, not with a sentence that announces the field. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
+
+Answer with the JSON only.`;
+
+/**
+ * The prompt the app runs (technical-plan.md D61): no catalogue, so the ten
+ * areas frame what counts as climate work and the model names fields, roles
+ * and example organisations from what it knows. It carries no URL and asks
+ * for none (technical-plan.md D44). Rules 1, 3, 4 and 7 are word for word the
+ * catalogue prompt's; rules 5 and 6 are the same minus what they said about
+ * the catalogue. `discover.test.ts` checks both claims.
+ */
+export const DISCOVER_SYSTEM_PROMPT_MEMORY = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and the fields already on their profile, if any. You have no web access: the fields, roles and example organisations you return come from what you know. You return 4-7 ranked fields, each with 2-4 roles, as JSON.
+
+The ten areas below are the frame for what counts as climate work. They are listed so that your coverage does not depend on which areas the person happened to name:
+
+- Circular Economy
+- Built Environment
+- Transportation
+- Energy
+- Food & Agriculture
+- Carbon Removal
+- Climate Finance (including climate risk, insurance and carbon markets)
+- Industry & Materials (steel, cement, chemicals, hydrogen, industrial heat)
+- Nature & Water (conservation, forestry, oceans, water systems)
+- Corporate Sustainability & Climate Services (carbon accounting, disclosure, climate data and software, policy and advocacy)
+
+The areas are a map, not a list to fill. A field is narrower than an area: one part of it where a recognisable set of organisations hires for a recognisable kind of work, at about the grain of "grid interconnection at utilities and developers", "carbon accounting software" or "building retrofit programmes". Those three only show the grain; they are not suggestions for this person. Look across all ten areas before you settle, then return only the fields this person's cards support. Several of your fields may sit in one area, and most areas will contribute none.
+
+Rules that decide whether your answer is usable:
+
+1. Be specific to THIS person. Every field's "fit" and every role's "why" must name the card IDs (C1, C2, ...) it draws on and say what in that card transfers. Never recommend a field that any climate-curious person would get; if you cannot tie a field to a concrete card, leave it out. Generic lists ("climate needs everyone", "software", "engineering", "sustainability") are worthless. A videographer should get fields where video and story work is a real, hired function (communications teams at developers and nonprofits, documentary and impact media, brand content), not "renewable energy" in general.
+
+2. Name real fields and roles you know well. Everything in your answer comes from your own knowledge, so stay with parts of the climate economy you can describe concretely: what the organisations there do, which functions they hire for, and what those jobs are called on a job board. The person will search for the role titles you give, and a field or title that sounds plausible but is not hired for sends them looking for jobs that do not exist. Where you know a field well but are unsure of something about it, keep the field and put the doubt in its "uncertainties". Where you would be guessing that the field hires for this person's function at all, leave it out. Write no URL or web address anywhere in your answer: you cannot check a link from memory, a wrong or dead one costs the person's trust in the rest of the page, and any that you write is removed before the person sees it.
+
+3. Label the move honestly. "sector" = the same function they do today, moved into a climate company. "adjacent" = a related function that reuses most of their skills but changes the job. "retraining" = needs new credentials or a substantially new skill set. Rank sector and adjacent moves above retraining unless the person's preferences say they want to retrain.
+
+4. Name what you do not know. 1-3 short "uncertainties" per field: whether roles are in-house or freelance, how many companies hire for it in their location, whether a credential is expected, pay bands, and so on.
+
+5. Respect preferences. Location, work mode and retraining appetite are constraints when stated. Climate interests set the order, never the list: when the person names areas, rank fields in those areas first where the fit is comparable, and still include a strong fit outside them. Comparable means "strong" or "some": the person named those areas to see them first, so every field in a named area whose fit level is "strong" or "some" ranks above every field outside them, and only a "stretch" field in a named area gives way to a better fit outside. They did not ask to see nothing else, so a named area never removes a field you would otherwise list. The areas are unordered among themselves, and you judge which area a field belongs to from the work it does. With no interests stated, rank on fit alone. Do not use excluded cards; they are not shown to you.
+
+6. Roles: give 2-4 per field. Each has a title, 1-4 example companies, and a "why" that cites cards. Do not repeat the same role across fields.
+
+The title is the plain occupation and carries no level: "Data Scientist", "Product Manager", "Policy Analyst", "Wind Turbine Technician". The person searches job boards with this title and decides for themselves which level to apply at. A level word narrows that search to one rung and makes a judgement that is not yours to make. This rules out level modifiers (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III), and it rules out titles that are a rank rather than an occupation (Director of X, Head of X, VP of X, Chief X Officer). For a rank, name the occupation underneath it: "Director of Data Science" is "Data Scientist", "Head of Partnerships" is "Partnerships Manager", "Senior Product Manager" is "Product Manager". "Manager" is fine where it is the occupation's own name, as in "Product Manager" or "Project Manager". Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field short of roles.
+
+"companies" are examples of who hires for the role, shown to the person as plain text. Name well-known organisations that you are sure exist and that do this work, in the United States or the European Union. Where you are not sure of a name, name the type of organisation instead ("a utility's grid-planning team", "a state energy office"): a type is honest and still tells the person where to look, while a guessed name sends them after an organisation that may not exist or does not do this work. Name organisations, never individual people.
 
 7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means companies hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. It is shown directly under the field's name, so it says what the name does not and never repeats or paraphrases the name: open with the work itself, what the person would make, run or decide in a normal week, not with a sentence that announces the field. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
 
@@ -438,35 +535,38 @@ export function renderCatalogue(fields: readonly CatalogueField[], roles: readon
   return out.join("\n");
 }
 
-function renderExistingFields(profile: Profile): string {
+/** Fields on file, one per line. The ref is shown only where the model can use one: in catalogue mode. */
+function renderExistingFields(profile: Profile, withRefs: boolean): string {
   if (profile.fields.length === 0) return "(none yet)";
   return profile.fields
     .map(
       (f) =>
         `- ${f.id} ${f.name} — status ${f.status}` +
-        (f.extra[REF_KEY] === undefined ? "" : ` — ref ${f.extra[REF_KEY]}`),
+        (!withRefs || f.extra[REF_KEY] === undefined ? "" : ` — ref ${f.extra[REF_KEY]}`),
     )
     .join("\n");
 }
 
-/** The user message: cards, preferences, catalogue, existing fields. Deterministic. */
-export function buildDiscoverMessage(
-  profile: Profile,
-  fields: readonly CatalogueField[],
-  roles: readonly CatalogueRole[],
-): string {
+/**
+ * The user message: cards, preferences, existing fields, and the catalogue
+ * when there is one. Deterministic. With no catalogue (memory mode,
+ * technical-plan.md D61) the `# Reference catalogue` block is left out and a
+ * kept field is matched by its name, since there is no ref to match on.
+ */
+export function buildDiscoverMessage(profile: Profile, catalogue?: Catalogue): string {
   return (
     `# Experience cards\n\n${renderCardsForDiscover(profile)}\n\n` +
     `# Preferences\n\n${renderPreferencesForDiscover(profile)}\n\n` +
-    `# Fields already in the profile\n\n${renderExistingFields(profile)}\n\n` +
-    `(Recommend again from scratch; rejected fields must not come back. If you keep a field that is already listed, use the same ref so it is updated rather than duplicated.)\n\n` +
-    `# Reference catalogue\n\n${renderCatalogue(fields, roles)}\n\n` +
+    `# Fields already in the profile\n\n${renderExistingFields(profile, catalogue !== undefined)}\n\n` +
+    `(Recommend again from scratch; rejected fields must not come back. If you keep a field that is already listed, use the same ${catalogue === undefined ? "name" : "ref"} so it is updated rather than duplicated.)\n\n` +
+    (catalogue === undefined ? "" : `# Reference catalogue\n\n${renderCatalogue(catalogue.fields, catalogue.roles)}\n\n`) +
     `Return 4-7 ranked fields for this person as JSON.`
   );
 }
 
 // ---------------------------------------------------------------------------
-// Post-validation: nothing uncited, and no source the catalogue does not list
+// Post-validation: nothing uncited, no source the catalogue does not list,
+// no URL in any text, and in memory mode no URL at all
 // ---------------------------------------------------------------------------
 
 export interface DroppedCounts {
@@ -475,9 +575,11 @@ export interface DroppedCounts {
   rolesUncited: number;
   /** Roles dropped because the title is a rank with no occupation left under it (technical-plan.md D48). */
   rolesLevelTitled: number;
-  /** Source URLs removed: not listed in the catalogue, blocked, or malformed. */
+  /** Catalogue mode: entries removed from `sources` as not listed in the catalogue, blocked, or malformed. */
   sourcesRemoved: number;
-  /** Fields beyond {@link MAX_FIELDS} or duplicating an earlier field. */
+  /** Both modes: URLs removed from the text of kept fields and roles, where nothing may carry one (technical-plan.md D44, D61, D66). */
+  textUrlsStripped: number;
+  /** Fields beyond {@link MAX_FIELDS}, duplicating an earlier field, or with no name (none left once URLs are removed). */
   fieldsSurplus: number;
   /** Evidence entries dropped for citing no active card, being blank, or repeating a card. */
   evidenceDropped: number;
@@ -491,6 +593,7 @@ function zeroDropped(): DroppedCounts {
     rolesUncited: 0,
     rolesLevelTitled: 0,
     sourcesRemoved: 0,
+    textUrlsStripped: 0,
     fieldsSurplus: 0,
     evidenceDropped: 0,
     asksDropped: 0,
@@ -528,6 +631,112 @@ export function cleanCatalogueSources(
   const listed = sources.filter((s) => allowed.has(s.trim()));
   const clean = cleanSources(listed);
   return { kept: clean.kept, removed: sources.length - listed.length + clean.removed };
+}
+
+/**
+ * A link: anything with a scheme or a leading "www.", and, through
+ * {@link BARE_LINK_RE}, a bare host with a path ("rmi.org/insights"). A bare
+ * name such as "350.org" is what an organisation is called, not a link, and
+ * is left alone. A comma or semicolon ends the link when a space, the end, or a card ID
+ * follows ("https://a.org,C1" keeps its citation), and a balanced "(…)" stays
+ * inside it ("…/Grid_(power)"), unless it is a lone card ID.
+ */
+const URL_SOURCE =
+  "(?:https?:\\/\\/|www\\.)" +
+  "(?:[^\\s<>()\\[\\]\"',;]|[,;](?!\\s|$|C\\d)|\\((?!C\\d+\\))[^\\s<>()\\[\\]\"']*\\))+";
+const URL_RE = new RegExp(URL_SOURCE, "i");
+/**
+ * A link written with no scheme and no "www.": a host and the start of a path
+ * ("rmi.org/insights", "energy.gov/eere", "gov.uk/guidance"). The slash is
+ * what makes it a link: "350.org" alone is a name. Three guards keep ordinary
+ * prose out. The host is lower case, so "ASP.NET/C#" and "Socket.IO/REST" are
+ * skills, not links; it ends in a top-level domain from a fixed list, so
+ * "node.js/typescript" is one too; and the path starts with a lower-case
+ * letter or a digit, so "350.org/Sunrise Movement" is two organisations. Not
+ * case-insensitive, on purpose. It matches only up to the slash:
+ * {@link withSchemes} puts "https://" in front and {@link URL_SOURCE} takes
+ * the link from there.
+ */
+const BARE_LINK_SOURCE =
+  "(?<![\\w.\\/:@-])(?:[a-z0-9-]+\\.)+" +
+  "(?:com|org|net|gov|edu|int|mil|io|co|ai|app|dev|info|earth|energy|eu|uk|us|ca|au|nz|de|fr|nl|ch|se|no|dk|in)" +
+  "\\/(?=[a-z0-9])";
+const BARE_LINK_RE = new RegExp(BARE_LINK_SOURCE);
+const BARE_LINKS_RE = new RegExp(BARE_LINK_SOURCE, "g");
+/** The text with "https://" put in front of every schemeless link, so one pattern removes both kinds. */
+function withSchemes(text: string): string {
+  return text.replace(BARE_LINKS_RE, "https://$&");
+}
+/** `[label](url)`: the label is the text, the URL goes. */
+const MARKDOWN_LINK_RE = new RegExp(`\\[([^\\]]*)\\]\\(\\s*${URL_SOURCE}\\s*\\)`, "gi");
+/**
+ * A URL with the words that only introduced it, so no dangling lead-in is
+ * left: "see", "visit", and the prepositions "via" and "at", whose object the
+ * URL is. "Source" and "link" are ordinary words too ("open source"), so they
+ * go only as a label with a colon ("Source: <url>").
+ */
+const LED_URL_RE = new RegExp(
+  `(?:\\b(?:see(?:\\s+also)?|visit|via|at)\\b\\s*:?\\s*|\\b(?:sources?|links?)\\s*:\\s*)?${URL_SOURCE}`,
+  "gi",
+);
+/** Marks where a URL was until the punctuation around it is tidied. */
+const GAP = "";
+/** "(<url>)", "(<url>, <url>)": a bracket that held nothing but links goes whole. */
+const GAPS_ONLY_IN_BRACKETS_RE = new RegExp(
+  `["'(\\[<]\\s*${GAP}(?:[\\s.,;:!?]*${GAP})*[.,;:!?]*\\s*["')\\]>]`,
+  "g",
+);
+/** "(C1; <url>)" → "(C1)": links at the end of a bracket go with their separators. */
+const GAPS_BEFORE_CLOSE_RE = new RegExp(`(?:\\s*[,;:]?\\s*${GAP}[.,;:!?]*)+\\s*(?=[)\\]>])`, "g");
+/** "(<url>, C1)" → "(C1)": links at the start of a bracket go with their separators. */
+const GAPS_AFTER_OPEN_RE = new RegExp(`(?<=[(\\[<])\\s*(?:${GAP}[.,;:!?]*\\s*)+`, "g");
+/** A bracket left holding only punctuation. */
+const EMPTY_BRACKETS_RE = /\s*[(\[<][\s.,;:!?]*[)\]>]/g;
+/** "…as C1: <url>." — the clause opener goes with the URL it introduced. */
+const GAP_AFTER_CLAUSE_OPENER_RE = new RegExp(`[,;:]\\s*${GAP}(?=[.!?])`, "g");
+/** "…this work. <url>. Then…" — a URL that stood as its own sentence or clause. */
+const GAP_AS_OWN_CLAUSE_RE = new RegExp(`([.!?,;:])\\s*${GAP}[.,;:!?]+`, "g");
+const GAP_RE = new RegExp(`\\s*${GAP}`, "g");
+
+/** True when the text carries a link {@link stripUrls} would remove. */
+export function hasUrl(text: string): boolean {
+  return URL_RE.test(text) || BARE_LINK_RE.test(text);
+}
+
+/**
+ * The text with every URL removed and the sentence around it left readable:
+ * a markdown link keeps its label, "(see https://…)" goes whole, and the
+ * punctuation that closed a URL stays with the sentence. Text with no URL
+ * comes back untouched. Memory-mode discovery runs all the model's prose
+ * through this, because no URL from memory is ever shown (technical-plan.md
+ * D44, D61).
+ */
+export function stripUrls(text: string): { text: string; removed: number } {
+  let removed = 0;
+  const gapped = withSchemes(text)
+    .replace(MARKDOWN_LINK_RE, (_match, label: string) => {
+      removed += 1;
+      return label;
+    })
+    .replace(LED_URL_RE, (match) => {
+      removed += 1;
+      return GAP + (/[.,;:!?]+$/.exec(match)?.[0] ?? "");
+    });
+  if (removed === 0) return { text, removed };
+  return {
+    text: gapped
+      .replace(GAPS_ONLY_IN_BRACKETS_RE, "")
+      .replace(GAPS_BEFORE_CLOSE_RE, "")
+      .replace(GAPS_AFTER_OPEN_RE, "")
+      .replace(EMPTY_BRACKETS_RE, "")
+      .replace(GAP_AFTER_CLAUSE_OPENER_RE, "")
+      .replace(GAP_AS_OWN_CLAUSE_RE, "$1")
+      .replace(GAP_RE, "")
+      .replace(/\s+/g, " ")
+      .replace(/\s+([.,;:!?)\]])/g, "$1")
+      .replace(/^[\s.,;:!?]+|[\s,;:]+$/g, ""),
+    removed,
+  };
 }
 
 /** Card IDs cited in `text` that are active in the profile. */
@@ -633,10 +842,82 @@ function identityKeys(ref: string | null | undefined, name: string): string[] {
   return keys;
 }
 
+const NO_SOURCES: ReadonlySet<string> = new Set<string>();
+
+/** A draft of either mode ready for validation, with the URLs stripped from its text. */
+interface PreparedDraft {
+  draft: FieldDraftCatalogue;
+  /** URLs stripped from the field's own text, counted only if the field is kept. */
+  urlsStripped: number;
+  /** URLs stripped from each role, by index, counted only if that role is kept. */
+  roleUrlsStripped: number[];
+}
+
 /**
- * Drops (and counts) anything uncited; strips (and counts) every source the
- * catalogue does not list; caps sizes. A field or role left with no source is
- * kept — it is one the model named from its own knowledge.
+ * A draft of either mode in the shape validation works on, with every string
+ * the screens render, names and titles included, run through
+ * {@link stripUrls}: no URL the model wrote into its prose is shown in either
+ * mode (technical-plan.md D44, D61, D66). A catalogue-mode draft keeps its
+ * refs and its `sources`, which validation then filters against the
+ * catalogue; a memory-mode draft comes out with no ref and no sources. The
+ * counts are held back so only what survives validation adds to
+ * `textUrlsStripped`.
+ */
+function prepareDraft(draft: FieldDraftMemory | FieldDraftCatalogue, catalogueMode: boolean): PreparedDraft {
+  let count = 0;
+  const strip = (text: string): string => {
+    const { text: clean, removed } = stripUrls(text);
+    count += removed;
+    return clean;
+  };
+  const roleUrlsStripped: number[] = [];
+  const roles = draft.roles.map((r) => {
+    count = 0;
+    const role = {
+      ...r,
+      ref: catalogueMode && "ref" in r ? r.ref : null,
+      title: strip(r.title),
+      companies: r.companies.map(strip),
+      why: strip(r.why),
+      sources: catalogueMode && "sources" in r ? r.sources : [],
+    };
+    roleUrlsStripped.push(count);
+    return role;
+  });
+  count = 0;
+  const field: FieldDraftCatalogue = {
+    ...draft,
+    ref: catalogueMode && "ref" in draft ? draft.ref : null,
+    name: strip(draft.name),
+    sector: strip(draft.sector),
+    summary: strip(draft.summary),
+    chips: draft.chips.map(strip),
+    fit: strip(draft.fit),
+    evidence: draft.evidence.map((e) => ({ ...e, why: strip(e.why) })),
+    uncertainties: draft.uncertainties.map(strip),
+    ask: { ...draft.ask, question: strip(draft.ask.question), placeholder: strip(draft.ask.placeholder) },
+    sources: catalogueMode && "sources" in draft ? draft.sources : [],
+    roles,
+  };
+  return { draft: field, urlsStripped: count, roleUrlsStripped };
+}
+
+/**
+ * Drops (and counts) anything uncited and caps sizes, in both modes.
+ *
+ * In both modes every URL in what the model wrote (names and titles
+ * included) is removed before citations are looked for, so a card ID that
+ * appears only inside a URL is not a citation (technical-plan.md D66).
+ * `textUrlsStripped` counts only the URLs of fields and roles that are kept;
+ * a field whose name was nothing but a URL is dropped as surplus.
+ *
+ * With `catalogueSources` (catalogue mode) it also strips and counts every
+ * source the catalogue does not list. A field or role left with no source is
+ * kept: it is one the model named from its own knowledge.
+ *
+ * Without it (memory mode, technical-plan.md D61) there is no catalogue
+ * filter: every field and role comes out with no ref and no sources, and
+ * fields are deduped by name.
  *
  * Role titles lose their level modifiers before anything else looks at them
  * (technical-plan.md D48), so "Senior Data Scientist" and "Data Scientist" in
@@ -645,16 +926,20 @@ function identityKeys(ref: string | null | undefined, name: string): string[] {
  * and counted in `rolesLevelTitled`.
  */
 export function validateOutput(
-  output: DiscoverOutput,
+  output: DiscoverOutputMemory | DiscoverOutputCatalogue,
   profile: Profile,
-  allowedSources: ReadonlySet<string>,
+  catalogueSources?: ReadonlySet<string>,
 ): ValidatedOutput {
   const dropped = zeroDropped();
   const fields: ValidatedField[] = [];
   const seen = new Set<string>();
-  for (const draft of output.fields) {
+  const allowedSources = catalogueSources ?? NO_SOURCES;
+  for (const raw of output.fields) {
+    // A ref counts only in catalogue mode; in memory mode identity is the name.
+    // Either way, once any URL is out of the text.
+    const { draft, urlsStripped, roleUrlsStripped: roleUrls } = prepareDraft(raw, catalogueSources !== undefined);
     const keys = identityKeys(draft.ref, draft.name);
-    if (fields.length >= MAX_FIELDS || keys.some((k) => seen.has(k))) {
+    if (fields.length >= MAX_FIELDS || draft.name.trim() === "" || keys.some((k) => seen.has(k))) {
       dropped.fieldsSurplus += 1;
       continue;
     }
@@ -667,13 +952,16 @@ export function validateOutput(
     dropped.sourcesRemoved += removed;
     const roles: ValidatedRole[] = [];
     const seenRoles = new Set<string>();
-    for (const r of draft.roles) {
+    let roleUrlsStripped = 0;
+    for (const [i, r] of draft.roles.entries()) {
       if (roles.length >= MAX_ROLES_PER_FIELD) break;
       const title = stripLevelWords(r.title);
       if (hasLevelHead(title) || (title === "" && r.title.trim() !== "")) {
         dropped.rolesLevelTitled += 1;
         continue;
       }
+      // No title at all (possibly one that was only a URL).
+      if (title === "") continue;
       const rKeys = identityKeys(r.ref, title);
       if (rKeys.some((k) => seenRoles.has(k))) continue;
       if (citedActiveCardIds(r.why, profile).length === 0) {
@@ -683,6 +971,7 @@ export function validateOutput(
       const rs = cleanCatalogueSources(r.sources, allowedSources);
       dropped.sourcesRemoved += rs.removed;
       for (const k of rKeys) seenRoles.add(k);
+      roleUrlsStripped += roleUrls[i] ?? 0;
       roles.push({
         ref: trimmedRef(r.ref),
         title,
@@ -692,6 +981,7 @@ export function validateOutput(
       });
     }
     for (const k of keys) seen.add(k);
+    dropped.textUrlsStripped += urlsStripped + roleUrlsStripped;
     let chips = cleanPhrases(draft.chips, MAX_CHIPS);
     if (chips.length === 0) {
       // No chips from the model: fall back to the skills of the cards the fit cites.
@@ -766,6 +1056,11 @@ export interface ApplyResult {
  * flag; a new one is appended as `candidate`. Roles are matched within their
  * field by ref, then title. Fields and roles from earlier runs that this run
  * did not return are marked dropped (technical-plan.md D58).
+ *
+ * A memory-mode run (technical-plan.md D61) hands in fields with no ref and
+ * no sources, so everything it writes is matched by name and comes out with
+ * no `Ref` and an empty source list, including a field an earlier catalogue
+ * run had given both.
  */
 export function applyDiscovery(profile: Profile, fields: readonly ValidatedField[]): ApplyResult {
   let next = profile;
@@ -864,7 +1159,12 @@ export interface DiscoverRequest {
 
 export interface DiscoverOptions {
   llm?: Llm;
-  reference?: ReferenceReader;
+  /**
+   * Present: the catalogue arm, reading the reference tables through this
+   * reader. Absent: memory mode, which is what the app passes
+   * (technical-plan.md D61).
+   */
+  catalogue?: ReferenceReader;
 }
 
 export interface DiscoverResult extends ApplyResult {
@@ -873,7 +1173,11 @@ export interface DiscoverResult extends ApplyResult {
   call: CallMetrics;
 }
 
-/** Cards + catalogue → ranked fields and roles written into the profile. No web tools (D44). */
+/**
+ * Cards → ranked fields and roles written into the profile. No web tools
+ * (D44). With no `options.catalogue` the model works from its own knowledge;
+ * with one, from the reference catalogue the reader returns (D61).
+ */
 export async function discoverFields(
   { sessionId, profile }: DiscoverRequest,
   options: DiscoverOptions = {},
@@ -882,21 +1186,34 @@ export async function discoverFields(
     throw new DiscoverInputError("The profile has no active experience cards to discover from.");
   }
   const llmClient = options.llm ?? (await import("./llm")).llm();
-  const reference = options.reference ?? (await defaultReference());
-  const [catFields, catRoles] = await Promise.all([reference.listFields(), reference.listRoles()]);
+  if (options.catalogue === undefined) {
+    const result = await llmClient.structured({
+      step: "discover",
+      sessionId,
+      system: DISCOVER_SYSTEM_PROMPT_MEMORY,
+      messages: [{ role: "user", content: buildDiscoverMessage(profile) }],
+      schema: DiscoverOutputSchemaMemory,
+    });
+    return writeResult(profile, validateOutput(result.value, profile), result);
+  }
+  const [fields, roles] = await Promise.all([options.catalogue.listFields(), options.catalogue.listRoles()]);
   const result = await llmClient.structured({
     step: "discover",
     sessionId,
-    system: DISCOVER_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildDiscoverMessage(profile, catFields, catRoles) }],
-    schema: DiscoverOutputSchema,
+    system: DISCOVER_SYSTEM_PROMPT_CATALOGUE,
+    messages: [{ role: "user", content: buildDiscoverMessage(profile, { fields, roles }) }],
+    schema: DiscoverOutputSchemaCatalogue,
   });
-  const { usage, costUsd, durationMs, continuations, stopReason } = result;
+  return writeResult(profile, validateOutput(result.value, profile, catalogueSourceUrls(fields, roles)), result);
+}
 
-  const validated = validateOutput(result.value, profile, catalogueSourceUrls(catFields, catRoles));
-  const applied = applyDiscovery(profile, validated.fields);
+function writeResult(
+  profile: Profile,
+  validated: ValidatedOutput,
+  { usage, costUsd, durationMs, continuations, stopReason }: CallMetrics,
+): DiscoverResult {
   return {
-    ...applied,
+    ...applyDiscovery(profile, validated.fields),
     dropped: validated.dropped,
     call: { usage, costUsd, durationMs, continuations, stopReason },
   };
@@ -907,7 +1224,7 @@ export function droppedSummary(d: DroppedCounts): string {
   const total = d.fieldsUncited + d.rolesUncited + d.rolesLevelTitled + d.fieldsSurplus;
   return (
     `${String(total)} dropped (fields: ${String(d.fieldsUncited)} uncited, ${String(d.fieldsSurplus)} surplus; ` +
-    `roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesLevelTitled)} titled by rank; ${String(d.sourcesRemoved)} source URLs removed as not in the catalogue; ` +
+    `roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesLevelTitled)} titled by rank; ${String(d.sourcesRemoved)} source URLs removed, ${String(d.textUrlsStripped)} URLs stripped from text; ` +
     `${String(d.evidenceDropped)} evidence lines, ${String(d.asksDropped)} asks dropped)`
   );
 }

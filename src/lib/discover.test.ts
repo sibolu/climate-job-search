@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -6,11 +7,18 @@ import type { z } from "zod";
 import { describe, expect, it } from "vitest";
 
 import {
+  type Catalogue,
   type CatalogueField,
   type CatalogueRole,
-  DISCOVER_SYSTEM_PROMPT,
-  type DiscoverOutput,
+  DISCOVER_SYSTEM_PROMPT_CATALOGUE,
+  DISCOVER_SYSTEM_PROMPT_MEMORY,
+  type DiscoverOutputCatalogue,
+  type DiscoverOutputMemory,
+  DiscoverOutputSchemaCatalogue,
+  DiscoverOutputSchemaMemory,
   DiscoverInputError,
+  FieldDraftSchemaCatalogue,
+  FieldDraftSchemaMemory,
   LEADING_LEVEL_MODIFIERS,
   LEVEL_HEADS,
   LEVEL_MODIFIERS,
@@ -18,6 +26,8 @@ import {
   MAX_CHIPS,
   MAX_FIELDS,
   REF_KEY,
+  RoleDraftSchemaCatalogue,
+  RoleDraftSchemaMemory,
   type ReferenceReader,
   applyDiscovery,
   buildDiscoverMessage,
@@ -26,14 +36,18 @@ import {
   cleanCatalogueSources,
   cleanSources,
   discoverFields,
+  droppedSummary,
   hasLevelHead,
   hasLevelWord,
+  hasUrl,
   renderCardsForDiscover,
   renderCatalogue,
   renderPreferencesForDiscover,
   stripLevelWords,
+  stripUrls,
   validateOutput,
 } from "./discover";
+import { CLIMATE_AREAS } from "./elicit";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
 import {
   type Profile,
@@ -119,8 +133,9 @@ const reference: ReferenceReader = {
   listRoles: () => Promise.resolve(CAT_ROLES),
 };
 const ALLOWED = catalogueSourceUrls(CAT_FIELDS, CAT_ROLES);
+const CATALOGUE: Catalogue = { fields: CAT_FIELDS, roles: CAT_ROLES };
 
-function output(overrides: Partial<DiscoverOutput["fields"][number]> = {}): DiscoverOutput {
+function output(overrides: Partial<DiscoverOutputCatalogue["fields"][number]> = {}): DiscoverOutputCatalogue {
   return {
     fields: [
       {
@@ -164,14 +179,14 @@ function output(overrides: Partial<DiscoverOutput["fields"][number]> = {}): Disc
 describe("prompt builder", () => {
   it("renders active cards and the catalogue deterministically", () => {
     const profile = fixture("videographer");
-    const a = buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES);
-    const b = buildDiscoverMessage(profile, [...CAT_FIELDS].reverse(), CAT_ROLES);
+    const a = buildDiscoverMessage(profile, CATALOGUE);
+    const b = buildDiscoverMessage(profile, { fields: [...CAT_FIELDS].reverse(), roles: CAT_ROLES });
     expect(a).toBe(b);
     expect(a).toContain("### C1: Eight-part documentary series");
     expect(a).toContain("### offshore-wind: Offshore wind development");
     expect(a).toContain("ow-video: Video Producer [communications]");
     expect(a.indexOf("## Sector group: energy")).toBeLessThan(a.indexOf("## Sector group: nature"));
-    expect(DISCOVER_SYSTEM_PROMPT).not.toContain("C1:");
+    expect(DISCOVER_SYSTEM_PROMPT_CATALOGUE).not.toContain("C1:");
   });
 
   it("omits excluded cards", () => {
@@ -313,7 +328,7 @@ describe("post-validation", () => {
   });
 
   it("caps fields and dedups by ref", () => {
-    const many: DiscoverOutput = { fields: Array.from({ length: MAX_FIELDS + 2 }, () => output().fields[0]!) };
+    const many: DiscoverOutputCatalogue = { fields: Array.from({ length: MAX_FIELDS + 2 }, () => output().fields[0]!) };
     const v = validateOutput(many, profile, ALLOWED);
     expect(v.fields).toHaveLength(1);
     expect(v.dropped.fieldsSurplus).toBe(MAX_FIELDS + 1);
@@ -323,7 +338,7 @@ describe("post-validation", () => {
 describe("profile writes", () => {
   it("keeps IDs stable and user statuses across two runs", async () => {
     const llm = fakeLlm([output()]);
-    const first = await discoverFields({ sessionId: SESSION_ID, profile: fixture("videographer") }, { llm, reference });
+    const first = await discoverFields({ sessionId: SESSION_ID, profile: fixture("videographer") }, { llm, catalogue: reference });
     expect(first.call.costUsd).toBeGreaterThanOrEqual(0);
     expect(first.fields.map((f) => f.id)).toEqual(["F1"]);
     expect(first.fields[0]!.status).toBe("candidate");
@@ -336,7 +351,7 @@ describe("profile writes", () => {
       { sessionId: SESSION_ID, profile: accepted },
       {
         llm: fakeLlm([output({ fit: "Updated: C2 and C1.", name: "Regen ag nonprofits (renamed)" })]),
-        reference,
+        catalogue: reference,
       },
     );
     expect(second.profile.fields).toHaveLength(1);
@@ -481,7 +496,7 @@ describe("profile writes", () => {
 
   it("refuses a profile without active cards", async () => {
     await expect(
-      discoverFields({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]), reference }),
+      discoverFields({ sessionId: SESSION_ID, profile: emptyProfile() }, { llm: fakeLlm([]), catalogue: reference }),
     ).rejects.toBeInstanceOf(DiscoverInputError);
   });
 });
@@ -617,13 +632,13 @@ describe("level words (technical-plan.md D48)", () => {
   });
 
   it("the prompt asks for plain occupations at companies, and seniority is not sent", () => {
-    expect(DISCOVER_SYSTEM_PROMPT).toContain("carries no level");
-    expect(DISCOVER_SYSTEM_PROMPT).not.toMatch(/employer/i);
-    expect(DISCOVER_SYSTEM_PROMPT).not.toMatch(/seniority/i);
+    expect(DISCOVER_SYSTEM_PROMPT_CATALOGUE).toContain("carries no level");
+    expect(DISCOVER_SYSTEM_PROMPT_CATALOGUE).not.toMatch(/employer/i);
+    expect(DISCOVER_SYSTEM_PROMPT_CATALOGUE).not.toMatch(/seniority/i);
     const profile = setPreference(fixture("videographer"), "seniority", "director or above", "stated");
     const prefs = renderPreferencesForDiscover(profile);
     expect(prefs).not.toMatch(/seniority|director/i);
-    expect(buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES)).not.toContain("director or above");
+    expect(buildDiscoverMessage(profile, CATALOGUE)).not.toContain("director or above");
   });
 
   it("sends named climate areas as an unordered set, and no line when none is named (D54)", () => {
@@ -636,7 +651,7 @@ describe("level words (technical-plan.md D48)", () => {
       "- Climate interests (areas named, in no order of preference): Energy; Carbon Removal (stated)",
     );
     expect(renderPreferencesForDiscover(withInterests(["open to suggestions"]))).not.toMatch(/climate interests/i);
-    expect(DISCOVER_SYSTEM_PROMPT).toContain("Climate interests set the order, never the list");
+    expect(DISCOVER_SYSTEM_PROMPT_CATALOGUE).toContain("Climate interests set the order, never the list");
   });
 
   it("sends every skill the person has not removed, untouched inferred ones included (D53)", () => {
@@ -653,7 +668,7 @@ describe("level words (technical-plan.md D48)", () => {
     expect(prefs.split("\n")).toContain("- Skills: Video editing, field production");
     expect(prefs).not.toMatch(/tax accounting/i);
     expect(prefs).not.toMatch(/confirmed/i);
-    const message = buildDiscoverMessage(profile, CAT_FIELDS, CAT_ROLES);
+    const message = buildDiscoverMessage(profile, CATALOGUE);
     expect(message).toContain("- Skills: Video editing, field production\n");
     expect(message).not.toMatch(/tax accounting/i);
 
@@ -672,12 +687,411 @@ describe("what the person typed (technical-plan.md D56)", () => {
     const MARKER = "TYPED-INPUT-MARKER-7f3a";
     const typed = setInputs(fixture("videographer"), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
     const llm = fakeLlm([output()]);
-    const result = await discoverFields({ sessionId: SESSION_ID, profile: typed }, { llm, reference });
+    const result = await discoverFields({ sessionId: SESSION_ID, profile: typed }, { llm, catalogue: reference });
 
     expect(llm.requests.length).toBeGreaterThan(0);
     for (const request of llm.requests) {
       expect(JSON.stringify([request.system, request.messages])).not.toContain(MARKER);
     }
     expect(result.profile.inputs).toEqual(typed.inputs);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Memory mode, which the app runs, beside the catalogue arm (technical-plan.md D61)
+// ---------------------------------------------------------------------------
+
+const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
+
+/** A `Sources` key with at least one entry under it, in serialized profile text. */
+const SOURCE_ENTRY = /^- \*\*Sources:\*\*\n {2}- /m;
+
+/** {@link output} as the memory-mode schema returns it: no ref, no sources. */
+function memoryOutput(overrides: Partial<DiscoverOutputMemory["fields"][number]> = {}): DiscoverOutputMemory {
+  const field = DiscoverOutputSchemaMemory.parse(output()).fields[0]!;
+  return { fields: [{ ...field, ...overrides }] };
+}
+
+/** The paragraph of a prompt that starts with `opening`. */
+function paragraph(prompt: string, opening: string): string | undefined {
+  return prompt.split("\n\n").find((p) => p.startsWith(opening));
+}
+
+describe("the two system prompts (technical-plan.md D61)", () => {
+  // Pinned in step 2d.2, when the catalogue path became an evaluation arm. A
+  // deliberate change to that arm updates the hash in the same commit; the
+  // message hash also moves if the videographer fixture or a renderer does.
+  it("the catalogue arm's prompt and message are byte for byte what they were before memory mode", () => {
+    expect(sha256(DISCOVER_SYSTEM_PROMPT_CATALOGUE)).toBe(
+      "1cefadecfcab7aa668a9ebaefd1fec51d9061b762cf117577616e312915e132a",
+    );
+    expect(sha256(buildDiscoverMessage(fixture("videographer"), CATALOGUE))).toBe(
+      "467bb41a289caa3b3a531ab0180d9a560a2a57b4e5a74ddc0c0cd17db94b955a",
+    );
+  });
+
+  it("the memory prompt frames climate work in ten areas, the six pills by their exact names", () => {
+    for (const area of CLIMATE_AREAS) expect(DISCOVER_SYSTEM_PROMPT_MEMORY).toContain(`\n- ${area}\n`);
+    for (const area of [
+      "Climate Finance (including climate risk, insurance and carbon markets)",
+      "Industry & Materials (steel, cement, chemicals, hydrogen, industrial heat)",
+      "Nature & Water (conservation, forestry, oceans, water systems)",
+      "Corporate Sustainability & Climate Services (carbon accounting, disclosure, climate data and software, policy and advocacy)",
+    ]) {
+      expect(DISCOVER_SYSTEM_PROMPT_MEMORY).toContain(`\n- ${area}\n`);
+    }
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY.match(/^- /gm)).toHaveLength(CLIMATE_AREAS.length + 4);
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).toContain("a map, not a list to fill");
+  });
+
+  it("the memory prompt mentions no catalogue, no ref, no sources, and carries no URL", () => {
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).not.toMatch(/catalogue/i);
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).not.toContain('"ref"');
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).not.toContain('"sources"');
+    expect(hasUrl(DISCOVER_SYSTEM_PROMPT_MEMORY)).toBe(false);
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).toContain("Name real fields and roles you know well");
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).toContain("Write no URL");
+    // Companies: plain text, sure-to-exist organisations, a type rather than a guessed name, never a person.
+    const companies = paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, '"companies" are');
+    expect(companies).toContain("plain text");
+    expect(companies).toContain("that you are sure exist");
+    expect(companies).toContain("the United States or the European Union");
+    expect(companies).toContain(`"a utility's grid-planning team"`);
+    expect(companies).toContain("never individual people");
+    // The same vocabulary rules the catalogue prompt keeps (D48).
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).not.toMatch(/employer/i);
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).not.toMatch(/seniority/i);
+    expect(DISCOVER_SYSTEM_PROMPT_MEMORY).not.toContain("C1:");
+  });
+
+  it("the rules both prompts share are word for word the same", () => {
+    for (const n of [1, 3, 4, 7]) {
+      const rule = paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, `${String(n)}. `);
+      expect(rule).toBeDefined();
+      expect(rule).toBe(paragraph(DISCOVER_SYSTEM_PROMPT_CATALOGUE, `${String(n)}. `));
+    }
+    // Rule 5 loses only its clause about the catalogue's headings.
+    expect(paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, "5. ")).toBe(
+      paragraph(DISCOVER_SYSTEM_PROMPT_CATALOGUE, "5. ")!.replace(
+        ", not from the catalogue's sector-group headings, which are coarser",
+        "",
+      ),
+    );
+    expect(paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, "5. ")).toContain("Climate interests set the order, never the list");
+    // The title rule loses only its sentence about the catalogue's own titles.
+    expect(paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, "The title is")).toBe(
+      paragraph(DISCOVER_SYSTEM_PROMPT_CATALOGUE, "The title is")!.replace(
+        ` The catalogue's own titles sometimes carry a rank; when you use such a role, keep its "ref" and write the plain occupation as the title.`,
+        "",
+      ),
+    );
+    expect(paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, "The title is")).toContain("carries no level");
+  });
+});
+
+describe("the two message shapes and schemas (technical-plan.md D61)", () => {
+  it("memory mode leaves the catalogue out and matches a kept field by name", () => {
+    const profile = fixture("videographer");
+    const withField = applyDiscovery(profile, validateOutput(output(), profile, ALLOWED).fields).profile;
+    expect(withField.fields[0]!.extra[REF_KEY]).toBe("ag-nonprofits");
+
+    const memory = buildDiscoverMessage(withField);
+    expect(memory).toContain("### C1: Eight-part documentary series");
+    expect(memory).toContain("# Preferences\n\n");
+    expect(memory).toContain("- F1 Regenerative agriculture nonprofits — status candidate\n");
+    expect(memory).toContain("use the same name so it is updated rather than duplicated");
+    expect(memory).not.toContain("# Reference catalogue");
+    expect(memory).not.toContain("Sector group");
+    expect(memory).not.toContain("ag-nonprofits");
+    expect(memory).not.toContain("example.org");
+    expect(memory.endsWith("duplicated.)\n\nReturn 4-7 ranked fields for this person as JSON.")).toBe(true);
+
+    const catalogue = buildDiscoverMessage(withField, CATALOGUE);
+    expect(catalogue).toContain("- F1 Regenerative agriculture nonprofits — status candidate — ref ag-nonprofits\n");
+    expect(catalogue).toContain("use the same ref so it is updated rather than duplicated");
+    expect(catalogue).toContain("# Reference catalogue\n\n## Sector group: energy");
+    // Everything but the catalogue block and the ref wording is shared.
+    expect(memory.split("# Fields already in the profile")[0]).toBe(catalogue.split("# Fields already in the profile")[0]);
+  });
+
+  it("the memory schema has no ref and no sources; the catalogue schema keeps its keys in order", () => {
+    expect(Object.keys(FieldDraftSchemaCatalogue.shape)).toEqual([
+      "ref", "name", "move", "sector", "fitLevel", "summary", "chips", "fit", "evidence", "uncertainties", "ask", "sources", "roles",
+    ]);
+    expect(Object.keys(RoleDraftSchemaCatalogue.shape)).toEqual(["title", "ref", "companies", "why", "sources"]);
+    expect(Object.keys(FieldDraftSchemaMemory.shape)).toEqual([
+      "name", "move", "sector", "fitLevel", "summary", "chips", "fit", "evidence", "uncertainties", "ask", "roles",
+    ]);
+    expect(Object.keys(RoleDraftSchemaMemory.shape)).toEqual(["title", "companies", "why"]);
+    const parsed = memoryOutput().fields[0]!;
+    expect(parsed).not.toHaveProperty("ref");
+    expect(parsed).not.toHaveProperty("sources");
+    expect(parsed.roles[0]).toEqual({
+      title: "Video Producer, farmer outreach",
+      companies: ["Example Coalition"],
+      why: "Same field craft as C1.",
+    });
+  });
+});
+
+describe("memory mode validation (technical-plan.md D61)", () => {
+  const profile = fixture("videographer");
+
+  it("strips URLs and leaves readable text", () => {
+    expect(stripUrls("C1 is this work.")).toEqual({ text: "C1 is this work.", removed: 0 });
+    expect(stripUrls("C1 is this work (see https://example.org/a).")).toEqual({ text: "C1 is this work.", removed: 1 });
+    expect(stripUrls("C1 is this work. See https://example.org/a. C2 adds clients.")).toEqual({
+      text: "C1 is this work. C2 adds clients.",
+      removed: 1,
+    });
+    expect(stripUrls("Read [the C1 series](https://example.org/a) first.")).toEqual({
+      text: "Read the C1 series first.",
+      removed: 1,
+    });
+    expect(stripUrls("Listed at www.example.org/jobs, and C2 shows it <http://example.org/b>.")).toEqual({
+      text: "Listed, and C2 shows it.",
+      removed: 2,
+    });
+    expect(stripUrls("Same field craft as C1: https://example.org/a.")).toEqual({
+      text: "Same field craft as C1.",
+      removed: 1,
+    });
+    expect(stripUrls("Source: https://example.org/C1")).toEqual({ text: "", removed: 1 });
+    // An organisation's name is not a link.
+    expect(stripUrls("350.org hires for this.")).toEqual({ text: "350.org hires for this.", removed: 0 });
+    expect(hasUrl("350.org hires for this.")).toBe(false);
+    expect(hasUrl("See WWW.example.org")).toBe(true);
+  });
+
+  it("leaves no broken brackets, keeps citations next to a URL, and keeps ordinary words", () => {
+    const cases: [string, string][] = [
+      ["Data from C1 (https://a.com, https://b.com) shows", "Data from C1 shows"],
+      ["Your work (C1; https://vimeo.com/x) transfers.", "Your work (C1) transfers."],
+      ["Your work (https://a.com, C1) transfers.", "Your work (C1) transfers."],
+      ["Your C1 skills matter at http://x.org/a_(b) today", "Your C1 skills matter today"],
+      ["Your film work (https://a.com,C1) transfers.", "Your film work (C1) transfers."],
+      ["Open source https://github.com/x tools from C1", "Open source tools from C1"],
+      ["Query https://a.com/?a=1,2 works.", "Query works."],
+      ["Read [x](https://a.com/b_(c)) now, per C1.", "Read x now, per C1."],
+    ];
+    for (const [input, expected] of cases) expect(stripUrls(input).text).toBe(expected);
+  });
+
+  it("removes a link written with no scheme, and leaves names and skills alone (technical-plan.md D66)", () => {
+    const links: [string, string][] = [
+      ["See rmi.org/insights for more (C1).", "for more (C1)."],
+      ["Your C1 work matches energy.gov/eere programmes.", "Your C1 work matches programmes."],
+      ["Listed on gov.uk/guidance/heat-networks, per C1.", "Listed on, per C1."],
+      ["Read [the C1 series](iea.org/reports/x) first.", "Read the C1 series first."],
+      ["C1 is this work (rmi.org/insights).", "C1 is this work."],
+    ];
+    for (const [input, expected] of links) {
+      expect(hasUrl(input)).toBe(true);
+      expect(stripUrls(input)).toEqual({ text: expected, removed: 1 });
+    }
+    // One link, not two: the host inside a query string is part of the link around it.
+    expect(stripUrls("C1 https://a.org/r?u=rmi.org/x counts.")).toEqual({ text: "C1 counts.", removed: 1 });
+    const kept = [
+      "350.org hires for this.",
+      "Groups such as 350.org/Sunrise Movement hire for this.",
+      "Built on ASP.NET/C# and Node.js/TypeScript (C1).",
+      "Socket.IO/REST services and node.js/typescript tooling.",
+      "Ask jobs@example.org/hr about C1.",
+      "U.S./Canada grid work and/or policy, e.g./i.e. C1.",
+    ];
+    for (const text of kept) {
+      expect(hasUrl(text)).toBe(false);
+      expect(stripUrls(text)).toEqual({ text, removed: 0 });
+    }
+  });
+
+  it("strips URLs from catalogue-mode text too, keeping refs and catalogue sources (technical-plan.md D66)", () => {
+    const base = output().fields[0]!;
+    const v = validateOutput(
+      {
+        fields: [
+          {
+            ...base,
+            fit: `${base.fit} (see https://made-up.org/a)`,
+            summary: `${base.summary} More at rmi.org/insights.`,
+            roles: base.roles.map((r) => ({ ...r, why: `${r.why} See https://made-up.org/b.` })),
+          },
+        ],
+      },
+      profile,
+      ALLOWED,
+    );
+    expect(v.fields).toHaveLength(1);
+    const field = v.fields[0]!;
+    expect(field.ref).toBe(base.ref);
+    expect(field.sources).toEqual(["https://example.org/regen"]);
+    expect(field.fit).toBe(base.fit.trim());
+    expect([field.fit, field.summary, ...field.roles.map((r) => r.why)].some((text) => hasUrl(text))).toBe(false);
+    // Two from the field's text, one from the one role that is kept.
+    expect(v.dropped.textUrlsStripped).toBe(2 + field.roles.length);
+    expect(field.roles).toHaveLength(1);
+  });
+
+  it("strips URLs from names and titles, and counts only what is kept", () => {
+    const base = memoryOutput().fields[0]!;
+    const v = validateOutput(
+      {
+        fields: [
+          {
+            ...base,
+            name: "Impact media (www.example.org)",
+            roles: [
+              { title: "Producer – https://x.com", companies: ["Example Coalition"], why: "Same field craft as C1." },
+              { title: "Editor", companies: ["https://example.org/a"], why: "No citation here." },
+            ],
+          },
+          { ...base, name: "Another field", fit: "Uncited, see https://example.org/a and https://example.org/b." },
+          { ...base, name: "https://example.org/only-a-link" },
+        ],
+      },
+      profile,
+    );
+    expect(v.fields.map((f) => f.name)).toEqual(["Impact media"]);
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Producer"]);
+    expect(v.dropped.fieldsUncited).toBe(1);
+    expect(v.dropped.fieldsSurplus).toBe(1);
+    expect(v.dropped.rolesUncited).toBe(1);
+    // The name's and the kept title's URLs only: not the uncited field's two or the uncited role's one.
+    expect(v.dropped.textUrlsStripped).toBe(2);
+  });
+
+  it("removes URLs from the model's prose, counts them, and keeps the citations", () => {
+    const v = validateOutput(
+      memoryOutput({
+        summary: "You already film farms changing practice (https://example.org/regen). Nonprofits hire for exactly that.",
+        fit: "C1 is exactly this work (see https://example.org/a); C2 shows the client relationships.",
+        roles: [
+          {
+            title: "Video Producer, farmer outreach",
+            companies: ["Example Coalition", "https://example.org/coalition"],
+            why: "Same field craft as C1: www.example.org/jobs.",
+          },
+        ],
+      }),
+      profile,
+    );
+    expect(v.fields).toHaveLength(1);
+    const field = v.fields[0]!;
+    expect(field.summary).toBe("You already film farms changing practice. Nonprofits hire for exactly that.");
+    expect(field.fit).toBe("C1 is exactly this work; C2 shows the client relationships.");
+    expect(field.roles).toEqual([
+      { ref: null, title: "Video Producer, farmer outreach", companies: ["Example Coalition"], why: "Same field craft as C1.", sources: [] },
+    ]);
+    expect(field.ref).toBeNull();
+    expect(field.sources).toEqual([]);
+    expect(v.dropped.textUrlsStripped).toBe(4);
+    expect(v.dropped.sourcesRemoved).toBe(0);
+
+    // A card ID that appears only inside a URL is not a citation.
+    const onlyInUrl = validateOutput(memoryOutput({ fit: "See https://example.org/C1" }), profile);
+    expect(onlyInUrl.fields).toHaveLength(0);
+    expect(onlyInUrl.dropped.fieldsUncited).toBe(1);
+  });
+
+  it("keeps the post-checks: uncited roles, level words, evidence, and dedupe by name", () => {
+    const base = memoryOutput().fields[0]!;
+    const role = (title: string) => ({ title, companies: ["Example Coalition"], why: "Same field craft as C1." });
+    const v = validateOutput(
+      {
+        fields: [
+          { ...base, roles: [...base.roles, role("Senior Video Producer"), role("Director of Communications")] },
+          { ...base, summary: "The same name again." },
+        ],
+      },
+      profile,
+    );
+    expect(v.fields).toHaveLength(1);
+    expect(v.dropped.fieldsSurplus).toBe(1);
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video Producer, farmer outreach", "Video Producer"]);
+    expect(v.dropped.rolesUncited).toBe(1);
+    expect(v.dropped.rolesLevelTitled).toBe(1);
+    expect(v.fields[0]!.evidence.map((e) => e.cardId)).toEqual(["C1", "C2"]);
+    expect(validateOutput(memoryOutput({ fit: "Everyone is needed in climate." }), profile).dropped.fieldsUncited).toBe(1);
+  });
+
+  it("ignores a ref or a source that reaches it without a catalogue", () => {
+    const catalogueShaped = output();
+    const v = validateOutput(catalogueShaped, profile);
+    expect(v.fields[0]!.ref).toBeNull();
+    expect(v.fields[0]!.sources).toEqual([]);
+    expect(v.fields[0]!.roles[0]!.sources).toEqual([]);
+    expect(v.dropped.sourcesRemoved).toBe(0);
+  });
+
+  it("reports both URL counters in words that hold in either mode", () => {
+    const text = droppedSummary({ ...validateOutput(memoryOutput(), profile).dropped, sourcesRemoved: 2, textUrlsStripped: 3 });
+    expect(text).toContain("2 source URLs removed");
+    expect(text).toContain("3 URLs stripped from text");
+    expect(text).not.toMatch(/catalogue/i);
+  });
+});
+
+describe("memory mode profile writes (technical-plan.md D61)", () => {
+  it("runs on the memory prompt and schema when no catalogue is passed, and writes no Ref and no source", async () => {
+    const MARKER = "TYPED-INPUT-MARKER-2d2";
+    const typed = setInputs(fixture("videographer"), { resume: `resume ${MARKER}`, notes: `notes ${MARKER}` });
+    const llm = fakeLlm([memoryOutput()]);
+    const result = await discoverFields({ sessionId: SESSION_ID, profile: typed }, { llm });
+
+    expect(llm.requests).toHaveLength(1);
+    const request = llm.requests[0]!;
+    expect(request.system).toBe(DISCOVER_SYSTEM_PROMPT_MEMORY);
+    expect(request.schema).toBe(DiscoverOutputSchemaMemory);
+    expect(request.tools).toBeUndefined();
+    expect(JSON.stringify(request.messages)).not.toContain("Reference catalogue");
+    expect(JSON.stringify([request.system, request.messages])).not.toContain(MARKER);
+
+    expect(result.fields.map((f) => f.id)).toEqual(["F1"]);
+    expect(result.roles.map((r) => [r.id, r.fieldId])).toEqual([["R1", "F1"]]);
+    const md = serializeProfile(result.profile);
+    expect(md).not.toContain(`**${REF_KEY}:**`);
+    expect(md).not.toMatch(SOURCE_ENTRY);
+    const reparsed = parseProfile(md).profile;
+    for (const item of [...reparsed.fields, ...reparsed.roles]) {
+      expect(item.sources).toEqual([]);
+      expect(item.extra[REF_KEY]).toBeUndefined();
+    }
+    expect(reparsed.inputs).toEqual(typed.inputs);
+  });
+
+  it("runs the catalogue arm only when handed a catalogue", async () => {
+    const llm = fakeLlm([output()]);
+    await discoverFields({ sessionId: SESSION_ID, profile: fixture("videographer") }, { llm, catalogue: reference });
+    const request = llm.requests[0]!;
+    expect(request.system).toBe(DISCOVER_SYSTEM_PROMPT_CATALOGUE);
+    expect(request.schema).toBe(DiscoverOutputSchemaCatalogue);
+    expect(JSON.stringify(request.messages)).toContain("# Reference catalogue");
+  });
+
+  it("a memory run over a catalogue-run profile matches by name and removes the Ref and the sources", async () => {
+    const catalogueRun = await discoverFields(
+      { sessionId: SESSION_ID, profile: fixture("videographer") },
+      { llm: fakeLlm([output()]), catalogue: reference },
+    );
+    const before = serializeProfile(catalogueRun.profile);
+    expect(before).toContain(`- **${REF_KEY}:** ag-nonprofits`);
+    expect(before).toMatch(SOURCE_ENTRY);
+
+    const accepted = setFieldStatus(catalogueRun.profile, "F1", "accepted");
+    const memoryRun = await discoverFields(
+      { sessionId: SESSION_ID, profile: accepted },
+      { llm: fakeLlm([memoryOutput({ fit: "Updated: C2 and C1." })]) },
+    );
+    expect(memoryRun.profile.fields).toHaveLength(1);
+    expect(memoryRun.profile.roles).toHaveLength(1);
+    expect(memoryRun.fields[0]!.id).toBe("F1");
+    expect(memoryRun.fields[0]!.status).toBe("accepted");
+    expect(memoryRun.fields[0]!.fit).toBe("Updated: C2 and C1.");
+    expect(memoryRun.roles[0]!.id).toBe("R1");
+
+    const after = serializeProfile(memoryRun.profile);
+    expect(after).not.toContain(`**${REF_KEY}:**`);
+    expect(after).not.toMatch(SOURCE_ENTRY);
+    expect(after).not.toContain("example.org");
   });
 });

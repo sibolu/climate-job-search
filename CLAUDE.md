@@ -69,7 +69,7 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md (the pasted text kept under `## Inputs`, D56), non-zero if a card lacks S/A/R or an area of expertise, or any expertise phrase runs over six words (D48) |
-| `pnpm try:discover <profile.md> [out.md] [--interest=<area>[,<area>…]]` | Stage 1.4 live: profile + reference data, no web (D44) → ranked fields and roles; non-zero if any lacks a card citation or cites a URL the catalogue does not list, or a role title carries a level word (D48); a cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
+| `pnpm try:discover <profile.md> [out.md] [--catalogue] [--interest=<area>[,<area>…]]` | Stage 1.4 live, no web (D44) → ranked fields and roles. By default memory mode, as the app runs it (D61): no Supabase stack needed; non-zero if any field or role lacks a card citation, carries a `Ref` or a source, has a URL in its text, or a role title carries a level word (D48). `--catalogue` runs the evaluation's catalogue arm instead, reading the local Supabase stack; non-zero if any lacks a card citation, cites a URL the catalogue does not list, has a URL in its text (D66), or carries a level word. A cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
 | `pnpm try:queries <profile.md> [out.md] [--tick R1,R4] [--revise]` | Stage 2b.8 live: one LinkedIn query per selected role across all fields (technical-plan.md D47); non-zero unless every selected role has one live query naming it. `--tick` ticks those roles first, as the Roles screen would; `--revise` then revises from a scripted "bad fit" feedback |
 | `pnpm research:check-links [path…]` | Phase 2c: every URL in `docs/research/**/*.md` (or the paths given) is requested once; non-zero if one is on a blocked domain or does not resolve; 401/403/429 are reported as refused, not failed (technical-plan.md D59) |
@@ -132,10 +132,17 @@ and must never be imported into a client component.
 | `PASSCODE_COOKIE_SECRET` | server-only | HMAC key that signs the session cookie |
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Anon key: select-only on reference tables, insert-only on `llm_usage` |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`); bypasses RLS |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | Publishable key: select-only on reference tables, insert-only on `llm_usage` |
+| `SUPABASE_SECRET_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`); bypasses RLS |
 
 ## Supabase: the reference collection and `llm_usage`
+
+The app writes `llm_usage` and reads nothing from Supabase at run time: since
+docs/technical-plan.md D61 discovery works from the model's knowledge alone.
+The three reference tables, `pnpm seed` and `pnpm db:check-rls` stay, for the
+evaluation's catalogue arm (`pnpm try:discover --catalogue`); Phase 2c's
+researched data still lands in `data/*.yaml`. Hosted setup is in
+`docs/deploy.md`.
 
 Local development runs the whole stack in Docker through the Supabase CLI —
 nothing here is ever pointed at a remote project.
@@ -148,9 +155,9 @@ pnpm db:check-rls    # prove anon can read reference data and nothing else
 ```
 
 `pnpm db:start` prints the local URL and keys (`supabase status -o env` prints
-them again): copy `API_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY` into
-`.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-and `SUPABASE_SERVICE_ROLE_KEY`. They are fixed local-only dev keys, so they
+them again): copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into
+`.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+and `SUPABASE_SECRET_KEY`. They are fixed local-only dev keys, so they
 are not secrets, but `.env.local` stays gitignored anyway.
 
 **The only server-side write is the anonymous `llm_usage` row.** The reference
@@ -234,18 +241,19 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
 - **`createLlm({ client, usageSink, now, callTimeoutMs })`** is the injectable form used by
   tests; `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
-- **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D52):
-  all six steps (`cards`, `elicit`, `discover`, `explore`, `queries`,
-  `revise`) run on `claude-opus-5-5`. `ModelId` and `PRICE_PER_MTOK` still
-  carry `claude-sonnet-5-5`, so a later switch is a one-line table change.
-  Adaptive thinking on every call (`budget_tokens` and disabled thinking are
-  rejected by Opus 5.5). `PRICE_PER_MTOK` is keyed by model id and `costUsd` prices each
+- **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D52,
+  D62): `discover` runs on `claude-fable-5-2` (D62); the other five steps
+  (`cards`, `elicit`, `explore`, `queries`, `revise`) run on
+  `claude-opus-5-5` (D52). `ModelId` and `PRICE_PER_MTOK` carry all three
+  ids, `claude-sonnet-5-5` included, so a later switch is a one-line table
+  change. Adaptive thinking on every call (`budget_tokens` and disabled
+  thinking are rejected by Opus 5.5 and Fable 5.2). `PRICE_PER_MTOK` is keyed by model id and `costUsd` prices each
   call by the model that ran; an unpriced id throws `LlmConfigError`. The
   usage row's `model` column records which model ran.
-- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44, D52):
-  `explore` is `high`; every other step is `medium`. Effort is always sent
-  explicitly: defaults differ by model (Sonnet 5.5 `high`, Opus 5.5
-  `medium`), so no default is relied on. Change the tables, not the call sites.
+- **Effort per step** (`EFFORT_BY_STEP`, docs/technical-plan.md D44, D52,
+  D62): `explore` is `high`; every other step is `medium`. Effort is always
+  sent explicitly: defaults differ by model (Sonnet 5.5 and Fable 5.2
+  `high`, Opus 5.5 `medium`), so no default is relied on. Change the tables, not the call sites.
 - **Every call streams** (`client.messages.stream()` + `finalMessage()`), both
   shapes, with a 32K output cap. **One deadline bounds a logical call**:
   `CALL_TIMEOUT_MS` (3 min, every retry and continuation included) aborts it
@@ -253,9 +261,15 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   `LlmCancelledError`; `runTurn` wraps every step's `Llm` with `withSignal`,
   and the turn route fires it when the browser disconnects. An aborted call
   still writes its usage row with the input it was billed (docs/technical-plan.md D45).
-- **Discovery has no web tools** (docs/technical-plan.md D44). Its sources are
-  restricted to URLs the reference catalogue lists; a field named from the
-  model's own knowledge is kept with no sources.
+- **Discovery has no web tools** (docs/technical-plan.md D44) **and, in the
+  app, no catalogue** (D61): `turn.ts` calls `discoverFields` without
+  `DiscoverOptions.catalogue`, so it runs `DISCOVER_SYSTEM_PROMPT_MEMORY` on
+  the cards, skills and preferences alone. The memory schema has no `ref` and
+  no `sources`, and example companies are plain text. The catalogue path
+  (`DISCOVER_SYSTEM_PROMPT_CATALOGUE`, sources restricted to URLs the
+  catalogue lists) is an evaluation arm reached only by
+  `pnpm try:discover --catalogue`. In both modes the validator strips any
+  URL from field and role text, with or without a scheme (D66).
 - **Structured outputs** send
   `output_config.format = zodOutputFormat(schema)` — pass the same zod schemas
   the rest of the app uses (docs/technical-plan.md D12). The wrapper records usage and
@@ -282,7 +296,13 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   `console.warn` with the error *code* only. Keep it that way.
 - **Usage rows** are one per logical call (a `pause_turn` continuation is part
   of the same call and its tokens are summed), priced from `PRICE_PER_MTOK`,
-  written fire-and-forget through the anon key. `UsageRow` has a fixed key
+  written through the publishable key without blocking the call; each write is
+  tracked until it settles, and `/api/turn` awaits
+  `usageWritesSettled(abort.signal)` (bounded by `USAGE_FLUSH_TIMEOUT_MS`,
+  5s) inside `after()` so the function is not suspended before the last row
+  lands; the signal scopes the wait to that turn's own writes
+  (docs/technical-plan.md D64, D65).
+  `UsageRow` has a fixed key
   list (`USAGE_ROW_KEYS`) guarded at compile time and in the tests: it holds
   counters only, and no content field may ever be added.
 
@@ -292,8 +312,8 @@ pnpm smoke:llm   # one live structured call, then reads its llm_usage row back
 
 Without `ANTHROPIC_API_KEY` the smoke script prints a skip message and exits 0.
 With a key it needs the local Supabase stack running and
-`SUPABASE_SERVICE_ROLE_KEY` set, because the read-back uses the service role —
-the anon key deliberately cannot read `llm_usage`.
+`SUPABASE_SECRET_KEY` set, because the read-back uses the service role —
+the publishable key deliberately cannot read `llm_usage`.
 
 ## The turn endpoint (`src/lib/turn.ts`, `src/app/api/turn/route.ts`)
 
@@ -301,7 +321,11 @@ One `POST /api/turn` for every step (docs/technical-plan.md D31). The browser se
 `TurnRequest` and chooses the `step` in `src/lib/workspace.ts`; `turn.ts`
 dispatches and returns the assistant message, pills, and the **whole**
 canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
-`delta`s, a heartbeat every 15s, then one `final` or one `error`.
+`delta`s, a heartbeat every 15s, then one `final` or one `error`. No step the
+browser sends reads Supabase: discovery runs memory-only (technical-plan.md
+D61). `explore`, which only scripts send (D39), is still dispatched and still
+reads the reference tables, so `turnErrorMessage` keeps its
+`ReferenceReadError` sentence. The only write is the `llm_usage` row.
 
 - The browser names what it wants through `TurnInput`: `message` (the
   pasted text on Start, and "Find climate roles"; the interest pills are

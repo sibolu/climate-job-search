@@ -100,16 +100,40 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   screen shows. Either cut it from the discovery schema (less output, a
   faster turn) or bring it back with a job the title does not already do.
   *(2026-11-19 walkthrough)*
-- **Interest areas and the catalogue do not line up.** The six areas the
-  person picks from (`CLIMATE_AREAS` in `elicit.ts`, D54) are matched to
-  fields by the model alone: the catalogue's `sector_group` has three
-  coarse values, and about a quarter of its fields sit in none of the six
-  (climate finance, policy, communications, carbon accounting software,
-  risk analytics, adaptation, environmental justice). Options: tag each
-  field in `data/climate_fields.yaml` with an area (a schema change and a
-  migration) so ranking by interest can be checked in the evals; add areas
-  for what the six leave out; or leave it to the prompt. Ask first whether
-  fellows miss an area. *(2026-11-19 walkthrough)*
+- **Interest areas and the catalogue do not line up (catalogue arm).**
+  Since D61 the app runs memory-only discovery, whose prompt frames climate
+  work by ten areas (the six `CLIMATE_AREAS` plus Climate Finance, Industry
+  & Materials, Nature & Water, Corporate Sustainability & Climate
+  Services), so the mismatch now matters only for the evaluation's
+  catalogue arm: the six areas the person picks from (D54) are matched to
+  catalogue fields by the model alone, the catalogue's `sector_group` has
+  three coarse values, and about a quarter of its fields sit in none of the
+  six. Options for that arm: tag each field in `data/climate_fields.yaml`
+  with an area (a schema change and a migration) so ranking by interest can
+  be checked in the evals, or leave it to the prompt. Settle with the
+  evaluation spec, and ask whether fellows miss an area.
+  *(2026-11-19 walkthrough; narrowed 2026-11-25, D61)*
+- **A re-run keeps a role only if its wording is unchanged.** Since D61
+  the app's discovery has no catalogue ref, so `applyDiscovery` matches a
+  field the model keeps by its exact name and a role by its exact title
+  (case aside). When "Find climate roles" is pressed a second time and the
+  model words a kept field or role differently ("Grid interconnection at
+  utilities" → "…at utilities and developers"), it gets a new id and the
+  old one is marked dropped and un-ticked (D58), so the person's ticks on
+  it are lost. The model is shown `F1 <name>` for existing fields and is
+  not shown existing roles at all. The fix is a change to what the model
+  is asked for: list the existing roles under each field in the user
+  message, add a nullable "id of the field / role this keeps" to the
+  memory schema, match on that id before the name, and drop a draft that
+  maps to a rejected field (no screen sets `rejected` since D50, so that
+  half cannot happen in the app today). It changes the baseline arm's
+  request, needs its own decision, and needs a live check: `try:discover`
+  run twice on the same profile, with ids and ticks compared. **When:**
+  together with the database behind field and role generation. Once
+  fields and roles come from stored records, their ids give a re-run a
+  stable key to match on, so this fix is designed with that work rather
+  than ahead of it. Not needed for the 2026-12-01 demo.
+  *(found 2026-11-26, Gate 2d code review; deferred by the user the same day)*
 - **"Get more fields" / "get more roles".** A second discovery pass that
   excludes what is already on the profile and returns the next tranche.
   Needs a rule for ranking old and new together (order is resolved on
@@ -182,6 +206,14 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   terms required, generic ones banned), and the Phase 3 eval rubric should
   check for it either way. Related:
   product-review.md B6. *(2026-11-19 walkthrough)*
+- **Promoted posts in LinkedIn results.** LinkedIn mixes promoted
+  listings into a search's results, matched to the person's own LinkedIn
+  profile rather than to the query, so some results are off-target. Much
+  fewer than before, but not zero. First check whether a current LinkedIn
+  search URL parameter hides them (not yet checked); if none does, a
+  one-line note on the Searches screen may be enough ("Promoted" posts are
+  LinkedIn's picks for your LinkedIn profile, not this search).
+  *(2026-11-26 G2d.1 run)*
 - **Job alerts.** The "Get new matches by email" steps left the search card
   in 2b.18; `ALERT_STEPS` in `boards.ts` keeps the text. The PRD has the
   person set up alerts by hand, so the guidance should return once it has a
@@ -247,7 +279,8 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
   discovery in several arms (memory only, which is what the app runs since
   Phase 2d; the Phase 2c researched catalogue; later additions) while
   `pnpm seed` knows only `data/*.yaml`. Needs a way to point a run at a
-  catalogue (a `--catalogue <dir>` on the try and eval scripts, one Supabase
+  catalogue (a directory argument on `try:discover --catalogue`, which
+  today reads the local stack, and on the eval scripts, one Supabase
   schema per arm, or an injected `ReferenceReader`), decided in the
   evaluation spec, not before. *(decided 2026-11-25)*
 - **Post-edit hook that runs lint and unit tests.** Cheap, but needs a

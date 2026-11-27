@@ -89,7 +89,7 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
         profile: next,
         fields: [next.fields.find((f) => f.id === "F9")!],
         roles: [],
-        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 2 },
+        dropped: { fieldsUncited: 1, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, textUrlsStripped: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 2 },
         call: METRICS,
       });
     },
@@ -167,6 +167,20 @@ describe("runTurn — elicit", () => {
 });
 
 describe("runTurn — discover / explore / queries / revise", () => {
+  it("discover hands discovery no catalogue, so it runs from the model's own knowledge (technical-plan.md D61)", async () => {
+    const base = fakeDeps();
+    const options: unknown[] = [];
+    const deps = fakeDeps({
+      discoverFields: (req, opts) => {
+        options.push(opts);
+        return base.discoverFields(req, opts);
+      },
+    });
+    await runTurn(request("discover", cardsOnly(), "go"), deps);
+    expect(options).toHaveLength(1);
+    expect(options[0]).not.toHaveProperty("catalogue");
+  });
+
   it("discover lists the written fields, the dropped count, and explore pills", async () => {
     const deps = fakeDeps();
     const res = await runTurn(request("discover", cardsOnly(), "go"), deps);
@@ -241,7 +255,7 @@ describe("pure helpers", () => {
   });
 
   it("messages render without throwing on empty results", () => {
-    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 0 }, call: METRICS })).toContain("could not find");
+    expect(discoverMessage({ profile: emptyProfile(), fields: [], roles: [], dropped: { fieldsUncited: 0, rolesUncited: 0, fieldsSurplus: 0, sourcesRemoved: 0, textUrlsStripped: 0, evidenceDropped: 0, asksDropped: 0, rolesLevelTitled: 0 }, call: METRICS })).toContain("could not find");
     expect(queriesMessage({ profile: emptyProfile(), roles: [], written: [], added: [], updated: [], superseded: [], dropped: {} as never, metrics: METRICS })).toContain("could not write");
     expect(reviseMessage({ profile: emptyProfile(), explanation: "Nothing.", retired: [], added: [], narrowed: [], fieldChanges: [], dropped: {} as never, metrics: METRICS })).toContain("No queries changed");
   });
@@ -291,8 +305,14 @@ describe("turnErrorMessage", () => {
     expect(turnErrorMessage(named("CardsInputError", "Pasted text is too short."))).toBe("Pasted text is too short.");
   });
 
+  it("names a reference read failure: explore still reads the reference tables", () => {
+    expect(turnErrorMessage(named("ReferenceReadError"))).toBe(
+      "The reference collection is unavailable right now. Try again in a minute.",
+    );
+  });
+
   it("never leaks model or SDK text", () => {
-    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "LlmTimeoutError", "LlmCancelledError", "ReferenceReadError", "QueriesOutputError", "SomethingElse"]) {
+    for (const name of ["LlmRefusalError", "LlmOutputError", "LlmTruncatedError", "LlmPauseLimitError", "LlmTimeoutError", "LlmCancelledError", "QueriesOutputError", "SomethingElse"]) {
       expect(turnErrorMessage(named(name))).not.toContain("SECRET");
     }
     expect(turnErrorMessage(named("LlmTimeoutError"))).toContain("three minutes");

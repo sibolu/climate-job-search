@@ -28,15 +28,17 @@
  * SDK notes (checked against the `claude-api` skill on 2026-09-24,
  * `@anthropic-ai/sdk` 0.125.0):
  *   * The model is chosen per step (see {@link MODEL_BY_STEP},
- *     technical-plan.md D52): every step runs on Opus 5.5 today, and the
- *     table can name any priced {@link ModelId}. Everything below holds for
- *     every model in the union.
- *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, both
- *     models; `budget_tokens` and disabled thinking are rejected by
- *     `claude-opus-5-5`.
+ *     technical-plan.md D52, D62): discovery runs on Fable 5.2 at `medium`
+ *     (D62), every other step on Opus 5.5 (D52), and the table can name any
+ *     priced {@link ModelId}. Everything below holds for every model in the
+ *     union.
+ *   * Adaptive thinking (`thinking: {type: "adaptive"}`) on every call, every
+ *     model; `budget_tokens` and disabled thinking are rejected by
+ *     `claude-opus-5-5` and `claude-fable-5-2`.
  *   * Depth is `output_config.effort`, per step (see {@link EFFORT_BY_STEP}).
- *     Defaults differ by model (Opus 5.5 defaults to `medium`), so every
- *     call sets it explicitly; no default is relied on.
+ *     Defaults differ by model (Opus 5.5 defaults to `medium`, Sonnet 5.5
+ *     and Fable 5.2 to `high`), so every call sets it explicitly; no default
+ *     is relied on.
  *   * Every call streams (`client.messages.stream()` + `finalMessage()`), so
  *     no HTTP timeout sits under a long answer, and one deadline
  *     ({@link CALL_TIMEOUT_MS}) plus the caller's abort signal bound it
@@ -67,18 +69,19 @@ import { anonClient } from "./supabase";
 // ---------------------------------------------------------------------------
 
 /** The models this app calls. {@link PRICE_PER_MTOK} must price every one. */
-export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5";
+export type ModelId = "claude-opus-5-5" | "claude-sonnet-5-5" | "claude-fable-5-2";
 
 /**
- * Model per call type (technical-plan.md D2, D44, D52). Every step runs on
- * Opus 5.5: the cheaper model wrote searches that were too general (D52
- * reverses D46). The table stays so a later switch is a one-line change
- * here, not at the call sites.
+ * Model per call type (technical-plan.md D2, D44, D52, D62). Discovery runs
+ * on Fable 5.2 (technical-plan.md D62); every other step runs on Opus 5.5:
+ * the cheaper model wrote searches that were too general (D52 reverses
+ * D46). The table stays so a later switch is a one-line change here, not at
+ * the call sites.
  */
 export const MODEL_BY_STEP: Record<StepName, ModelId> = {
   cards: "claude-opus-5-5",
   elicit: "claude-opus-5-5",
-  discover: "claude-opus-5-5",
+  discover: "claude-fable-5-2",
   explore: "claude-opus-5-5",
   queries: "claude-opus-5-5",
   revise: "claude-opus-5-5",
@@ -88,10 +91,10 @@ export const MODEL_BY_STEP: Record<StepName, ModelId> = {
 export type Effort = "low" | "medium" | "high" | "max";
 
 /**
- * Depth per call type (technical-plan.md §1, D44, D52). Chat-like steps,
- * discovery and the query steps run at `medium`: on Opus 5.5, `medium`
- * discovery took half the time of Opus 5 at `high` with output that looked
- * about as good. `explore` (script-only) stays `high`.
+ * Depth per call type (technical-plan.md §1, D44, D52, D62). Chat-like
+ * steps, discovery and the query steps run at `medium`. Discovery runs on
+ * Fable 5.2 at `medium` (technical-plan.md D62); the others run on Opus 5.5
+ * (D52). `explore` (script-only) stays `high`.
  */
 export const EFFORT_BY_STEP: Record<StepName, Effort> = {
   cards: "medium",
@@ -244,18 +247,21 @@ export interface ModelPrice {
 
 /**
  * USD per million tokens, keyed by the model that ran (technical-plan.md D46,
- * D52).
+ * D52, D62).
  * Cache write is the 5-minute rate, 1.25× input.
  *   * `claude-opus-5-5`, from the `claude-api` skill's model table (checked
  *     2026-09-24): input $4, output $20, cache read $0.20.
  *   * The second priced model (2026-11-18): input $2, output $10, cache read
  *     $0.10. No step runs on it now (D52); its row stays so a later switch
  *     is a one-line {@link MODEL_BY_STEP} change.
+ *   * `claude-fable-5-2`, from the `claude-api` skill's model table (checked
+ *     2026-11-25): input $8, output $40, cache read $0.20.
  * Update both the numbers and the date when the skill's numbers change.
  */
 export const PRICE_PER_MTOK: Readonly<Record<ModelId, Readonly<ModelPrice>>> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+  "claude-fable-5-2": { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 },
 };
 
 /** Token counters, summed across the continuations of one logical call. */
@@ -485,7 +491,7 @@ export function memoryUsageSink(): UsageSink & { rows: UsageRow[] } {
 }
 
 /**
- * The real sink: an anonymous insert through the anon key, which RLS allows to
+ * The real sink: an anonymous insert through the publishable key, which RLS allows to
  * INSERT `llm_usage` and nothing else.
  */
 export function supabaseUsageSink(): UsageSink {
@@ -513,17 +519,80 @@ function errorCode(error: unknown): string {
 }
 
 /**
- * Fire and forget. Telemetry must never cost the user their turn, so a failure
- * is a `console.warn` with the error code only and nothing else.
+ * How long {@link usageWritesSettled} waits for pending usage-row writes before
+ * giving up (technical-plan.md D64). Bounded so a hung insert can never keep a
+ * function alive for long.
  */
-function recordUsage(sink: UsageSink, row: UsageRow): void {
+export const USAGE_FLUSH_TIMEOUT_MS = 5_000;
+
+/** Usage-row writes started but not yet settled; each removes itself when it does. */
+const pendingUsageWrites = new Set<Promise<void>>();
+/**
+ * The same writes grouped by the abort signal of the call that started them,
+ * so one turn waits only for its own rows (`runTurn` puts the turn's signal
+ * on every request it makes).
+ */
+const pendingUsageWritesBySignal = new WeakMap<AbortSignal, Set<Promise<void>>>();
+
+/**
+ * Starts the usage-row write without blocking the call: the caller never awaits
+ * it, so telemetry can never cost the user their turn, and a failure is a
+ * `console.warn` with the error code only and nothing else. The write is
+ * tracked, under the call's `signal` when it has one, until it settles, so a
+ * serverless route can keep the function alive until it lands via
+ * {@link usageWritesSettled} (technical-plan.md D64).
+ */
+function recordUsage(sink: UsageSink, row: UsageRow, signal: AbortSignal | undefined): void {
   const warn = (error: unknown): void => {
     console.warn(`llm_usage row not written (${errorCode(error)}); the turn was unaffected`);
   };
+  let write: Promise<void>;
   try {
-    void Promise.resolve(sink.record(row)).catch(warn);
+    write = Promise.resolve(sink.record(row)).then(() => undefined, warn);
   } catch (error) {
     warn(error);
+    return;
+  }
+  const sets = [pendingUsageWrites];
+  if (signal !== undefined) {
+    let scoped = pendingUsageWritesBySignal.get(signal);
+    if (scoped === undefined) {
+      scoped = new Set();
+      pendingUsageWritesBySignal.set(signal, scoped);
+    }
+    sets.push(scoped);
+  }
+  for (const set of sets) set.add(write);
+  void write.finally(() => {
+    for (const set of sets) set.delete(write);
+  });
+}
+
+/**
+ * Resolves once the usage-row writes pending at call time have settled, or
+ * after `timeoutMs`, whichever comes first. With `signal`, only the writes of
+ * calls made with that signal count, so a turn is never held up by another
+ * turn's insert in the same instance; without it, every pending write counts.
+ * Never rejects and logs nothing of its own (a failed write already warned in
+ * {@link recordUsage}). The turn route awaits it inside `after()` with the
+ * turn's signal so Vercel does not suspend the function before the last
+ * call's row is inserted (technical-plan.md D64).
+ */
+export async function usageWritesSettled(
+  signal?: AbortSignal,
+  timeoutMs: number = USAGE_FLUSH_TIMEOUT_MS,
+): Promise<void> {
+  const pending = signal === undefined ? pendingUsageWrites : pendingUsageWritesBySignal.get(signal);
+  if (pending === undefined || pending.size === 0) return;
+  const writes = Promise.allSettled([...pending]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([writes, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -687,7 +756,7 @@ function requestParams(
     max_tokens: maxTokens,
     system: systemBlocks(request.system),
     messages,
-    // Adaptive thinking on every call, both models; Opus 5.5 rejects
+    // Adaptive thinking on every call, every model; Opus 5.5 and Fable 5.2 reject
     // `budget_tokens` and "disabled".
     thinking: { type: "adaptive" },
     output_config: {
@@ -885,7 +954,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
     const recordOnce = (durationMs: number): void => {
       if (recorded) return;
       recorded = true;
-      recordUsage(usageSink, usageRow(request, counts, durationMs));
+      recordUsage(usageSink, usageRow(request, counts, durationMs), request.signal);
     };
 
     try {

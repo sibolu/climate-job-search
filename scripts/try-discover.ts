@@ -1,61 +1,105 @@
 /**
- * `pnpm try:discover <profile.md> [profile.md-out] [--interest=<area>[,<area>...]]`
- * — the Phase 1.4 acceptance check, and the Gate 1 script to run on a real
- * profile.
+ * `pnpm try:discover <profile.md> [profile.md-out] [--catalogue] [--interest=<area>[,<area>...]]`
+ * — discovery run live on a real profile, in either of its two modes
+ * (technical-plan.md D61).
  *
  * It reads a `profile.md`, runs `discoverFields` (one live `discover` call
- * through `src/lib/llm.ts`, no web tools — technical-plan.md D44), prints the
- * updated `profile.md` to stdout, a usage/cost line and each field's
- * exploration-first card (sector, fit level, summary, chips, evidence lines,
- * ask, sources) to stderr, and exits non-zero if any field or role written
- * this run lacks a card citation or cites a URL the catalogue does not list,
- * any field lacks a fit level, a sector or an ask (technical-plan.md D39), or
- * a role title carries a level word (D48). A card the fit text cites with no
- * evidence line of its own is a warning, not a failure: `validateOutput`
- * keeps such a field and no screen renders evidence lines (D50), so failing
- * on it would hold the script to a rule the product does not have.
+ * through `src/lib/llm.ts`, no web tools — technical-plan.md D44), and prints
+ * the updated `profile.md` to stdout. On stderr it prints the mode, one line
+ * with the counts and the call's tokens, cost and duration, and each field's
+ * card (sector, fit level, summary, chips, evidence lines, ask, roles).
+ *
+ * **Memory mode is the default, as in the app.** The model names fields,
+ * roles and example organisations from its own knowledge and nothing is read
+ * from Supabase, so no local stack is needed. The script exits non-zero if
+ * any field or role written this run lacks a card citation, carries a `Ref`
+ * or a source, or has a URL in its text (a field's fit, summary and
+ * uncertainties; a role's why and companies); if any field lacks a role, a
+ * fit level, a sector, a summary, chips or an ask (technical-plan.md D39);
+ * or if a role title carries a level word (D48).
+ *
+ * **`--catalogue` runs the catalogue arm.** The reference tables are read
+ * from Supabase (the local stack must be running) and handed to
+ * `discoverFields`. Its checks are the ones this script made before memory
+ * mode existed: the same as above, except that a `Ref` and sources are
+ * expected, and every source must be a URL the catalogue lists. The text is
+ * checked for URLs exactly as in memory mode (D66).
+ *
+ * In both modes a card the fit text cites with no evidence line of its own
+ * is a warning, not a failure: `validateOutput` keeps such a field and no
+ * screen renders evidence lines (D50), so failing on it would hold the
+ * script to a rule the product does not have.
  *
  * `--interest` records the one answer the app collects before discovery
  * (technical-plan.md D54), the way the app does: a comma-separated list of
  * the six climate areas (`CLIMATE_AREAS`), each written with
  * `toggleClimateInterest`. The list replaces any interests already in the
  * profile, so a run is repeatable. An unknown area lists the six and exits
- * before any model call.
+ * before any model call. It works with either mode.
  *
  *   pnpm try:discover src/lib/__fixtures__/discover/videographer.md
  *   pnpm try:discover profile.md out/profile.md --interest="Energy,Carbon Removal"
+ *   pnpm try:discover profile.md out/profile.md --catalogue
  *
  * It never echoes the profile except as the output the app would store in
- * the browser. Needs `ANTHROPIC_API_KEY` and the local Supabase stack (the
- * reference catalogue is read from it).
+ * the browser. Needs `ANTHROPIC_API_KEY`; `--catalogue` also needs the local
+ * Supabase stack.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
-import { DiscoverInputError, discoverFields, droppedSummary } from "../src/lib/discover";
-import { catalogueSourceUrls, citedActiveCardIds, hasLevelWord } from "../src/lib/discover";
+import {
+  DiscoverInputError,
+  REF_KEY,
+  type ReferenceReader,
+  catalogueSourceUrls,
+  citedActiveCardIds,
+  discoverFields,
+  droppedSummary,
+  hasLevelWord,
+  hasUrl,
+} from "../src/lib/discover";
 import { CLIMATE_AREAS, toggleClimateInterest } from "../src/lib/elicit";
-import { listFields, listRoles } from "../src/lib/reference";
 import { parseProfile, serializeProfile, setClimateInterests } from "../src/lib/profile";
 import { newSessionId } from "../src/lib/session";
 
-const USAGE = "usage: pnpm try:discover <profile.md> [profile.md-out] [--interest=<area>[,<area>...]]";
+const USAGE =
+  "usage: pnpm try:discover <profile.md> [profile.md-out] [--catalogue] [--interest=<area>[,<area>...]]";
 
 /** The one question the app asks before discovery (technical-plan.md D54). */
 const INTEREST_FLAG = "--interest";
+/** Runs the catalogue arm instead of the app's memory mode (technical-plan.md D61). */
+const CATALOGUE_FLAG = "--catalogue";
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
 
+/**
+ * The reference tables, read once: the reader `discoverFields` is handed, and
+ * the URLs its output may cite. `reference.ts` is imported here, not at the
+ * top, so a memory-mode run never loads the Supabase client.
+ */
+async function readCatalogue(): Promise<{ reader: ReferenceReader; sourceUrls: Set<string> }> {
+  const { listFields, listRoles } = await import("../src/lib/reference");
+  const [fields, roles] = await Promise.all([listFields(), listRoles()]);
+  return {
+    reader: { listFields: () => Promise.resolve(fields), listRoles: () => Promise.resolve(roles) },
+    sourceUrls: catalogueSourceUrls(fields, roles),
+  };
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const flags = args.filter((a) => a.startsWith("-"));
   const [input, output] = args.filter((a) => !a.startsWith("-"));
-  const interestFlag = flags.find((f) => f.startsWith(`${INTEREST_FLAG}=`));
-  if (input === undefined || flags.length > 1 || (flags.length === 1 && interestFlag === undefined)) fail(USAGE);
+  const interestFlags = flags.filter((f) => f.startsWith(`${INTEREST_FLAG}=`));
+  const unknownFlags = flags.filter((f) => f !== CATALOGUE_FLAG && !f.startsWith(`${INTEREST_FLAG}=`));
+  if (input === undefined || unknownFlags.length > 0 || interestFlags.length > 1) fail(USAGE);
+  const interestFlag = interestFlags[0];
+  const catalogueMode = flags.includes(CATALOGUE_FLAG);
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY === "") {
     fail("ANTHROPIC_API_KEY is not set. Put it in .env.local and try again.");
   }
@@ -80,13 +124,21 @@ async function main(): Promise<void> {
     for (const area of areas) profile = toggleClimateInterest(profile, area);
   }
 
-  const started = Date.now();
-  const result = await discoverFields({ sessionId: newSessionId(), profile }).catch(
-    (error: unknown) => {
-      if (error instanceof DiscoverInputError) fail(error.message);
-      throw error;
-    },
+  const catalogue = catalogueMode ? await readCatalogue() : undefined;
+  const mode = catalogue === undefined ? "memory" : "catalogue";
+  process.stderr.write(
+    catalogue === undefined
+      ? "mode: memory (the model's own knowledge; nothing read from Supabase)\n"
+      : "mode: catalogue (reference tables read from Supabase)\n",
   );
+
+  const result = await discoverFields(
+    { sessionId: newSessionId(), profile },
+    catalogue === undefined ? {} : { catalogue: catalogue.reader },
+  ).catch((error: unknown) => {
+    if (error instanceof DiscoverInputError) fail(error.message);
+    throw error;
+  });
 
   const out = serializeProfile(result.profile);
   if (output === undefined) {
@@ -99,9 +151,9 @@ async function main(): Promise<void> {
   const c = result.call;
   const tok = `in ${String(c.usage.input)} (cache r${String(c.usage.cacheRead)}/w${String(c.usage.cacheWrite)}) out ${String(c.usage.output)}`;
   process.stderr.write(
-    `${String(result.fields.length)} fields, ${String(result.roles.length)} roles | ` +
+    `${mode} | ${String(result.fields.length)} fields, ${String(result.roles.length)} roles | ` +
       `${droppedSummary(result.dropped)} | ${tok} tok | $${c.costUsd.toFixed(4)} | ` +
-      `${String(Math.round((Date.now() - started) / 100) / 10)}s\n`,
+      `${(c.durationMs / 1000).toFixed(1)}s\n`,
   );
   for (const f of result.fields) {
     const roles = result.roles.filter((r) => r.fieldId === f.id).map((r) => r.title);
@@ -113,20 +165,38 @@ async function main(): Promise<void> {
         ...f.evidence.map((e) => `  evidence ${e.cardId}: ${e.why}`),
         `  ask: ${f.ask === undefined ? "?" : `${f.ask.question} [${f.ask.key}; e.g. ${f.ask.placeholder}]`}`,
         `  roles: ${roles.join("; ") || "?"}`,
-        `  sources: ${f.sources.join(" ") || "(none: named from the model's knowledge)"}`,
+        // Memory mode writes no sources, so there is no line to print for them.
+        ...(catalogue === undefined
+          ? []
+          : [`  sources: ${f.sources.join(" ") || "(none: named from the model's knowledge)"}`]),
       ].join("\n") + "\n",
     );
   }
 
   // The acceptance rule, checked here so the exit code carries it.
-  const [catFields, catRoles] = await Promise.all([listFields(), listRoles()]);
-  const catalogue = catalogueSourceUrls(catFields, catRoles);
   const problems: string[] = [];
   const unevidenced: string[] = [];
   if (result.fields.length < 4) problems.push(`expected >=4 fields, got ${String(result.fields.length)}`);
   for (const f of result.fields) {
     if (citedActiveCardIds(f.fit, result.profile).length === 0) problems.push(`${f.id} cites no card`);
-    for (const u of f.sources) if (!catalogue.has(u)) problems.push(`${f.id} cites a non-catalogue URL`);
+    // Every string the screens render, names included, in both modes (technical-plan.md D44, D61, D66).
+    const shown = [
+      f.name,
+      f.sector,
+      f.summary,
+      f.fit,
+      f.uncertain,
+      ...f.chips,
+      ...f.evidence.map((e) => e.why),
+      ...(f.ask === undefined ? [] : [f.ask.question, f.ask.placeholder]),
+    ];
+    if (shown.some((text) => hasUrl(text))) problems.push(`${f.id} has a URL in its text`);
+    if (catalogue === undefined) {
+      if (f.extra[REF_KEY] !== undefined) problems.push(`${f.id} carries a Ref`);
+      if (f.sources.length > 0) problems.push(`${f.id} has a source`);
+    } else {
+      for (const u of f.sources) if (!catalogue.sourceUrls.has(u)) problems.push(`${f.id} cites a non-catalogue URL`);
+    }
     if (!result.roles.some((r) => r.fieldId === f.id)) problems.push(`${f.id} has no role`);
     if (f.fitLevel === undefined) problems.push(`${f.id} has no fit level`);
     if (f.sector.trim() === "") problems.push(`${f.id} has no sector`);
@@ -142,12 +212,20 @@ async function main(): Promise<void> {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
     // A title names the occupation, never a level (technical-plan.md D48).
     if (hasLevelWord(r.title)) problems.push(`${r.id} has a level word in its title`);
-    for (const u of r.sources) if (!catalogue.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
+    if ([r.title, r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
+    if (catalogue === undefined) {
+      if (r.extra[REF_KEY] !== undefined) problems.push(`${r.id} carries a Ref`);
+      if (r.sources.length > 0) problems.push(`${r.id} has a source`);
+    } else {
+      for (const u of r.sources) if (!catalogue.sourceUrls.has(u)) problems.push(`${r.id} cites a non-catalogue URL`);
+    }
   }
   for (const w of unevidenced) process.stderr.write(`warning: ${w}\n`);
-  if (problems.length > 0) fail(`FAILED: ${problems.join("; ")}`);
+  if (problems.length > 0) fail(`FAILED (${mode} mode): ${problems.join("; ")}`);
   process.stderr.write(
-    "PASS: every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs; no role title carries a level word\n",
+    catalogue === undefined
+      ? "PASS (memory mode): every field has a fit level, sector and an ask; every field and role cites a card; no Ref, no source and no URL written; no role title carries a level word\n"
+      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs, with no URL in its text; no role title carries a level word\n",
   );
 }
 
