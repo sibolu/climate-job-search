@@ -780,6 +780,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
       role whose title is headed by a rank (Director of…, Head of…, VP…),
       counted in `dropped.rolesLevelTitled`. The discover prompt says
       "companies", not "employers"; `Role.companies` is unchanged.
+      (2026-11-27: narrowed by D72: the title is the occupation, the name
+      of the work, not a job title; the post-check is unchanged.)
     - Query text carries no level words either (`queries.ts` uses the
       level lists `discover.ts` owns); LinkedIn's own experience-level
       filter does that job.
@@ -1352,6 +1354,144 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     `pnpm codes:add --cap 5` (the same cap as everyone; raising it for
     agents would be a later decision) and type the same code at `/enter`.
 
+72. **A role is an occupation, not a job title (2026-11-27, step 2h.1,
+    decided after reading generated roles).** Narrows D48. "Data Scientist"
+    and "Data Science Manager" were two roles for one kind of work, and the
+    choice between them is one of seniority and managing, which the Roles
+    screen does not ask (D48). The field a role sits under is its industry,
+    so a role reads as occupation and industry: data science in carbon
+    finance. Whether someone manages people or does the work is for the
+    person to decide when they read the postings.
+    - A role's title is the occupation alone, the name of the work in
+      sentence case: "Data science", "Product management", "Policy
+      analysis", "Wind turbine service". Someone who manages people in an
+      occupation is in that occupation: "Data Scientist", "Data Science
+      Manager" and "Head of Data Science" are all "Data science". Where
+      managing is the work itself, the occupation is named for it: "Product
+      Manager" is "Product management", "Project Manager" is "Project
+      management". No level word (D48 stands) and no focus after a comma
+      or in brackets.
+    - The industry stays the field and is not written into the title. The
+      Roles screen lists roles under their field's heading, and the
+      Searches cards and the profile drawer show the field's name beside
+      the role, so no component changes. `profile.md`'s format does not
+      change: a role's title is still one string. The header example in
+      `profile.ts` is now `### R1: Video production`.
+    - The same occupation may sit under more than one field: a role is the
+      pair. The discovery prompts drop "Do not repeat the same role across
+      fields" and say instead that an occupation may recur, each time with
+      its own "why".
+    - One to three roles per field, down from two to four: with the two
+      tracks merged, a floor of two invites padding. `MAX_ROLES_PER_FIELD`
+      in `discover.ts` is 3. The prompts say one role is enough where one
+      occupation is the honest answer, and a second or third earns its
+      place only when it is different work.
+    - Both prompts change (`DISCOVER_SYSTEM_PROMPT_MEMORY` and
+      `DISCOVER_SYSTEM_PROMPT_CATALOGUE`), so the two evaluation arms name
+      roles the same way; a catalogue role keeps its `ref` and takes the
+      occupation as its title. The role schema's `title` description says
+      the same, and the memory schema inherits it. The memory prompt's
+      rule 2 says the person "will search for jobs in the occupations you
+      name" rather than "the role titles you give".
+    - `validateOutput` is unchanged: level stripping (`stripLevelWords`),
+      the rank drop (`hasLevelHead`, counted in
+      `dropped.rolesLevelTitled`) and the per-field dedupe all stand. A new
+      pure helper, `endsInManager(title)`, unit-tested, is true when a
+      title's last word is "Manager" (any case, trailing whitespace or
+      punctuation tolerated; "Product management" is not a hit).
+      `validateOutput` leaves such a role in place, because code cannot
+      repair it ("Product Manager" is product management, "Data Science
+      Manager" is data science), and `pnpm try:discover` exits non-zero on
+      one, in both modes.
+    - Stored profiles are not migrated. Roles are matched within a field by
+      ref, then by title (`findExistingRole`), so a role stored under a job
+      title does not match the occupation that replaces it: the next "Find
+      climate roles" run lists the occupation as a new, unticked role and
+      marks the old one dropped and un-ticked (D58). A unit test in
+      `discover.test.ts` pins this (a ticked "Video Producer" is dropped
+      and un-ticked; "Video production" is appended unticked). Until that
+      run an old-title role can still be ticked and searched, so the search
+      prompt reads both forms (D73).
+    - Not in this decision: rewriting titles in stored profiles; a choice
+      between managing and practising, or any seniority choice, on the
+      Roles screen ("Seniority as a choice" stays in `docs/backlog.md`);
+      the titles in `data/example_roles.yaml`, which stay job titles
+      because they describe role profiles; any change to `profile.md`'s
+      format or to a component. `src/lib/explore.ts` (reached only by
+      scripts, D39) keeps its own `MAX_ROLES_PER_FIELD = 4` and its "2-4
+      roles" line.
+
+73. **A search covers both tracks (2026-11-27, step 2h.2).** Follows D72.
+    The person has not been asked whether they want to manage people or do
+    the work, so one search has to return both kinds of posting, and they
+    decide when they read them. Step 1 of `QUERIES_SYSTEM_PROMPT`'s build
+    order (the title group) now starts from the role's occupation and
+    writes two to four job titles employers post for it, joined with OR:
+    the title of someone who does the work, the title of someone who
+    manages the people doing it where the occupation has one, and an
+    alternate title for the same work when employers commonly use one. For
+    "Data science": `"data scientist" OR "data science manager"`.
+    - An occupation that is itself managing ("Product management") is
+      covered by its own title ("product manager") and needs no second
+      manager title. An occupation with no commonly posted people-manager
+      title (many skilled trades) gets none invented.
+    - "Manager" in a posted title names a job, not a level: `NO_LEVEL_WORDS`
+      and the level lists `discover.ts` owns are unchanged (D48 stands).
+      Senior, Lead, Head of, Director and the rest stay out of query text.
+    - A role still stored under a job title from an earlier run, with or
+      without a focus after a comma or in brackets ("Staff Data Scientist,
+      program measurement"), is read as its occupation (data science) and
+      gets the same title group; the focus may still feed the field group
+      (step 2).
+    - The made-up example shape in the prompt is now `(recruiter OR
+      "talent acquisition specialist" OR "recruiting manager") AND (solar
+      OR "community solar" OR "energy storage")`.
+    - The uniqueness rule now says: two roles in the same field share field
+      terms, so their title groups must differ; the same occupation can sit
+      under more than one field, those roles share a title group, and it is
+      their field terms that must differ.
+    - `REVISE_SYSTEM_PROMPT` (the scripts-only `revise` step, D51) said
+      "Build the query from role titles…", which would have built from
+      "Data science" itself; it now says to build from the job titles
+      employers post for the role's occupation (doing the work and, where
+      the occupation has one, managing the people who do it).
+    - No code logic, schema, signature, test or script changed.
+      `scripts/try-queries.ts` is untouched and does not check the title
+      group; the live check in §6 was read by hand.
+    - Not in this decision: any choice between managing and practising on
+      the Roles or Searches screen; rewriting stored role titles.
+
+74. **Phase 2h review fixes (2026-11-27, G2h.2).** `/code-review` on
+    `phase-2h` found what D72 and D73 left open. Fixed:
+    - **A role listed away from its field carries the field's name.** D72
+      lets one occupation sit under two fields, so two ticked "Data
+      science" roles read the same wherever no field heading is above
+      them. `SearchLine` in `profile-summary.ts` gains `fieldName`, the
+      drawer's Searches rows show it after a middle dot and are keyed by
+      title, field and query (the summary carries no raw ids), and the
+      Searches screen's "no search yet" note comes from
+      `missingSearchesNote` in `screens.ts` (title · field). This touches
+      two components, which D72 expected not to need.
+    - **Dropped roles are counted.** `DroppedCounts` gains `rolesSurplus`:
+      a role beyond `MAX_ROLES_PER_FIELD` (now 3) or repeating an earlier
+      role in its field. Both were left out without a count; the discover
+      message now says "N roles beyond the number shown per field".
+    - **The discover message lists only live roles.** `fieldBlock` in
+      `turn.ts` skips a role marked dropped (D58), which every re-run on a
+      profile with old job titles now leaves beside its replacement.
+    - **Occupations named for lead or staff keep their first word.**
+      "lead remediation", "lead service line", "lead pipe" and "staff
+      augmentation" join `LEVEL_WORD_OCCUPATIONS`, since D72's sentence
+      case puts such a word first.
+    - **`pnpm try:discover` fails on a focus in a title.** `hasTitleFocus`
+      (a comma or a bracket) joins `endsInManager` as a reported, not
+      repaired, D72 check.
+    - Not changed: a ticked old-title role is still dropped and un-ticked
+      when a run returns its occupation (D72, "stored profiles are not
+      migrated"), and a field whose only role was dropped still reaches
+      the Roles screen with its "No roles under this field yet." state;
+      `pnpm try:discover` already fails on a field with no role.
+
 ---
 
 ## 6. Verification log
@@ -1757,3 +1897,83 @@ the real secret key read by `read -rs` (never in a file or this session):
 35/35 checks pass, including the `access_codes` group, so the script has
 now passed end to end against production with the service role, which
 2d.3 could not do. The deployed app is unchanged: the migration only adds.
+
+### Phase 2h: the 2h.1 occupation runs (2026-11-27)
+
+`pnpm try:discover` in memory mode on `claude-fable-5-2`, after D72, on the
+three fixture profiles in `src/lib/__fixtures__/discover/` and a fictional
+team-lead rewrite of the data-scientist one (kept out of the repo). All four
+exited 0 on the first attempt, about $0.23 a run, with 5–6 fields and 8–10
+roles per run. Role titles returned, by field:
+
+- data-scientist: Program evaluation, Economic research | Data science,
+  Machine learning engineering | Pricing analytics, Economic consulting |
+  Data science | Policy analysis, Economic research | Data science
+- videographer: Documentary production, Video production | Video
+  production, Multimedia communications | Documentary directing,
+  Documentary editing | Video production, Video editing | Video production
+- web-designer: Product design, UX research | Product design,
+  Accessibility design | Product design | Product design | Product design,
+  Web design
+- team-lead: Program evaluation, Data science | Data science | Forecasting
+  | Economic research, Economic consulting | Data science | Pricing
+  analytics
+
+No title ends in "Manager", carries a level word, or has a focus after a
+comma or in brackets. The team-lead profile gets "Data science" three times
+and no people-manager title, so managing is no longer a separate role.
+
+One `--catalogue` run on the data-scientist fixture, after `pnpm seed` on
+the local stack (the first attempt ran against unseeded tables and so
+exercised no `Ref`), also exited 0: nine roles, and a catalogue role keeps
+its `Ref` under the occupation, e.g. `climate-risk-data-scientist` and
+`regen-ag-agronomy-data-scientist` are both titled "Data science".
+
+### Phase 2h: the 2h.2 search runs (2026-11-27)
+
+`pnpm try:queries --tick` on `claude-opus-5-5`, after D73, about $0.04 a
+run. Every run exited 0 on the first prompt draft with no level-word
+warning. Two of 2h.1's output profiles with two roles ticked in each, and
+the old-title fixture `src/lib/__fixtures__/queries/engineer.md`:
+
+- team-lead, Data science (Energy-efficiency and demand-side program
+  evaluation): `("data scientist" OR "data science manager") AND ("energy
+  efficiency" OR "demand response" OR weatherization OR "measurement and
+  verification")`
+- team-lead, Forecasting (Electricity load and renewable generation
+  forecasting): `("forecasting analyst" OR "forecasting manager" OR
+  "forecasting scientist") AND ("electricity load" OR "power markets" OR
+  "energy trading" OR "grid operations")`
+- web-designer, Product design (Utility customer engagement and
+  demand-side software): `("product designer" OR "UX designer" OR "design
+  manager") AND (utility OR utilities OR "demand response" OR "energy
+  efficiency")`
+- web-designer, Web design (Carbon accounting and sustainability reporting
+  software): `("web designer" OR "webflow developer" OR "web design
+  manager") AND ("carbon accounting" OR emissions OR "ESG reporting" OR
+  decarbonization)`
+- engineer, Senior Mechanical Engineer, electrification studies:
+  `("mechanical engineer" OR "HVAC engineer" OR "mechanical engineering
+  manager") AND ("building electrification" OR "heat pump" OR "building
+  decarbonization" OR "heat pump retrofit")`
+- engineer, Electrification Project Engineer: `("project engineer" OR
+  "project engineering manager") AND ("building electrification" OR "heat
+  pump" OR "electrification retrofit" OR MEP)`
+- engineer, Senior Product Engineer, residential heat pumps: `("product
+  engineer" OR "product development engineer" OR "product engineering
+  manager") AND ("heat pump" OR "heat pumps" OR refrigerant OR "low GWP")`
+
+Every title group holds two or three titles with a people-manager title
+among them, and the old job titles were read as their occupations with the
+level word left out. Open points:
+
+- "web design manager" is an uncommon posted title, and "webflow
+  developer" is a tool-named alternate.
+- No tested occupation was one where managing is the work or one with no
+  manager title, so those two branches of step 1 are unexercised live.
+- A fourth run with `--revise` on the fixture exited 0, but the one search
+  the revise step added carried four practitioner titles and no manager
+  title (scripts-only path, D51; left as is).
+- Whether the searches return practitioner and manager postings on
+  LinkedIn is for the user to judge at gate G2h.1: no agent opens LinkedIn
+  (the PRD forbids it).

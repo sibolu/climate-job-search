@@ -191,22 +191,28 @@ const NO_LEVEL_WORDS = `No seniority or level words anywhere in a query. A level
 
 const NO_LOCATION = `No location or work-mode wording in a query: no city, state, region or country, and no "remote", "hybrid" or "on-site". The person sets those with LinkedIn's own filters beside the search box.`;
 
+/**
+ * Step 1 reads a role's title as an occupation (technical-plan.md D72) and
+ * writes a title group that covers both tracks, doing the work and managing
+ * the people who do it, because the Roles screen never asks which
+ * (technical-plan.md D73).
+ */
 export const QUERIES_SYSTEM_PROMPT = `You write LinkedIn job searches for one career switcher moving into climate work. The person has ticked the roles they want to look for. You get their areas of expertise and climate interests, then every ticked role under the climate field it belongs to, with what that field is and any searches the person has already judged. Return JSON with exactly one entry for each role id listed at the end of the message, keyed by that id, each holding a query and a rationale. One search per role, written for that role alone.
 
 ${LINKEDIN_SYNTAX}
 
 Build each query in this order:
-1. Title group. Start from the role's title as employers post it: keep the job function and drop anything after a comma or in brackets, which describes the focus and belongs in step 2 if anywhere. Add one or two alternate titles that employers use for the same job, joined with OR. Do not add titles for different jobs.
-2. Field group. AND the title group with two to four terms that postings in the role's field actually contain: the technology, product, sector or programme names found in the field's name, summary and fit, and in the role's focus. Join them with OR. Every field term names what the employer works on, so that the group on its own would pick out employers in this field. A term that only describes the job's craft, medium or setting (for a video role: documentary, newsroom, broadcast) repeats the title group and returns the same job at any employer. Never use a generic word such as climate, sustainability, green or "clean energy" as a field term on its own; those words sit in every employer's boilerplate and narrow nothing. When the field's subject is climate or the environment itself, as in climate journalism or climate policy, do not leave the subject out: use the specific phrases such postings carry, such as "climate change", "climate policy", "environmental justice" or "energy transition".
+1. Title group. A role's title names an occupation, the kind of work ("Data science", "Product management"), and the field it sits under is the industry. Write two to four job titles that employers post for that occupation, joined with OR: the title of someone who does the work, the title of someone who manages the people doing it where the occupation has one, and an alternate title for the same work when employers commonly use one. For "Data science" that is "data scientist" OR "data science manager". The search has to return both kinds of posting because the person has not been asked whether they want to manage people or do the work themselves; they decide that when they read the postings. An occupation that is itself managing ("Product management") is covered by its own title ("product manager"): it needs no second manager title, only a second title employers post for the same work. Some occupations, many skilled trades among them, have no people-manager title that employers commonly post: invent none, and write the titles for the work alone. "Manager" in a title employers post names a job, not a level, so it belongs here; the ranks in the level rule below still stay out. Do not add titles for a different occupation. A role saved from an earlier run may still be a job title, with or without a focus after a comma or in brackets ("Staff Data Scientist, program measurement"): take its occupation (data science) and build the same title group. The focus says what the work is about and belongs in step 2 if anywhere.
+2. Field group. AND the title group with two to four terms that postings in the role's field actually contain: the technology, product, sector or programme names found in the field's name, summary and fit, and in the focus of a role whose title still carries one. Join them with OR. Every field term names what the employer works on, so that the group on its own would pick out employers in this field. A term that only describes the job's craft, medium or setting (for a video role: documentary, newsroom, broadcast) repeats the title group and returns the same job at any employer. Never use a generic word such as climate, sustainability, green or "clean energy" as a field term on its own; those words sit in every employer's boilerplate and narrow nothing. When the field's subject is climate or the environment itself, as in climate journalism or climate policy, do not leave the subject out: use the specific phrases such postings carry, such as "climate change", "climate policy", "environmental justice" or "energy transition".
 3. Expertise group, optional. Add a third AND group drawn from the person's areas of expertise only when the first two groups would still return mostly jobs outside what they do, and only with terms a posting for this role would plausibly contain. When in doubt, leave it out.
 4. NOT, rarely. Use NOT only to remove one specific wrong kind of result that the person named when judging an earlier search.
-The shape, shown with made-up vocabulary: ("video producer" OR videographer OR "multimedia producer") AND (solar OR "community solar" OR "energy storage"). Take the shape from this, never the words.
+The shape, shown with made-up vocabulary: (recruiter OR "talent acquisition specialist" OR "recruiting manager") AND (solar OR "community solar" OR "energy storage"). Take the shape from this, never the words.
 
 Rules for every query:
 - ${NO_LEVEL_WORDS}
 - ${NO_LOCATION}
 - No employer names. The companies listed with a role are examples of who hires for it, not a filter.
-- Every query in your answer differs from every other. Two roles in the same field share field terms, so their title groups must differ; two roles with similar titles in different fields must differ in their field terms.
+- Every query in your answer differs from every other. Two roles in the same field share field terms, so their title groups must differ. The same occupation can sit under more than one field: those roles share a title group, and it is their field terms that must differ.
 - Earlier searches: never return the text of a search listed as judged. If one was judged good, keep what made it good and vary the terms; if one was judged bad, the person's reason says what to avoid. A search marked as the current untried one is the one you are replacing: improve on it rather than restating it.
 - The person's answer to a field's question, when shown, is a hard constraint on that field's searches.
 - rationale is one plain sentence saying which titles and field terms the search combines and why those were chosen.
@@ -225,7 +231,7 @@ For a good verdict retire nothing, narrow nothing and add nothing unless the rea
 ${LINKEDIN_SYNTAX}
 
 Rules for every query:
-- fieldIds lists only ids from the Fields section, and every query serves at least one. Build the query from role titles and the field's own terms as they appear in the roles and fit reasoning; never a bare generic word such as "climate" or "sustainability".
+- fieldIds lists only ids from the Fields section, and every query serves at least one. Build the query from the job titles employers post for the role's occupation (the one for doing the work and, where the occupation has one, the one for managing the people who do it) and the field's own terms as they appear in the roles and fit reasoning; never a bare generic word such as "climate" or "sustainability".
 - ${NO_LEVEL_WORDS}
 - ${NO_LOCATION} Use the stated location and work mode only as context for which fields and role titles are realistic.
 - Learn from tried queries: never repeat a listed query, keep what made a good query good, avoid what made a bad one bad.

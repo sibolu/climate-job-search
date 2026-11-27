@@ -27,9 +27,11 @@
  *
  * Post-validation is strict and counted, never silent, in both modes: a field
  * whose fit does not cite an active card, or a role whose `why` does not, is
- * dropped and reported in `dropped`. A role title is the plain occupation
- * (technical-plan.md D48): level modifiers are stripped, and a role titled by
- * rank alone is dropped and counted. Profile writes go through `upsertField`
+ * dropped and reported in `dropped`. A role title is the occupation, the
+ * name of the work ("Data science"), with no level (technical-plan.md D48,
+ * D72): level modifiers are stripped, a role titled by rank alone is dropped
+ * and counted, and a title that still ends in "Manager" is kept for
+ * `endsInManager` to report. Profile writes go through `upsertField`
  * / `upsertRole`; a re-run matches an existing field by its name (in
  * catalogue mode by the reference id stored in `extra.Ref` first) and updates
  * it in place, never renumbering and never downgrading a user-set status
@@ -67,7 +69,8 @@ import { isBlockedSourceHost, sourceHost } from "./reference-schema";
 
 export const MIN_FIELDS = 4;
 export const MAX_FIELDS = 7;
-export const MAX_ROLES_PER_FIELD = 4;
+/** One to three roles per field: a role is an occupation, so a field rarely holds more (technical-plan.md D72). */
+export const MAX_ROLES_PER_FIELD = 3;
 export const MAX_SOURCES = 5;
 export const MAX_UNCERTAINTIES = 3;
 /** Transferable-skill chips per field on the collapsed card (technical-plan.md D39). */
@@ -157,8 +160,11 @@ export const LEADING_LEVEL_MODIFIERS: readonly string[] = [
  * A rank, not an occupation ("Director of X", "Head of X", "VP, X", "Chief X
  * Officer"). Stripping it leaves a department, not a job, so a title that
  * contains one cannot be repaired: {@link validateOutput} drops the role and
- * counts it. "Manager" is deliberately absent: "Product Manager" and "Project
- * Manager" are occupations.
+ * counts it. "manager" is not in the list, because a title ending in it
+ * cannot be judged by code: "Product Manager" is an occupation (product
+ * management) and "Data Science Manager" is a rung of another (data science).
+ * Discovery is asked for the occupation instead (technical-plan.md D72), and
+ * {@link endsInManager} reports a title that still ends in "Manager".
  */
 export const LEVEL_HEADS: readonly string[] = [
   "director",
@@ -191,8 +197,12 @@ export const LEVEL_WORD_OCCUPATIONS: readonly string[] = [
   "documentary director",
   "lead generation",
   "lead abatement",
+  "lead remediation",
+  "lead service line",
+  "lead pipe",
   "lead-acid",
   "staff development",
+  "staff augmentation",
   "senior living",
   "senior services",
 ];
@@ -279,6 +289,38 @@ export function hasLevelWord(title: string): boolean {
   return hasLevelHead(title) || stripLevelWords(title).toLowerCase() !== tidyTitle(title).toLowerCase();
 }
 
+const ENDS_IN_MANAGER_RE = /\bmanager[\s\p{P}]*$/iu;
+
+/**
+ * True when the title's last word is "Manager", whatever its case and
+ * whatever whitespace or punctuation follows it: "Product Manager", "Data
+ * Science Manager", "Program manager.". "Product management" is not a hit,
+ * and neither is a title with "Manager" anywhere but the end.
+ *
+ * A role title is the occupation, the name of the work ("Data science",
+ * "Product management"), so a title ending in "Manager" is a job title that
+ * got through (technical-plan.md D72). Code cannot repair it: "Product
+ * Manager" is product management, while "Data Science Manager" is data
+ * science. {@link validateOutput} therefore leaves the role in place, and
+ * `pnpm try:discover` fails on one.
+ */
+export function endsInManager(title: string): boolean {
+  return ENDS_IN_MANAGER_RE.test(title);
+}
+
+const FOCUS_RE = /[,()[\]]/;
+
+/**
+ * True when the title carries a focus after a comma or in brackets: "Product
+ * Manager, carbon markets", "Data science (MRV)". A role title is the
+ * occupation alone and what is particular to the field belongs in the "why"
+ * (technical-plan.md D72). Like {@link endsInManager} it is reported, not
+ * repaired: `pnpm try:discover` fails on one.
+ */
+export function hasTitleFocus(title: string): boolean {
+  return FOCUS_RE.test(title);
+}
+
 // ---------------------------------------------------------------------------
 // Model output schema
 // ---------------------------------------------------------------------------
@@ -290,7 +332,9 @@ export function hasLevelWord(title: string): boolean {
 export const RoleDraftSchemaCatalogue = z.object({
   title: z
     .string()
-    .describe('The plain occupation with no level word: "Data Scientist", never "Senior Data Scientist" or "Director of Data Science".'),
+    .describe(
+      'The occupation alone, written as the name of the work in sentence case, with no level, rank or industry: "Data science", never "Data Scientist", "Senior Data Scientist", "Data Science Manager" or "Head of Data Science".',
+    ),
   /** Reference role id when the role is from the catalogue, else null. */
   ref: z.string().nullable(),
   companies: z.array(z.string()),
@@ -366,8 +410,11 @@ export type DiscoverOutputMemory = z.infer<typeof DiscoverOutputSchemaMemory>;
 /**
  * The catalogue arm's prompt. Its text is frozen while it serves as an
  * evaluation arm (technical-plan.md D61): `discover.test.ts` pins its hash.
+ * It changed once since, with the memory prompt, so that both arms name a
+ * role by its occupation and give one to three per field (technical-plan.md
+ * D72).
  */
-export const DISCOVER_SYSTEM_PROMPT_CATALOGUE = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and a small reference catalogue of climate fields and example roles. You return 4-7 ranked fields, each with 2-4 roles, as JSON.
+export const DISCOVER_SYSTEM_PROMPT_CATALOGUE = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and a small reference catalogue of climate fields and example roles. You return 4-7 ranked fields, each with 1-3 roles, as JSON.
 
 Rules that decide whether your answer is usable:
 
@@ -381,9 +428,9 @@ Rules that decide whether your answer is usable:
 
 5. Respect preferences. Location, work mode and retraining appetite are constraints when stated. Climate interests set the order, never the list: when the person names areas, rank fields in those areas first where the fit is comparable, and still include a strong fit outside them. Comparable means "strong" or "some": the person named those areas to see them first, so every field in a named area whose fit level is "strong" or "some" ranks above every field outside them, and only a "stretch" field in a named area gives way to a better fit outside. They did not ask to see nothing else, so a named area never removes a field you would otherwise list. The areas are unordered among themselves, and you judge which area a field belongs to from the work it does, not from the catalogue's sector-group headings, which are coarser. With no interests stated, rank on fit alone. Do not use excluded cards; they are not shown to you.
 
-6. Roles: give 2-4 per field. Each has a title, 1-4 real example companies or organisation types, a "why" that cites cards, and the catalogue's sources when it is a catalogue role. Do not repeat the same role across fields.
+6. Roles: give 1-3 per field. Each has a title, 1-4 real example companies or organisation types, a "why" that cites cards, and the catalogue's sources when it is a catalogue role. One role is enough where one occupation is the honest answer; a second or third earns its place only when it is different work. The same occupation may sit under more than one field, each with its own "why".
 
-The title is the plain occupation and carries no level: "Data Scientist", "Product Manager", "Policy Analyst", "Wind Turbine Technician". The person searches job boards with this title and decides for themselves which level to apply at. A level word narrows that search to one rung and makes a judgement that is not yours to make. This rules out level modifiers (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III), and it rules out titles that are a rank rather than an occupation (Director of X, Head of X, VP of X, Chief X Officer). For a rank, name the occupation underneath it: "Director of Data Science" is "Data Scientist", "Head of Partnerships" is "Partnerships Manager", "Senior Product Manager" is "Product Manager". "Manager" is fine where it is the occupation's own name, as in "Product Manager" or "Project Manager". The catalogue's own titles sometimes carry a rank; when you use such a role, keep its "ref" and write the plain occupation as the title. Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field short of roles.
+The title is the occupation alone, written as the name of the work in sentence case: "Data science", "Product management", "Policy analysis", "Wind turbine service". It is not a job title. The person searches job boards with job titles derived from this occupation, and decides for themselves, reading the postings, whether to manage people or do the work themselves and at which level to apply. One occupation therefore stands for every job title in it, and a title that picks one of them makes a judgement that is not yours to make. Someone who manages people doing an occupation is in that occupation: "Data Scientist", "Data Science Manager" and "Head of Data Science" are all "Data science", and that holds when the cards show the person leading a team today. Where managing is the work itself, the occupation is named for it: "Product Manager" is "Product management", "Project Manager" is "Project management". For the same reason the title carries no level: no modifier (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III) and no rank (Director of X, Head of X, VP of X, Chief X Officer). "Senior Policy Analyst" is "Policy analysis" and "Head of Partnerships" is "Partnerships". The industry is the field, not part of the title: each role is shown to the person under its field's name, so "Data science" under a carbon markets field already reads as data science in carbon markets. Write no focus after a comma or in brackets either; what is particular about the work in this field belongs in the "why". The catalogue's own titles are job titles, some with a level or a rank; when you use such a role, keep its "ref" and write its occupation as the title. Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field with no roles.
 
 7. Fill the card the person sees. Per field: "sector" is one line naming the sector it sits in. "fitLevel" is one of three labels, never a number: "strong" means companies hire for this function from this background today; "some" means they hire for it but expect a gap, and your "fit" names that gap; "stretch" means it needs retraining or a rare path. "summary" is two sentences in the second person ("You have...", "Your...") with no hedging, saying what the work is and why this person fits it. It is shown directly under the field's name, so it says what the name does not and never repeats or paraphrases the name: open with the work itself, what the person would make, run or decide in a normal week, not with a sentence that announces the field. "chips" are 3-4 short transferable-skill phrases (two to four words) drawn from the cards. "evidence" has one entry per card the field draws on: the card ID and one sentence naming what in that card counts. "ask" is the one question whose answer would most change the fit, with "key" a short preference label the answer is filed under (such as "Content mix" or "Travel") and "placeholder" an example answer; it must not repeat a preference the person has already stated.
 
@@ -397,7 +444,7 @@ Answer with the JSON only.`;
  * catalogue prompt's; rules 5 and 6 are the same minus what they said about
  * the catalogue. `discover.test.ts` checks both claims.
  */
-export const DISCOVER_SYSTEM_PROMPT_MEMORY = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and the fields already on their profile, if any. You have no web access: the fields, roles and example organisations you return come from what you know. You return 4-7 ranked fields, each with 2-4 roles, as JSON.
+export const DISCOVER_SYSTEM_PROMPT_MEMORY = `You help one career switcher find where their existing work fits in climate. You get their experience cards, their stated preferences, and the fields already on their profile, if any. You have no web access: the fields, roles and example organisations you return come from what you know. You return 4-7 ranked fields, each with 1-3 roles, as JSON.
 
 The ten areas below are the frame for what counts as climate work. They are listed so that your coverage does not depend on which areas the person happened to name:
 
@@ -418,7 +465,7 @@ Rules that decide whether your answer is usable:
 
 1. Be specific to THIS person. Every field's "fit" and every role's "why" must name the card IDs (C1, C2, ...) it draws on and say what in that card transfers. Never recommend a field that any climate-curious person would get; if you cannot tie a field to a concrete card, leave it out. Generic lists ("climate needs everyone", "software", "engineering", "sustainability") are worthless. A videographer should get fields where video and story work is a real, hired function (communications teams at developers and nonprofits, documentary and impact media, brand content), not "renewable energy" in general.
 
-2. Name real fields and roles you know well. Everything in your answer comes from your own knowledge, so stay with parts of the climate economy you can describe concretely: what the organisations there do, which functions they hire for, and what those jobs are called on a job board. The person will search for the role titles you give, and a field or title that sounds plausible but is not hired for sends them looking for jobs that do not exist. Where you know a field well but are unsure of something about it, keep the field and put the doubt in its "uncertainties". Where you would be guessing that the field hires for this person's function at all, leave it out. Write no URL or web address anywhere in your answer: you cannot check a link from memory, a wrong or dead one costs the person's trust in the rest of the page, and any that you write is removed before the person sees it.
+2. Name real fields and roles you know well. Everything in your answer comes from your own knowledge, so stay with parts of the climate economy you can describe concretely: what the organisations there do, which functions they hire for, and what those jobs are called on a job board. The person will search for jobs in the occupations you name, and a field or occupation that sounds plausible but is not hired for sends them looking for jobs that do not exist. Where you know a field well but are unsure of something about it, keep the field and put the doubt in its "uncertainties". Where you would be guessing that the field hires for this person's function at all, leave it out. Write no URL or web address anywhere in your answer: you cannot check a link from memory, a wrong or dead one costs the person's trust in the rest of the page, and any that you write is removed before the person sees it.
 
 3. Label the move honestly. "sector" = the same function they do today, moved into a climate company. "adjacent" = a related function that reuses most of their skills but changes the job. "retraining" = needs new credentials or a substantially new skill set. Rank sector and adjacent moves above retraining unless the person's preferences say they want to retrain.
 
@@ -426,9 +473,9 @@ Rules that decide whether your answer is usable:
 
 5. Respect preferences. Location, work mode and retraining appetite are constraints when stated. Climate interests set the order, never the list: when the person names areas, rank fields in those areas first where the fit is comparable, and still include a strong fit outside them. Comparable means "strong" or "some": the person named those areas to see them first, so every field in a named area whose fit level is "strong" or "some" ranks above every field outside them, and only a "stretch" field in a named area gives way to a better fit outside. They did not ask to see nothing else, so a named area never removes a field you would otherwise list. The areas are unordered among themselves, and you judge which area a field belongs to from the work it does. With no interests stated, rank on fit alone. Do not use excluded cards; they are not shown to you.
 
-6. Roles: give 2-4 per field. Each has a title, 1-4 example companies, and a "why" that cites cards. Do not repeat the same role across fields.
+6. Roles: give 1-3 per field. Each has a title, 1-4 example companies, and a "why" that cites cards. One role is enough where one occupation is the honest answer; a second or third earns its place only when it is different work. The same occupation may sit under more than one field, each with its own "why".
 
-The title is the plain occupation and carries no level: "Data Scientist", "Product Manager", "Policy Analyst", "Wind Turbine Technician". The person searches job boards with this title and decides for themselves which level to apply at. A level word narrows that search to one rung and makes a judgement that is not yours to make. This rules out level modifiers (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III), and it rules out titles that are a rank rather than an occupation (Director of X, Head of X, VP of X, Chief X Officer). For a rank, name the occupation underneath it: "Director of Data Science" is "Data Scientist", "Head of Partnerships" is "Partnerships Manager", "Senior Product Manager" is "Product Manager". "Manager" is fine where it is the occupation's own name, as in "Product Manager" or "Project Manager". Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field short of roles.
+The title is the occupation alone, written as the name of the work in sentence case: "Data science", "Product management", "Policy analysis", "Wind turbine service". It is not a job title. The person searches job boards with job titles derived from this occupation, and decides for themselves, reading the postings, whether to manage people or do the work themselves and at which level to apply. One occupation therefore stands for every job title in it, and a title that picks one of them makes a judgement that is not yours to make. Someone who manages people doing an occupation is in that occupation: "Data Scientist", "Data Science Manager" and "Head of Data Science" are all "Data science", and that holds when the cards show the person leading a team today. Where managing is the work itself, the occupation is named for it: "Product Manager" is "Product management", "Project Manager" is "Project management". For the same reason the title carries no level: no modifier (Senior, Junior, Lead, Principal, Staff, Associate, Entry-level, Mid-level, a trailing I, II or III) and no rank (Director of X, Head of X, VP of X, Chief X Officer). "Senior Policy Analyst" is "Policy analysis" and "Head of Partnerships" is "Partnerships". The industry is the field, not part of the title: each role is shown to the person under its field's name, so "Data science" under a carbon markets field already reads as data science in carbon markets. Write no focus after a comma or in brackets either; what is particular about the work in this field belongs in the "why". Level modifiers are removed from your titles afterwards and a role whose title is still a rank is dropped, which can leave a field with no roles.
 
 "companies" are examples of who hires for the role, shown to the person as plain text. Name well-known organisations that you are sure exist and that do this work, in the United States or the European Union. Where you are not sure of a name, name the type of organisation instead ("a utility's grid-planning team", "a state energy office"): a type is honest and still tells the person where to look, while a guessed name sends them after an organisation that may not exist or does not do this work. Name organisations, never individual people.
 
@@ -575,6 +622,8 @@ export interface DroppedCounts {
   rolesUncited: number;
   /** Roles dropped because the title is a rank with no occupation left under it (technical-plan.md D48). */
   rolesLevelTitled: number;
+  /** Roles beyond {@link MAX_ROLES_PER_FIELD} in their field, or repeating an earlier role in it. */
+  rolesSurplus: number;
   /** Catalogue mode: entries removed from `sources` as not listed in the catalogue, blocked, or malformed. */
   sourcesRemoved: number;
   /** Both modes: URLs removed from the text of kept fields and roles, where nothing may carry one (technical-plan.md D44, D61, D66). */
@@ -592,6 +641,7 @@ function zeroDropped(): DroppedCounts {
     fieldsUncited: 0,
     rolesUncited: 0,
     rolesLevelTitled: 0,
+    rolesSurplus: 0,
     sourcesRemoved: 0,
     textUrlsStripped: 0,
     fieldsSurplus: 0,
@@ -924,6 +974,11 @@ function prepareDraft(draft: FieldDraftMemory | FieldDraftCatalogue, catalogueMo
  * one field are one role and the first wins. A title that is a rank
  * ("Director of X") has no occupation to fall back to: the role is dropped
  * and counted in `rolesLevelTitled`.
+ *
+ * A title that ends in "Manager" is a job title where the occupation was
+ * asked for (technical-plan.md D72). It is kept as written, because code
+ * cannot tell which occupation it stands for; {@link endsInManager} reports
+ * it.
  */
 export function validateOutput(
   output: DiscoverOutputMemory | DiscoverOutputCatalogue,
@@ -954,7 +1009,10 @@ export function validateOutput(
     const seenRoles = new Set<string>();
     let roleUrlsStripped = 0;
     for (const [i, r] of draft.roles.entries()) {
-      if (roles.length >= MAX_ROLES_PER_FIELD) break;
+      if (roles.length >= MAX_ROLES_PER_FIELD) {
+        dropped.rolesSurplus += 1;
+        continue;
+      }
       const title = stripLevelWords(r.title);
       if (hasLevelHead(title) || (title === "" && r.title.trim() !== "")) {
         dropped.rolesLevelTitled += 1;
@@ -963,7 +1021,10 @@ export function validateOutput(
       // No title at all (possibly one that was only a URL).
       if (title === "") continue;
       const rKeys = identityKeys(r.ref, title);
-      if (rKeys.some((k) => seenRoles.has(k))) continue;
+      if (rKeys.some((k) => seenRoles.has(k))) {
+        dropped.rolesSurplus += 1;
+        continue;
+      }
       if (citedActiveCardIds(r.why, profile).length === 0) {
         dropped.rolesUncited += 1;
         continue;
@@ -1221,10 +1282,10 @@ function writeResult(
 
 /** One line for logs and the CLI: counts only, never content. */
 export function droppedSummary(d: DroppedCounts): string {
-  const total = d.fieldsUncited + d.rolesUncited + d.rolesLevelTitled + d.fieldsSurplus;
+  const total = d.fieldsUncited + d.rolesUncited + d.rolesLevelTitled + d.rolesSurplus + d.fieldsSurplus;
   return (
     `${String(total)} dropped (fields: ${String(d.fieldsUncited)} uncited, ${String(d.fieldsSurplus)} surplus; ` +
-    `roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesLevelTitled)} titled by rank; ${String(d.sourcesRemoved)} source URLs removed, ${String(d.textUrlsStripped)} URLs stripped from text; ` +
+    `roles: ${String(d.rolesUncited)} uncited, ${String(d.rolesLevelTitled)} titled by rank, ${String(d.rolesSurplus)} surplus; ${String(d.sourcesRemoved)} source URLs removed, ${String(d.textUrlsStripped)} URLs stripped from text; ` +
     `${String(d.evidenceDropped)} evidence lines, ${String(d.asksDropped)} asks dropped)`
   );
 }

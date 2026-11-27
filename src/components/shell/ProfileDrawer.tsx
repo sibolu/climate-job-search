@@ -129,8 +129,13 @@ export default function ProfileDrawer({
 
         <Section section={summary.searches}>
           {(search) => (
-            <li key={`${search.roleTitle}-${search.query}`}>
-              <span className="cc-drawer-label">{search.roleTitle}</span>
+            <li key={`${search.roleTitle}-${search.fieldName}-${search.query}`}>
+              <span className="cc-drawer-label">
+                {search.roleTitle}
+                {search.fieldName ? (
+                  <span className="cc-drawer-note"> · {search.fieldName}</span>
+                ) : null}
+              </span>
               <code className="cc-drawer-query">{search.query}</code>
             </li>
           )}

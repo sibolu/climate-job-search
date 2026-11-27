@@ -20,6 +20,7 @@ import {
   hasLiveQueries,
   roleGroups,
   copyKey,
+  missingSearchesNote,
   searchCards,
   selectedRolesNote,
   sourceLabel,
@@ -472,6 +473,17 @@ describe("searchCards and hasLiveQueries", () => {
     expect(cards.map((c) => c.fieldName)).toEqual(["Field F1", "Field F1", "Field F2"]);
     expect(cards.map((c) => c.query?.id)).toEqual(["Q1", undefined, "Q3"]);
     expect(hasLiveQueries(p)).toBe(true);
+  });
+
+  it("names each ticked role with no search by its title and field, so one occupation under two fields reads apart", () => {
+    const p = withFields(fields, [
+      { ...role("R1", "F1", true), title: "Data science" },
+      { ...role("R2", "F2", true), title: "Data science" },
+    ]);
+    expect(missingSearchesNote(searchCards(p))).toBe("Data science · Field F1, Data science · Field F2");
+    expect(missingSearchesNote([{ role: { ...role("R3", "F9", true), title: "Policy analysis" }, fieldName: "" }])).toBe(
+      "Policy analysis",
+    );
   });
 
   it("is false when no selected role has a live search", () => {

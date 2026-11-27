@@ -46,6 +46,9 @@ import {
   stripLevelWords,
   stripUrls,
   validateOutput,
+  MAX_ROLES_PER_FIELD,
+  endsInManager,
+  hasTitleFocus,
 } from "./discover";
 import { CLIMATE_AREAS } from "./elicit";
 import type { CallMetrics, Llm, StreamText, StructuredRequest } from "./llm";
@@ -721,9 +724,11 @@ describe("the two system prompts (technical-plan.md D61)", () => {
   // Pinned in step 2d.2, when the catalogue path became an evaluation arm. A
   // deliberate change to that arm updates the hash in the same commit; the
   // message hash also moves if the videographer fixture or a renderer does.
-  it("the catalogue arm's prompt and message are byte for byte what they were before memory mode", () => {
+  // The prompt hash was re-pinned once, when both arms began naming a role by
+  // its occupation, one to three per field (technical-plan.md D72).
+  it("the catalogue arm's prompt and message are pinned", () => {
     expect(sha256(DISCOVER_SYSTEM_PROMPT_CATALOGUE)).toBe(
-      "1cefadecfcab7aa668a9ebaefd1fec51d9061b762cf117577616e312915e132a",
+      "66b7095d83fcd66a598347e4a20d8fa0977e81f3031ceceaf17bdc74b81bf9f5",
     );
     expect(sha256(buildDiscoverMessage(fixture("videographer"), CATALOGUE))).toBe(
       "467bb41a289caa3b3a531ab0180d9a560a2a57b4e5a74ddc0c0cd17db94b955a",
@@ -781,11 +786,145 @@ describe("the two system prompts (technical-plan.md D61)", () => {
     // The title rule loses only its sentence about the catalogue's own titles.
     expect(paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, "The title is")).toBe(
       paragraph(DISCOVER_SYSTEM_PROMPT_CATALOGUE, "The title is")!.replace(
-        ` The catalogue's own titles sometimes carry a rank; when you use such a role, keep its "ref" and write the plain occupation as the title.`,
+        ` The catalogue's own titles are job titles, some with a level or a rank; when you use such a role, keep its "ref" and write its occupation as the title.`,
         "",
       ),
     );
     expect(paragraph(DISCOVER_SYSTEM_PROMPT_MEMORY, "The title is")).toContain("carries no level");
+  });
+});
+
+describe("a role title is the occupation (technical-plan.md D72)", () => {
+  const role = (title: string) => ({ ref: null, title, companies: [], why: "Same field craft as C1.", sources: [] });
+
+  it("level stripping leaves an occupation written as the name of the work unchanged", () => {
+    for (const title of [
+      "Data science",
+      "Product management",
+      "Project management",
+      "Policy analysis",
+      "Wind turbine service",
+      "Partnerships",
+      "Video production",
+    ]) {
+      expect(stripLevelWords(title)).toBe(title);
+      expect(hasLevelWord(title)).toBe(false);
+      expect(hasLevelHead(title)).toBe(false);
+      expect(endsInManager(title)).toBe(false);
+    }
+  });
+
+  it("endsInManager reports a title whose last word is Manager, and only that", () => {
+    for (const title of [
+      "Product Manager",
+      "Data Science Manager",
+      "program manager",
+      "PROJECT MANAGER",
+      "Manager",
+      "Partnerships Manager  ",
+      "Site Manager.",
+      "(Product Manager)",
+      "Account manager - ",
+    ]) {
+      expect(endsInManager(title)).toBe(true);
+    }
+    for (const title of [
+      "Product management",
+      "Data science",
+      "Management consulting",
+      "Manager of Partnerships",
+      "Product Manager, carbon markets",
+      "Product Managers",
+      "Managerial accounting",
+      "",
+    ]) {
+      expect(endsInManager(title)).toBe(false);
+    }
+  });
+
+  it("validation keeps a title ending in Manager as written: code cannot name its occupation", () => {
+    const profile = fixture("videographer");
+    const v = validateOutput(
+      output({ roles: [role("Product Manager"), role("Senior Data Science Manager"), role("Video production")] }),
+      profile,
+      ALLOWED,
+    );
+    const titles = v.fields[0]!.roles.map((r) => r.title);
+    expect(titles).toEqual(["Product Manager", "Data Science Manager", "Video production"]);
+    expect(titles.filter(endsInManager)).toEqual(["Product Manager", "Data Science Manager"]);
+    expect(v.dropped.rolesLevelTitled).toBe(0);
+  });
+
+  it("validation keeps at most three roles per field", () => {
+    expect(MAX_ROLES_PER_FIELD).toBe(3);
+    const profile = fixture("videographer");
+    const v = validateOutput(
+      output({ roles: ["Video production", "Communications", "Community engagement", "Fundraising"].map(role) }),
+      profile,
+      ALLOWED,
+    );
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video production", "Communications", "Community engagement"]);
+    expect(v.dropped.rolesSurplus).toBe(1);
+  });
+
+  it("validation counts a role repeating an earlier one in its field as surplus", () => {
+    const profile = fixture("videographer");
+    const v = validateOutput(output({ roles: ["Video production", "Senior Video production"].map(role) }), profile, ALLOWED);
+    expect(v.fields[0]!.roles.map((r) => r.title)).toEqual(["Video production"]);
+    expect(v.dropped.rolesSurplus).toBe(1);
+  });
+
+  it("occupations that start with Lead or Staff keep their first word", () => {
+    for (const title of ["Lead remediation", "Lead service line replacement", "Lead pipe inspection", "Staff augmentation"]) {
+      expect(stripLevelWords(title)).toBe(title);
+      expect(hasLevelWord(title)).toBe(false);
+    }
+  });
+
+  it("hasTitleFocus reports a focus after a comma or in brackets, and only that", () => {
+    for (const title of ["Product Manager, carbon markets", "Data science (MRV)", "Policy analysis [EU]"]) {
+      expect(hasTitleFocus(title)).toBe(true);
+    }
+    for (const title of ["Data science", "Wind turbine service", "Operations and maintenance", "Lead-acid recycling", ""]) {
+      expect(hasTitleFocus(title)).toBe(false);
+    }
+  });
+
+  // Stored profiles are not migrated: a role saved under a job title and the
+  // occupation a later run returns are two roles, matched by title and found
+  // different. This pins what the person then sees (technical-plan.md D58).
+  it("a ticked role stored under a job title is dropped and un-ticked when a run returns its occupation instead", () => {
+    const profile = fixture("videographer");
+    const first = applyDiscovery(profile, validateOutput(output({ roles: [role("Video Producer")] }), profile, ALLOWED).fields);
+    expect(first.roles.map((r) => [r.id, r.title, r.fieldId])).toEqual([["R1", "Video Producer", "F1"]]);
+    const ticked = setRoleSelected(first.profile, "R1", true);
+
+    const second = applyDiscovery(ticked, validateOutput(output({ roles: [role("Video production")] }), ticked, ALLOWED).fields);
+    expect(second.fields.map((f) => f.id)).toEqual(["F1"]);
+    expect(second.roles.map((r) => r.id)).toEqual(["R2"]);
+    expect(second.profile.roles.map((r) => [r.id, r.title, r.fieldId, r.selected, isDropped(r)])).toEqual([
+      ["R1", "Video Producer", "F1", false, true],
+      ["R2", "Video production", "F1", false, false],
+    ]);
+  });
+
+  it("both prompts and both schemas ask for the occupation, one to three per field", () => {
+    const roles = `1-${String(MAX_ROLES_PER_FIELD)}`;
+    for (const prompt of [DISCOVER_SYSTEM_PROMPT_CATALOGUE, DISCOVER_SYSTEM_PROMPT_MEMORY]) {
+      expect(prompt).toContain(`each with ${roles} roles, as JSON.`);
+      expect(prompt).toContain(`6. Roles: give ${roles} per field.`);
+      expect(prompt).toContain(`The same occupation may sit under more than one field, each with its own "why".`);
+      expect(prompt).not.toContain("Do not repeat the same role");
+      const title = paragraph(prompt, "The title is");
+      expect(title).toContain("The title is the occupation alone");
+      expect(title).toContain(`"Data Scientist", "Data Science Manager" and "Head of Data Science" are all "Data science"`);
+      expect(title).toContain(`"Product Manager" is "Product management"`);
+      expect(title).toContain("The industry is the field, not part of the title");
+      expect(title).toContain("no focus after a comma or in brackets");
+      expect(title).not.toContain("is fine");
+    }
+    expect(RoleDraftSchemaCatalogue.shape.title.description).toContain(`"Data science"`);
+    expect(RoleDraftSchemaMemory.shape.title.description).toBe(RoleDraftSchemaCatalogue.shape.title.description);
   });
 });
 

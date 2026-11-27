@@ -168,6 +168,26 @@ note it for later rather than keeping it to be safe.
   the sector line under a field, the retraining question (moved to the backlog),
   the follow-up questions on roles.
 
+### 13. Name a role by its work; let the field say the industry
+
+A role label is an occupation in sentence case: the name of the work, with no
+level, no rank and no focus after a comma or in brackets. The industry comes
+from the field heading it sits under, never from the title, so a role reads
+as occupation and industry: data science in carbon finance. This does not
+contradict principle 7: the job-board titles are what the searches are built
+from, and the role label names the work so that one label covers every title
+in it, whether the person does the work or manages people who do
+(technical-plan.md D72).
+
+- Rejected: *Data Science Manager*; *Senior Data Scientist, program
+  measurement*.
+- Accepted: *Data science*, under the field's heading.
+- Wherever a role is listed away from its field's heading (the profile
+  drawer's Searches, the "no search yet" note), the field's name goes
+  beside it after a middle dot, *Data science · Carbon markets*: the same
+  occupation can be ticked under two fields, and two bare *Data science*
+  lines would not say which is which (technical-plan.md D74).
+
 ## Voice
 
 - Second person, present tense. "Your experience", "pick", "explore".

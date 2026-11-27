@@ -383,6 +383,17 @@ export interface SearchCardView {
   query?: Query;
 }
 
+/**
+ * The ticked roles with no search yet, each with its field: the same
+ * occupation can be ticked under two fields (D72), and "Data science, Data
+ * science" would not say which is which.
+ */
+export function missingSearchesNote(missing: readonly SearchCardView[]): string {
+  return missing
+    .map(({ role, fieldName }) => (fieldName === "" ? role.title : `${role.title} · ${fieldName}`))
+    .join(", ");
+}
+
 /** One entry per selected role, in `selectedRoles` order. */
 export function searchCards(p: Profile): SearchCardView[] {
   const names = new Map(p.fields.map((field) => [field.id, field.name] as const));

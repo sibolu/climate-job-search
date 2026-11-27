@@ -17,7 +17,8 @@
  * or a source, or has a URL in its text (a field's fit, summary and
  * uncertainties; a role's why and companies); if any field lacks a role, a
  * fit level, a sector, a summary, chips or an ask (technical-plan.md D39);
- * or if a role title carries a level word (D48).
+ * or if a role title carries a level word (D48) or ends in "Manager", which
+ * is a job title where the occupation was asked for (`endsInManager`, D72).
  *
  * **`--catalogue` runs the catalogue arm.** The reference tables are read
  * from Supabase (the local stack must be running) and handed to
@@ -59,6 +60,8 @@ import {
   citedActiveCardIds,
   discoverFields,
   droppedSummary,
+  endsInManager,
+  hasTitleFocus,
   hasLevelWord,
   hasUrl,
 } from "../src/lib/discover";
@@ -219,6 +222,10 @@ async function main(): Promise<void> {
     if (citedActiveCardIds(r.why, result.profile).length === 0) problems.push(`${r.id} cites no card`);
     // A title names the occupation, never a level (technical-plan.md D48).
     if (hasLevelWord(r.title)) problems.push(`${r.id} has a level word in its title`);
+    // It names the work ("Data science"), not one job in it; code cannot repair
+    // "… Manager", so validation leaves it and this check fails on it (D72).
+    if (endsInManager(r.title)) problems.push(`${r.id} has a title ending in "Manager", not an occupation`);
+    if (hasTitleFocus(r.title)) problems.push(`${r.id} has a focus after a comma or in brackets in its title`);
     if ([r.title, r.why, ...r.companies].some((text) => hasUrl(text))) problems.push(`${r.id} has a URL in its text`);
     if (catalogue === undefined) {
       if (r.extra[REF_KEY] !== undefined) problems.push(`${r.id} carries a Ref`);
@@ -231,8 +238,8 @@ async function main(): Promise<void> {
   if (problems.length > 0) fail(`FAILED (${mode} mode): ${problems.join("; ")}`);
   process.stderr.write(
     catalogue === undefined
-      ? "PASS (memory mode): every field has a fit level, sector and an ask; every field and role cites a card; no Ref, no source and no URL written; no role title carries a level word\n"
-      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs, with no URL in its text; no role title carries a level word\n",
+      ? "PASS (memory mode): every field has a fit level, sector and an ask; every field and role cites a card; no Ref, no source and no URL written; no role title carries a level word, ends in \"Manager\" or carries a focus\n"
+      : "PASS (catalogue mode): every field has a fit level, sector and an ask; every field and role cites a card and only catalogue URLs, with no URL in its text; no role title carries a level word, ends in \"Manager\" or carries a focus\n",
   );
 }
 
