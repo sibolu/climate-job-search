@@ -1,10 +1,3 @@
-// Generated file — do not edit by hand.
-//
-//   supabase gen types typescript --local > src/lib/database.types.ts
-//
-// Regenerate after every migration in supabase/migrations/ and commit the
-// result, so `Database` always matches the schema (technical-plan.md D15).
-
 export type Json =
   | string
   | number
@@ -41,6 +34,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_codes: {
+        Row: {
+          cap_usd: number
+          code_key: string
+          created_at: string
+          disabled: boolean
+          spent_usd: number
+        }
+        Insert: {
+          cap_usd: number
+          code_key: string
+          created_at?: string
+          disabled?: boolean
+          spent_usd?: number
+        }
+        Update: {
+          cap_usd?: number
+          code_key?: string
+          created_at?: string
+          disabled?: boolean
+          spent_usd?: number
+        }
+        Relationships: []
+      }
       climate_fields: {
         Row: {
           climate_link: string
@@ -213,7 +230,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      access_code_add_spend: {
+        Args: { key: string; usd: number }
+        Returns: undefined
+      }
+      access_code_budget: {
+        Args: { key: string }
+        Returns: {
+          cap_usd: number
+          disabled: boolean
+          spent_usd: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

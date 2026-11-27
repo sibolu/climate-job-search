@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D66, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D67, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -1175,6 +1175,45 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     schema) is unchanged. Not done here: a memory-mode re-run still matches
     a kept field or role by its exact name or title (`docs/backlog.md` §2,
     "A re-run keeps a role only if its wording is unchanged").
+
+67. **Each access code has a dollar cap, kept as one running total in
+    `access_codes` (2026-11-26, Phase 2e.1).** The new table
+    `public.access_codes` has five columns: `code_key` (the first 32 hex
+    chars of the SHA-256 of a generated code, pinned to that shape by a
+    CHECK; the code itself is never stored), `cap_usd`, `spent_usd`
+    (default 0; both non-negative and not NaN by CHECK), `disabled` and
+    `created_at`. The table is closed: RLS on, no policies, every grant
+    revoked from `anon` and `authenticated`. The app reaches it only
+    through two SECURITY DEFINER functions (`search_path = ''`, EXECUTE
+    revoked from PUBLIC and granted to `anon` and `authenticated`), called
+    with the publishable key: `access_code_budget(key)` returns one
+    `(cap_usd, spent_usd, disabled)` row for a known key and none for an
+    unknown one, and `access_code_add_spend(key, usd)` adds to the total in
+    one atomic UPDATE, raises 22023 for a null, negative, NaN or infinite
+    amount, and does nothing for an unknown key. Anyone can call them, but
+    only with a 32-hex key they cannot guess, so the worst a tester can do
+    with their own key is use up their own budget. There is no label
+    column, nor a name, session id or time of last use: nothing
+    server-side holds free text, and who holds which code is known only to
+    the operator, outside the repo and the database. The per-session cap
+    planned for step 3.3 (D4, and the comment in the `llm_usage`
+    migration) is dropped: the session id is made in the browser and
+    "Start over" makes a new one, so a cap keyed on it stops nobody.
+    `llm_usage` is untouched and no usage row is linked to a code (D22
+    stands). The data rule now reads, as approved by the user on
+    2026-11-26: "There are two server-side writes: the anonymous
+    `llm_usage` row, and one running dollar total per access code
+    (`access_codes.spent_usd`). Neither holds content or identity. An
+    access-code row is a derived key, a cap, a total, a disabled flag and a
+    creation time." `src/lib/budget.ts` is the ledger over the two
+    functions: `BudgetLedger` (`read`, `addSpend`), `supabaseBudgetLedger`
+    (through `anonClient().rpc`), `memoryBudgetLedger` (mirrors the SQL,
+    for tests), `budgetVerdict` (null or disabled is `inactive`, at or
+    over the cap or non-finite is `exhausted`) and `BudgetLedgerError`,
+    which carries the error code only and is never logged with a key. The
+    cap value is never written into code: it is an argument to the
+    operator's script that step 2e.2 adds. `pnpm db:check-rls` asserts the
+    closed table and the functions' behaviour (group f).
 
 ---
 
