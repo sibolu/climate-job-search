@@ -1,6 +1,7 @@
-import { after, NextResponse } from "next/server";
+import { after, type NextRequest, NextResponse } from "next/server";
 
 import { usageWritesSettled } from "@/lib/llm";
+import { readSession, SESSION_COOKIE_NAME } from "@/lib/passcode";
 import { parseTurnRequest } from "@/lib/session";
 import { runTurn, turnErrorMessage } from "@/lib/turn";
 import { encodeTurnEvent, NDJSON_CONTENT_TYPE, type TurnEvent } from "@/lib/turn-stream";
@@ -16,6 +17,11 @@ import { encodeTurnEvent, NDJSON_CONTENT_TYPE, type TurnEvent } from "@/lib/turn
  * `maxDuration` and the heartbeat that keeps the connection alive. `after()`
  * keeps the function alive past the response until this turn's usage rows have
  * been written (not other turns' in the same instance, technical-plan.md D65), bounded by `USAGE_FLUSH_TIMEOUT_MS` (technical-plan.md D64).
+ *
+ * The signed session cookie is read again here, after the proxy (defence in
+ * depth), and is the only source of the access code's key: it goes to
+ * `runTurn` with the abort signal, so every model call is metered against
+ * that code (technical-plan.md D68, D69). Nothing in the body can set it.
  */
 // Segment config must be a literal Next can read at build time; the test pins
 // it to `MAX_DURATION_SECONDS` in `llm.ts` (technical-plan.md §4).
@@ -37,7 +43,13 @@ class TurnDisconnectedError extends Error {
   }
 }
 
-export async function POST(request: Request): Promise<Response> {
+export async function POST(request: NextRequest): Promise<Response> {
+  // Before the body is read: no valid session, no work (the proxy's wording).
+  const session = await readSession(request.cookies.get(SESSION_COOKIE_NAME)?.value, process.env.PASSCODE_COOKIE_SECRET);
+  if (session === null) return NextResponse.json({ error: "Access code required." }, { status: 401 });
+  // Every session carries a code key, and every call is metered (D71).
+  const { codeKey } = session;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -73,7 +85,7 @@ export async function POST(request: Request): Promise<Response> {
   // this only extends the invocation, and `usageWritesSettled` never rejects.
   after(async () => {
     await turnDone;
-    // Only this turn's rows: every call `runTurn` makes carries `abort.signal`.
+    // Only this turn's rows and charges: every call `runTurn` makes carries `abort.signal`.
     await usageWritesSettled(abort.signal);
   });
   const stream = new ReadableStream<Uint8Array>({
@@ -91,7 +103,7 @@ export async function POST(request: Request): Promise<Response> {
             if (closed) throw new TurnDisconnectedError();
             write({ type: "delta", text: `${text}\n` });
           },
-          abort.signal,
+          { signal: abort.signal, codeKey },
         );
         write({ type: "final", response });
       } catch (error) {

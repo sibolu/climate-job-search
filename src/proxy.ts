@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { SESSION_COOKIE_NAME, verifySession } from "@/lib/passcode";
+import { SESSION_COOKIE_NAME, readSession } from "@/lib/passcode";
 
 /**
- * Shared-passcode gate (technical-plan.md §1 "Access").
+ * Access gate (technical-plan.md §1 "Access", D68): a signed session cookie
+ * minted by `/api/enter` for an access code, the only way in (D71).
  *
  * Next.js 16 renamed the `middleware` file convention to `proxy`, so the gate
  * lives in `src/proxy.ts` and exports `proxy` rather than `middleware`.
@@ -20,14 +21,14 @@ export async function proxy(request: NextRequest) {
   if (PUBLIC_PATHS.has(pathname)) return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (await verifySession(token, process.env.PASSCODE_COOKIE_SECRET)) {
+  if (await readSession(token, process.env.PASSCODE_COOKIE_SECRET)) {
     return NextResponse.next();
   }
 
   // API callers get a status they can act on; a redirect to an HTML page would
   // be re-POSTed to /enter and silently swallowed by fetch().
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "Passcode required." }, { status: 401 });
+    return NextResponse.json({ error: "Access code required." }, { status: 401 });
   }
 
   const url = request.nextUrl.clone();

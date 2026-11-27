@@ -12,11 +12,20 @@
  *     call runs its tools through {@link assertToolsAllowed}, which throws on
  *     any web tool that does not block all three domains. A new fetch path
  *     that does not come through here is a bug, not a shortcut.
- *   * **No user data server-side.** The only server-side write in the product
- *     is an anonymous {@link UsageRow}: counters, a random session id and a
- *     step name. This module never logs, stores or forwards prompt or
- *     completion text — not in the usage row, not in an error message, not in
- *     a `console.warn`.
+ *   * **No user data server-side.** This module makes the product's two
+ *     server-side writes: an anonymous {@link UsageRow} (counters, a random
+ *     session id and a step name) and, for a call made under an access code,
+ *     the call's dollar cost added to that code's running total. It never
+ *     logs, stores or forwards prompt or completion text — not in the usage
+ *     row, not in an error message, not in a `console.warn` — and never logs
+ *     a code's key or amount.
+ *   * **Spend is capped per access code** (technical-plan.md D69, D71).
+ *     Every logical call must carry a `codeKey`; one without is refused with
+ *     {@link LlmBudgetError} `inactive` before any request, so no call is
+ *     unmetered. Before each call the code's budget is read and the call is
+ *     refused when it is spent, disabled, unknown or unreadable (fail
+ *     closed); after the call its `costUsd` is added to the code's total,
+ *     aborted calls included.
  *   * **Cost telemetry is comparable.** One row per logical call (a
  *     `pause_turn` continuation is part of the same logical call and its
  *     tokens are summed), priced from {@link PRICE_PER_MTOK} for the model
@@ -60,6 +69,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 
+import { isAccessCodeKey } from "./access-code";
+import { budgetVerdict, supabaseBudgetLedger, type BudgetLedger, type BudgetState } from "./budget";
 import { BLOCKED_SOURCE_DOMAINS } from "./reference-schema";
 import { isSessionId, type StepName } from "./session";
 import { anonClient } from "./supabase";
@@ -143,6 +154,13 @@ export const REQUEST_TIMEOUT_MS = CALL_TIMEOUT_MS;
  * `maxDuration`. Retries cover 408/409/429/5xx and connection errors.
  */
 export const MAX_RETRIES = 1;
+
+/**
+ * How long a metered call waits to read its access code's budget before it is
+ * refused as `unavailable`, so a hung ledger cannot hold a turn open
+ * (technical-plan.md D69).
+ */
+export const BUDGET_READ_TIMEOUT_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Blocked domains — the enforcement point
@@ -411,6 +429,28 @@ export class LlmSessionIdError extends LlmError {
   }
 }
 
+/** Why a metered call was refused (technical-plan.md D69). */
+export type LlmBudgetReason = "exhausted" | "inactive" | "unavailable";
+
+/**
+ * The call's access code may not make another call: its total has reached
+ * its cap (`exhausted`), it is missing, disabled, unknown or malformed (`inactive`),
+ * or its budget could not be read in time (`unavailable`; the check fails
+ * closed). Thrown before any request is made, so nothing was billed and no
+ * usage row or charge is written. The message names the step and the reason
+ * only — never the key, the cap or the total (technical-plan.md D69).
+ */
+export class LlmBudgetError extends LlmError {
+  readonly step: StepName;
+  readonly reason: LlmBudgetReason;
+
+  constructor(step: StepName, reason: LlmBudgetReason) {
+    super(`The ${step} call was refused by its access code's budget (${reason}).`);
+    this.step = step;
+    this.reason = reason;
+  }
+}
+
 /** Structured output was missing or did not match the schema. */
 export class LlmOutputError extends LlmError {
   readonly step: StepName;
@@ -519,46 +559,51 @@ function errorCode(error: unknown): string {
 }
 
 /**
- * How long {@link usageWritesSettled} waits for pending usage-row writes before
- * giving up (technical-plan.md D64). Bounded so a hung insert can never keep a
- * function alive for long.
+ * How long {@link usageWritesSettled} waits for pending writes (usage rows and
+ * budget charges) before giving up (technical-plan.md D64, D69). Bounded so a
+ * hung insert can never keep a function alive for long.
  */
 export const USAGE_FLUSH_TIMEOUT_MS = 5_000;
 
-/** Usage-row writes started but not yet settled; each removes itself when it does. */
-const pendingUsageWrites = new Set<Promise<void>>();
+/**
+ * Accounting writes started but not yet settled — each call's usage row and,
+ * for a call under an access code, its budget charge (technical-plan.md D69);
+ * each removes itself when it settles.
+ */
+const pendingWrites = new Set<Promise<void>>();
 /**
  * The same writes grouped by the abort signal of the call that started them,
- * so one turn waits only for its own rows (`runTurn` puts the turn's signal
- * on every request it makes).
+ * so one turn waits only for its own rows and charges (`runTurn` puts the
+ * turn's signal on every request it makes).
  */
-const pendingUsageWritesBySignal = new WeakMap<AbortSignal, Set<Promise<void>>>();
+const pendingWritesBySignal = new WeakMap<AbortSignal, Set<Promise<void>>>();
 
 /**
- * Starts the usage-row write without blocking the call: the caller never awaits
- * it, so telemetry can never cost the user their turn, and a failure is a
- * `console.warn` with the error code only and nothing else. The write is
- * tracked, under the call's `signal` when it has one, until it settles, so a
+ * Starts `start()` without blocking the call: the caller never awaits it, so
+ * accounting can never cost the user their turn, and a failure (a sync throw
+ * or a rejection) goes to `warn` with nothing else. The write is tracked,
+ * under the call's `signal` when it has one, until it settles, so a
  * serverless route can keep the function alive until it lands via
- * {@link usageWritesSettled} (technical-plan.md D64).
+ * {@link usageWritesSettled} (technical-plan.md D64, D69).
  */
-function recordUsage(sink: UsageSink, row: UsageRow, signal: AbortSignal | undefined): void {
-  const warn = (error: unknown): void => {
-    console.warn(`llm_usage row not written (${errorCode(error)}); the turn was unaffected`);
-  };
+function trackWrite(
+  start: () => Promise<void>,
+  warn: (error: unknown) => void,
+  signal: AbortSignal | undefined,
+): void {
   let write: Promise<void>;
   try {
-    write = Promise.resolve(sink.record(row)).then(() => undefined, warn);
+    write = Promise.resolve(start()).then(() => undefined, warn);
   } catch (error) {
     warn(error);
     return;
   }
-  const sets = [pendingUsageWrites];
+  const sets = [pendingWrites];
   if (signal !== undefined) {
-    let scoped = pendingUsageWritesBySignal.get(signal);
+    let scoped = pendingWritesBySignal.get(signal);
     if (scoped === undefined) {
       scoped = new Set();
-      pendingUsageWritesBySignal.set(signal, scoped);
+      pendingWritesBySignal.set(signal, scoped);
     }
     sets.push(scoped);
   }
@@ -568,21 +613,101 @@ function recordUsage(sink: UsageSink, row: UsageRow, signal: AbortSignal | undef
   });
 }
 
+/** Starts the usage-row write; a failure warns with the error code only. */
+function recordUsage(sink: UsageSink, row: UsageRow, signal: AbortSignal | undefined): void {
+  trackWrite(
+    () => sink.record(row),
+    (error) => {
+      console.warn(`llm_usage row not written (${errorCode(error)}); the turn was unaffected`);
+    },
+    signal,
+  );
+}
+
 /**
- * Resolves once the usage-row writes pending at call time have settled, or
- * after `timeoutMs`, whichever comes first. With `signal`, only the writes of
- * calls made with that signal count, so a turn is never held up by another
- * turn's insert in the same instance; without it, every pending write counts.
- * Never rejects and logs nothing of its own (a failed write already warned in
- * {@link recordUsage}). The turn route awaits it inside `after()` with the
- * turn's signal so Vercel does not suspend the function before the last
- * call's row is inserted (technical-plan.md D64).
+ * Starts the budget charge: `usd` added to the code's running total
+ * (technical-plan.md D69). A failure warns with the error code only — never
+ * the key or the amount — and undercounts, which is accepted; it never fails
+ * the call.
+ */
+function recordSpend(
+  budget: BudgetLedger,
+  codeKey: string,
+  usd: number,
+  signal: AbortSignal | undefined,
+): void {
+  trackWrite(
+    () => budget.addSpend(codeKey, usd),
+    (error) => {
+      console.warn(`access-code charge not written (${errorCode(error)}); the turn was unaffected`);
+    },
+    signal,
+  );
+}
+
+/**
+ * Reads the code's budget before a call and returns the key to charge, or
+ * throws unless the call may run
+ * (technical-plan.md D69). Fails closed: a missing or malformed key is
+ * `inactive` without a read (D71); a read that rejects or outlasts `timeoutMs` is
+ * `unavailable`. The caller's `signal` firing mid-read is a cancellation.
+ */
+async function allowedCodeKey(
+  request: CallRequest,
+  codeKey: string | undefined,
+  budget: BudgetLedger,
+  timeoutMs: number,
+): Promise<string> {
+  if (!isAccessCodeKey(codeKey)) throw new LlmBudgetError(request.step, "inactive");
+  const signal = request.signal;
+  if (signal?.aborted === true) throw new LlmCancelledError(request.step);
+
+  type Outcome = { state: BudgetState | null } | "unavailable" | "cancelled";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const outcome = await new Promise<Outcome>((resolve) => {
+    timer = setTimeout(() => resolve("unavailable"), timeoutMs);
+    onAbort = () => resolve("cancelled");
+    signal?.addEventListener("abort", onAbort, { once: true });
+    let read: Promise<BudgetState | null>;
+    try {
+      read = Promise.resolve(budget.read(codeKey));
+    } catch {
+      resolve("unavailable");
+      return;
+    }
+    read.then(
+      (state) => resolve({ state }),
+      () => resolve("unavailable"),
+    );
+  });
+  clearTimeout(timer);
+  if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);
+
+  // An abort that lands after the read settled is caught by the call loop's
+  // own `signal.aborted` check, which also ends in LlmCancelledError.
+  if (outcome === "cancelled") throw new LlmCancelledError(request.step);
+  if (outcome === "unavailable") throw new LlmBudgetError(request.step, "unavailable");
+  const verdict = budgetVerdict(outcome.state);
+  if (verdict !== "allowed") throw new LlmBudgetError(request.step, verdict);
+  return codeKey;
+}
+
+/**
+ * Resolves once the writes pending at call time — usage rows and budget
+ * charges — have settled, or after `timeoutMs`, whichever comes first. With
+ * `signal`, only the writes of calls made with that signal count, so a turn
+ * is never held up by another turn's insert in the same instance; without
+ * it, every pending write counts. Never rejects and logs nothing of its own
+ * (a failed write already warned). The turn route awaits it inside `after()`
+ * with the turn's signal so Vercel does not suspend the function before the
+ * last call's row and charge land (technical-plan.md D64, D65, D69).
  */
 export async function usageWritesSettled(
   signal?: AbortSignal,
   timeoutMs: number = USAGE_FLUSH_TIMEOUT_MS,
 ): Promise<void> {
-  const pending = signal === undefined ? pendingUsageWrites : pendingUsageWritesBySignal.get(signal);
+  const pending = signal === undefined ? pendingWrites : pendingWritesBySignal.get(signal);
   if (pending === undefined || pending.size === 0) return;
   const writes = Promise.allSettled([...pending]);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -666,6 +791,17 @@ export interface CallRequest {
    * the browser disconnects. The call then rejects with {@link LlmCancelledError}.
    */
   signal?: AbortSignal;
+  /**
+   * The access code's derived key: from the signed session cookie in the app,
+   * from `ACCESS_CODE` in the scripts, never from the request body. Optional
+   * in the type only because step modules build requests without it and
+   * `withCallContext` adds it; at run time a call without one is refused with
+   * {@link LlmBudgetError} `inactive` (technical-plan.md D71). The call is
+   * refused unless the code's budget allows it, and its cost is charged to
+   * the code afterwards (D69). Never logged and never written to the usage
+   * row.
+   */
+  codeKey?: string;
 }
 
 export type StreamTextRequest = CallRequest;
@@ -733,6 +869,14 @@ export interface CreateLlmOptions {
   now?: () => number;
   /** Per-call deadline; defaults to {@link CALL_TIMEOUT_MS}. Tests shorten it. */
   callTimeoutMs?: number;
+  /**
+   * The access-code ledger metered calls read and charge; defaults to
+   * {@link supabaseBudgetLedger} (technical-plan.md D69). Keyless calls never
+   * touch it.
+   */
+  budget?: BudgetLedger;
+  /** Bound on the budget read; defaults to {@link BUDGET_READ_TIMEOUT_MS}. Tests shorten it. */
+  budgetReadTimeoutMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -905,8 +1049,9 @@ function describeIssues(error: z.ZodError): string {
 }
 
 /**
- * Builds the wrapper. Inject `client`/`usageSink`/`now` in tests; the defaults
- * are the real SDK client and the anonymous Supabase sink.
+ * Builds the wrapper. Inject `client`/`usageSink`/`budget`/`now` in tests; the
+ * defaults are the real SDK client, the anonymous Supabase sink and the
+ * Supabase budget ledger.
  */
 export function createLlm(options: CreateLlmOptions = {}): Llm {
   if (typeof window !== "undefined") {
@@ -919,6 +1064,8 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
   const now = options.now ?? (() => Date.now());
   const callTimeoutMs = options.callTimeoutMs ?? CALL_TIMEOUT_MS;
   const usageSink = options.usageSink ?? supabaseUsageSink();
+  const budget = options.budget ?? supabaseBudgetLedger();
+  const budgetReadTimeoutMs = options.budgetReadTimeoutMs ?? BUDGET_READ_TIMEOUT_MS;
   let cachedClient = options.client;
   const client = (): LlmClient => {
     cachedClient ??= anthropicClient();
@@ -927,11 +1074,13 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
 
   /**
    * The one runner behind both call shapes. Owns, in order: the session-id
-   * and tool-policy checks (before any request), the deadline and the
-   * caller's abort signal, the `pause_turn` continuation loop, token
-   * accumulation, duration, the single `recordUsage` per logical call, and
-   * the terminal stop-reason check. `turn` is the only thing that differs
-   * between the two call shapes.
+   * and tool-policy checks (before any request), the access code's budget
+   * check (once per logical call, before any request, keyed calls only;
+   * technical-plan.md D69), the deadline and the caller's abort signal, the
+   * `pause_turn` continuation loop, token accumulation, duration, the single
+   * `recordOnce` per logical call (the usage row, and the budget charge for a
+   * keyed call), and the terminal stop-reason check. `turn` is the only thing
+   * that differs between the two call shapes.
    */
   async function runCall(
     request: CallRequest,
@@ -941,6 +1090,7 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
   ): Promise<RunOutcome> {
     if (!isSessionId(request.sessionId)) throw new LlmSessionIdError(request.step);
     if (request.tools !== undefined) assertToolsAllowed(request.tools);
+    const codeKey = await allowedCodeKey(request, request.codeKey, budget, budgetReadTimeoutMs);
 
     const deadline = AbortSignal.timeout(callTimeoutMs);
     const signal = request.signal === undefined ? deadline : AbortSignal.any([request.signal, deadline]);
@@ -955,6 +1105,10 @@ export function createLlm(options: CreateLlmOptions = {}): Llm {
       if (recorded) return;
       recorded = true;
       recordUsage(usageSink, usageRow(request, counts, durationMs), request.signal);
+      // The charge sits with the row, so an aborted call is charged too (D45)
+      // and the route's `after()` waits for both (D64, D65, D69).
+      const usd = costUsd(MODEL_BY_STEP[request.step], counts);
+      if (usd > 0) recordSpend(budget, codeKey, usd, request.signal);
     };
 
     try {

@@ -10,6 +10,11 @@
  * `model` must be `MODEL_BY_STEP.queries` (`claude-opus-5-5`), or it exits
  * non-zero.
  *
+ * The call is charged to `ACCESS_CODE` (technical-plan.md D71: no call is
+ * unmetered), read through `scripts/script-access-code.ts`. The script reads
+ * the code's running total before and after the call and exits non-zero
+ * unless it rose. The code, its key, cap and total are never printed.
+ *
  * Without `ANTHROPIC_API_KEY` it prints a skip message and exits 0, so it is
  * safe to run on a machine that has no key. The key is the only credential
  * production has, so keying off it here matches how the app runs.
@@ -22,9 +27,12 @@ import process from "node:process";
 
 import { z } from "zod";
 
+import { supabaseBudgetLedger } from "../src/lib/budget";
 import { MODEL_BY_STEP, createLlm, supabaseUsageSink } from "../src/lib/llm";
 import { newSessionId } from "../src/lib/session";
 import { serviceClient } from "../src/lib/supabase";
+
+import { keyedLlm, scriptAccessCodeKey } from "./script-access-code";
 
 /**
  * Wiring-check prompts, not product prompts. The product prompts live as
@@ -62,8 +70,17 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  const codeKey = await scriptAccessCodeKey();
+  const ledger = supabaseBudgetLedger();
+  const before = await ledger.read(codeKey);
+  if (before === null) {
+    console.error("ACCESS_CODE is not a code on this database. Issue one with `pnpm codes:add --cap 5`.");
+    return 1;
+  }
+
   console.log(`Calling ${EXPECTED_MODEL} (step: ${SMOKE_STEP}, session: ${SESSION_ID})…`);
-  const llm = createLlm({ usageSink: supabaseUsageSink() });
+  const ledgerLlm = createLlm({ usageSink: supabaseUsageSink(), budget: ledger });
+  const llm = keyedLlm(ledgerLlm, codeKey);
   const result = await llm.structured({
     step: SMOKE_STEP,
     sessionId: SESSION_ID,
@@ -78,6 +95,20 @@ async function main(): Promise<number> {
       `cacheRead=${result.usage.cacheRead} cacheWrite=${result.usage.cacheWrite} ` +
       `cost=$${result.costUsd.toFixed(6)} duration=${result.durationMs}ms`,
   );
+
+  // The charge is written fire-and-forget too; poll for it. Only whether the
+  // total rose is printed, never the total itself.
+  let rose = false;
+  for (let attempt = 1; attempt <= READBACK_ATTEMPTS && !rose; attempt++) {
+    const after = await ledger.read(codeKey);
+    rose = after !== null && after.spentUsd > before.spentUsd;
+    if (!rose) await sleep(READBACK_DELAY_MS);
+  }
+  if (!rose) {
+    console.error("The access code's total did not rise after the call.");
+    return 1;
+  }
+  console.log("Access code charged: its total rose.");
 
   // The row is written fire-and-forget, so poll for it rather than assuming.
   const db = serviceClient();

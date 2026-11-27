@@ -4,7 +4,9 @@ import { z } from "zod";
 
 import {
   BLOCKED_DOMAINS,
+  BUDGET_READ_TIMEOUT_MS,
   EFFORT_BY_STEP,
+  LlmBudgetError,
   LlmOutputError,
   LlmPauseLimitError,
   LlmRefusalError,
@@ -24,7 +26,7 @@ import {
   USAGE_ROW_KEYS,
   assertToolsAllowed,
   costUsd,
-  createLlm,
+  createLlm as createLlmUnkeyed,
   memoryUsageSink,
   usageWritesSettled,
   webTools,
@@ -33,6 +35,7 @@ import {
   type UsageRow,
   type UsageSink,
 } from "./llm";
+import { BudgetLedgerError, memoryBudgetLedger, type BudgetLedger, type BudgetState } from "./budget";
 import { BLOCKED_SOURCE_DOMAINS } from "./reference-schema";
 import { StepNameSchema, newSessionId } from "./session";
 
@@ -147,11 +150,26 @@ async function drain(deltas: AsyncIterable<string>): Promise<string[]> {
 
 const SESSION_ID = "0123456789abcdef0123456789abcdef";
 
+/**
+ * Every call must carry an access code key (technical-plan.md D71). Tests
+ * outside the budget section run under this one, against an in-memory ledger
+ * with room to spare, so no test reaches Supabase and none calls keyless.
+ */
+const TEST_KEY = "00112233445566778899aabbccddeeff";
+
+function createLlm(deps: Parameters<typeof createLlmUnkeyed>[0]) {
+  return createLlmUnkeyed({
+    budget: memoryBudgetLedger({ [TEST_KEY]: { capUsd: 1_000_000, spentUsd: 0, disabled: false } }),
+    ...deps,
+  });
+}
+
 const REQUEST = {
   step: "elicit",
   sessionId: SESSION_ID,
   system: "You are a careers assistant.",
   messages: [{ role: "user", content: "hello" }],
+  codeKey: TEST_KEY,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -420,8 +438,10 @@ describe("streamText", () => {
     const llm = createLlm({ client, usageSink: sink, now: () => 0 });
 
     const call = llm.streamText(REQUEST);
-    expect(params).toHaveLength(1); // the request was made synchronously
     const result = await call.final;
+    // Made without textDeltas being read; not synchronously, since the
+    // budget read comes first on every call (technical-plan.md D71).
+    expect(params).toHaveLength(1);
 
     expect(result.text).toBe("never read");
     expect(result.usage).toEqual({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0 });
@@ -930,6 +950,329 @@ describe("usageWritesSettled (technical-plan.md D64)", () => {
       // Let the hung write settle so it does not leak into later tests.
       held.resolve();
       await usageWritesSettled();
+    }
+  });
+});
+
+describe("access-code budget (technical-plan.md D69)", () => {
+  const schema = z.object({ greeting: z.string() });
+  const KEY = "fedcba9876543210fedcba9876543210";
+  /** One elicit call at 1,000 input and 100 output tokens. */
+  const USAGE = { input_tokens: 1_000, output_tokens: 100 };
+  const COST = costUsd(MODEL_BY_STEP.elicit, { input: 1_000, output: 100, cacheRead: 0, cacheWrite: 0 });
+
+  /** A memory ledger that also counts reads and charges. */
+  function countingLedger(initial: Record<string, BudgetState> = {}) {
+    const inner = memoryBudgetLedger(initial);
+    const reads: string[] = [];
+    const charges: number[] = [];
+    const ledger: BudgetLedger = {
+      read: (key) => {
+        reads.push(key);
+        return inner.read(key);
+      },
+      addSpend: (key, usd) => {
+        charges.push(usd);
+        return inner.addSpend(key, usd);
+      },
+    };
+    return { ledger, inner, reads, charges };
+  }
+
+  const under = (): Record<string, BudgetState> => ({ [KEY]: { capUsd: 5, spentUsd: 1, disabled: false } });
+
+  async function refusal(promise: Promise<unknown>): Promise<unknown> {
+    return promise.then(() => undefined, (e: unknown) => e);
+  }
+
+  it("has a 5s default read timeout", () => {
+    expect(BUDGET_READ_TIMEOUT_MS).toBe(5_000);
+  });
+
+  it("runs a streamText call under the cap and adds its costUsd to the total", async () => {
+    const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+    const { ledger, inner } = countingLedger(under());
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+    const call = llm.streamText({ ...REQUEST, codeKey: KEY });
+    await drain(call.textDeltas);
+    const result = await call.final;
+    await usageWritesSettled();
+    expect(params).toHaveLength(1);
+    expect(result.costUsd).toBeCloseTo(COST, 10);
+    expect(inner.snapshot(KEY)?.spentUsd).toBeCloseTo(1 + COST, 10);
+  });
+
+  it("meters a structured call the same way", async () => {
+    const { client } = fakeClient([{ text: '{"greeting":"hi"}', stopReason: "end_turn", usage: USAGE }]);
+    const { ledger, inner, reads } = countingLedger(under());
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+    const result = await llm.structured({ ...REQUEST, schema, codeKey: KEY });
+    await usageWritesSettled();
+    expect(result.value).toEqual({ greeting: "hi" });
+    expect(reads).toEqual([KEY]);
+    expect(inner.snapshot(KEY)?.spentUsd).toBeCloseTo(1 + result.costUsd, 10);
+  });
+
+  it("makes no API request, writes no row and charges nothing at the cap", async () => {
+    for (const shape of ["streamText", "structured"] as const) {
+      const { client, params } = fakeClient([{ text: "{}", stopReason: "end_turn", usage: USAGE }]);
+      const { ledger, inner, charges } = countingLedger({ [KEY]: { capUsd: 5, spentUsd: 5, disabled: false } });
+      const sink = memoryUsageSink();
+      const llm = createLlm({ client, usageSink: sink, budget: ledger, now: () => 0 });
+      const error = await refusal(
+        shape === "streamText"
+          ? llm.streamText({ ...REQUEST, codeKey: KEY }).final
+          : llm.structured({ ...REQUEST, schema, codeKey: KEY }),
+      );
+      expect(error).toBeInstanceOf(LlmBudgetError);
+      expect((error as LlmBudgetError).reason).toBe("exhausted");
+      expect((error as LlmBudgetError).step).toBe("elicit");
+      expect((error as Error).message).not.toContain(KEY);
+      expect((error as Error).message).not.toMatch(/\d\.\d|\$/);
+      expect(params).toHaveLength(0);
+      expect(sink.rows).toHaveLength(0);
+      expect(charges).toHaveLength(0);
+      expect(inner.snapshot(KEY)?.spentUsd).toBe(5);
+    }
+  });
+
+  it("refuses a disabled code and an unknown key as inactive, before any request", async () => {
+    const cases: Record<string, BudgetState>[] = [
+      { [KEY]: { capUsd: 5, spentUsd: 0, disabled: true } },
+      {},
+    ];
+    for (const initial of cases) {
+      const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+      const { ledger } = countingLedger(initial);
+      const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+      const error = await refusal(llm.streamText({ ...REQUEST, codeKey: KEY }).final);
+      expect(error).toBeInstanceOf(LlmBudgetError);
+      expect((error as LlmBudgetError).reason).toBe("inactive");
+      expect(params).toHaveLength(0);
+    }
+  });
+
+  it("refuses a malformed key as inactive without reading the ledger", async () => {
+    for (const bad of ["", "operator", KEY.toUpperCase(), `${KEY}0`, "someone@example.com"]) {
+      const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+      const { ledger, reads } = countingLedger({ [bad]: { capUsd: 5, spentUsd: 0, disabled: false } });
+      const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+      const error = await refusal(llm.streamText({ ...REQUEST, codeKey: bad }).final);
+      expect((error as LlmBudgetError).reason).toBe("inactive");
+      if (bad !== "") expect((error as Error).message).not.toContain(bad);
+      expect(reads).toHaveLength(0);
+      expect(params).toHaveLength(0);
+    }
+  });
+
+  it("refuses as unavailable when the ledger cannot be read, rejecting or throwing", async () => {
+    const failing: BudgetLedger[] = [
+      { read: () => Promise.reject(new BudgetLedgerError("read", "PGRST301")), addSpend: () => Promise.resolve() },
+      {
+        read: () => {
+          throw new Error("boom");
+        },
+        addSpend: () => Promise.resolve(),
+      },
+    ];
+    for (const ledger of failing) {
+      const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+      const sink = memoryUsageSink();
+      const llm = createLlm({ client, usageSink: sink, budget: ledger, now: () => 0 });
+      const error = await refusal(llm.structured({ ...REQUEST, schema, codeKey: KEY }));
+      expect(error).toBeInstanceOf(LlmBudgetError);
+      expect((error as LlmBudgetError).reason).toBe("unavailable");
+      expect(params).toHaveLength(0);
+      expect(sink.rows).toHaveLength(0);
+    }
+  });
+
+  it("refuses as unavailable after the timeout when the read never settles", async () => {
+    const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+    const hung: BudgetLedger = { read: () => new Promise(() => {}), addSpend: () => Promise.resolve() };
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: hung, budgetReadTimeoutMs: 20, now: () => 0 });
+    const error = await refusal(llm.streamText({ ...REQUEST, codeKey: KEY }).final);
+    expect((error as LlmBudgetError).reason).toBe("unavailable");
+    expect(params).toHaveLength(0);
+  });
+
+  it("rejects with LlmCancelledError when the caller aborts during the budget read", async () => {
+    const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+    const hung: BudgetLedger = { read: () => new Promise(() => {}), addSpend: () => Promise.resolve() };
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: hung, now: () => 0 });
+    const controller = new AbortController();
+    const call = llm.streamText({ ...REQUEST, codeKey: KEY, signal: controller.signal });
+    setTimeout(() => controller.abort(), 5);
+    await expect(call.final).rejects.toBeInstanceOf(LlmCancelledError);
+    expect(params).toHaveLength(0);
+  });
+
+  it("still charges an aborted call for the input it was billed (D45)", async () => {
+    const { client } = fakeClient([{ stopReason: "end_turn", hang: true, usage: { input_tokens: 700 } }]);
+    const { ledger, inner } = countingLedger(under());
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+    const controller = new AbortController();
+    const call = llm.streamText({ ...REQUEST, codeKey: KEY, signal: controller.signal });
+    setTimeout(() => controller.abort(), 5);
+    await expect(call.final).rejects.toBeInstanceOf(LlmCancelledError);
+    await usageWritesSettled(controller.signal);
+    const billed = costUsd(MODEL_BY_STEP.elicit, { input: 700, output: 0, cacheRead: 0, cacheWrite: 0 });
+    expect(inner.snapshot(KEY)?.spentUsd).toBeCloseTo(1 + billed, 10);
+  });
+
+  it("lets a call that crosses the cap complete, then refuses the next one", async () => {
+    const big = { input_tokens: 3_000, output_tokens: 0 };
+    const { client, params } = fakeClient([
+      { text: "ok", stopReason: "end_turn", usage: big },
+      { text: "never", stopReason: "end_turn", usage: big },
+    ]);
+    const { ledger, inner } = countingLedger({ [KEY]: { capUsd: 0.01, spentUsd: 0, disabled: false } });
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+    await expect(llm.streamText({ ...REQUEST, codeKey: KEY }).final).resolves.toMatchObject({ text: "ok" });
+    await usageWritesSettled();
+    expect(inner.snapshot(KEY)?.spentUsd).toBeGreaterThan(0.01);
+    const second = await refusal(llm.streamText({ ...REQUEST, codeKey: KEY }).final);
+    expect((second as LlmBudgetError).reason).toBe("exhausted");
+    expect(params).toHaveLength(1);
+  });
+
+  it("reads once and charges once, with the summed cost, across a pause_turn", async () => {
+    const { client, params } = fakeClient([
+      { text: "first", stopReason: "pause_turn", usage: { input_tokens: 100, output_tokens: 20 } },
+      { text: "second", stopReason: "end_turn", usage: { input_tokens: 150, output_tokens: 30 } },
+    ]);
+    const { ledger, reads, charges } = countingLedger(under());
+    const llm = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 });
+    const call = llm.streamText({ ...REQUEST, codeKey: KEY });
+    await drain(call.textDeltas);
+    const result = await call.final;
+    await usageWritesSettled();
+    expect(params).toHaveLength(2);
+    expect(reads).toHaveLength(1);
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toBeCloseTo(
+      costUsd(MODEL_BY_STEP.elicit, { input: 250, output: 50, cacheRead: 0, cacheWrite: 0 }),
+      10,
+    );
+    expect(charges[0]).toBe(result.costUsd);
+  });
+
+  it("charges nothing for a call that cost nothing", async () => {
+    const { client } = fakeClient([{ text: "ok", stopReason: "end_turn" }]);
+    const { ledger, charges } = countingLedger(under());
+    const call = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 }).streamText({
+      ...REQUEST,
+      codeKey: KEY,
+    });
+    await call.final;
+    await usageWritesSettled();
+    expect(charges).toHaveLength(0);
+  });
+
+  it("survives a failed charge with one warning carrying the code, never the key or amount", async () => {
+    const failures: BudgetLedger["addSpend"][] = [
+      () => Promise.reject(new BudgetLedgerError("addSpend", "PGRST301")),
+      () => {
+        throw new BudgetLedgerError("addSpend", "PGRST301");
+      },
+    ];
+    for (const addSpend of failures) {
+      const { client } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+      const inner = memoryBudgetLedger(under());
+      const ledger: BudgetLedger = { read: (k) => inner.read(k), addSpend };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const call = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 }).streamText({
+          ...REQUEST,
+          codeKey: KEY,
+        });
+        await expect(call.final).resolves.toMatchObject({ text: "ok" });
+        await usageWritesSettled();
+        expect(warn).toHaveBeenCalledTimes(1);
+        const warned = String(warn.mock.calls[0]?.[0]);
+        expect(warned).toContain("PGRST301");
+        expect(warned).not.toContain(KEY);
+        expect(warned).not.toContain(String(COST));
+      } finally {
+        warn.mockRestore();
+      }
+    }
+  });
+
+  it("refuses a keyless call as inactive, with no API request and no ledger read (D71)", async () => {
+    const { client, params } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+    const read = vi.fn(() => Promise.reject(new Error("must not read")));
+    const addSpend = vi.fn(() => Promise.reject(new Error("must not charge")));
+    const sink = memoryUsageSink();
+    const llm = createLlm({ client, usageSink: sink, budget: { read, addSpend }, now: () => 0 });
+    const keyless = { step: REQUEST.step, sessionId: REQUEST.sessionId, system: REQUEST.system, messages: REQUEST.messages };
+    for (const call of [llm.streamText(keyless).final, llm.structured({ ...keyless, schema: z.object({}) })]) {
+      const error = await refusal(call);
+      expect(error).toBeInstanceOf(LlmBudgetError);
+      expect((error as LlmBudgetError).reason).toBe("inactive");
+    }
+    await usageWritesSettled();
+    expect(params).toHaveLength(0);
+    expect(read).not.toHaveBeenCalled();
+    expect(addSpend).not.toHaveBeenCalled();
+    expect(sink.rows).toHaveLength(0);
+  });
+
+  it("writes a usage row with exactly the fixed keys and no trace of the key", async () => {
+    const { client } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+    const sink = memoryUsageSink();
+    const { ledger } = countingLedger(under());
+    const call = createLlm({ client, usageSink: sink, budget: ledger, now: () => 0 }).streamText({
+      ...REQUEST,
+      codeKey: KEY,
+    });
+    await call.final;
+    expect(sink.rows).toHaveLength(1);
+    const row = sink.rows[0] as UsageRow;
+    expect(Object.keys(row).sort()).toEqual([...USAGE_ROW_KEYS].sort());
+    for (const value of Object.values(row)) expect(value).not.toBe(KEY);
+  });
+
+  describe("usageWritesSettled waits for the charge (D64, D65)", () => {
+    function heldLedger() {
+      const inner = memoryBudgetLedger(under());
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let charged = false;
+      const ledger: BudgetLedger = {
+        read: (k) => inner.read(k),
+        addSpend: async (k, usd) => {
+          await held;
+          await inner.addSpend(k, usd);
+          charged = true;
+        },
+      };
+      return { ledger, release, charged: () => charged };
+    }
+
+    for (const scoped of [false, true]) {
+      it(scoped ? "with the call's signal" : "unscoped", async () => {
+        const { client } = fakeClient([{ text: "ok", stopReason: "end_turn", usage: USAGE }]);
+        const { ledger, release, charged } = heldLedger();
+        const signal = new AbortController().signal;
+        const call = createLlm({ client, usageSink: memoryUsageSink(), budget: ledger, now: () => 0 }).streamText({
+          ...REQUEST,
+          codeKey: KEY,
+          signal,
+        });
+        await call.final;
+        const order: string[] = [];
+        const flushed = usageWritesSettled(scoped ? signal : undefined).then(() => {
+          order.push(charged() ? "settled after charge" : "settled before charge");
+        });
+        await new Promise((r) => setTimeout(r, 10));
+        expect(order).toEqual([]);
+        release();
+        await flushed;
+        expect(order).toEqual(["settled after charge"]);
+      });
     }
   });
 });

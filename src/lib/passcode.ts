@@ -1,15 +1,25 @@
 /**
- * Shared-passcode access gate (technical-plan.md §1 "Access", D5).
+ * Access gate: the signed session cookie (technical-plan.md §1 "Access",
+ * D68, D71: every session is an access code's; there is no operator passcode).
  *
  * Pure logic only: no Node-only imports, no I/O, no logging. Everything here
  * runs in the Next.js proxy (request interception) as well as in route
  * handlers, so it uses the Web Crypto API (`globalThis.crypto.subtle`) rather
  * than `node:crypto`.
  *
- * Nothing about the user is encoded in the session token — it carries only a
- * format version and an expiry, per the PRD constraint that no user data is
- * stored server-side.
+ * Token: `v2.<expiryUnixSeconds>.<scope>.<hmac>`, the HMAC (SHA-256, keyed by
+ * `PASSCODE_COOKIE_SECRET`) covering `v2.<expiry>.<scope>`. The scope is the
+ * access code's key (`accessCodeKey`, 32 lowercase hex, D67), and nothing
+ * else: a cookie whose scope is not a key, such as the `operator` scope a
+ * local session minted before D71 carried, is refused. Signing the scope means
+ * the browser cannot swap in another code's key. Any other version is
+ * refused, so every v1 cookie signs its holder out once.
+ *
+ * The token encodes no user data: a derived key, never the code itself, a
+ * format version and an expiry.
  */
+
+import { isAccessCodeKey } from "./access-code";
 
 /** Cookie that carries the signed session token. */
 export const SESSION_COOKIE_NAME = "cjs_session";
@@ -18,7 +28,13 @@ export const SESSION_COOKIE_NAME = "cjs_session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 /** Token format version; bump to invalidate every existing session. */
-const SESSION_VERSION = "v1";
+const SESSION_VERSION = "v2";
+
+/** What a valid session token says: whose budget its calls draw on. */
+export interface Session {
+  /** The access code's key (D67). Every session has one (D71). */
+  codeKey: string;
+}
 
 const encoder = new TextEncoder();
 
@@ -35,18 +51,6 @@ function timingSafeEqual(a: string, b: string): boolean {
     diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
   }
   return diff === 0;
-}
-
-/**
- * True when `input` is the configured passcode. Empty or missing values are
- * always rejected, so an unset `APP_PASSCODE` cannot open the app.
- */
-export function isValidPasscode(
-  input: string | null | undefined,
-  expected: string | null | undefined,
-): boolean {
-  if (!input || !expected) return false;
-  return timingSafeEqual(input, expected);
 }
 
 function toBase64Url(bytes: ArrayBuffer): string {
@@ -84,47 +88,57 @@ async function hmac(secret: string, payload: string): Promise<string> {
 }
 
 export interface SignSessionOptions {
+  /** The access code's key. Required: no session is minted without one (D71). */
+  codeKey: string;
   /** Current time in milliseconds since the epoch. Injectable for tests. */
   now?: number;
   maxAgeSeconds?: number;
 }
 
 /**
- * Mints a session token of the form `<version>.<expiryUnixSeconds>.<hmac>`.
+ * Mints a session token of the form `v2.<expiryUnixSeconds>.<scope>.<hmac>`.
  * Throws when the signing secret is missing rather than minting an unsigned
- * token.
+ * token, and on a missing or malformed `codeKey`.
  */
 export async function signSession(
   secret: string,
-  { now = Date.now(), maxAgeSeconds = SESSION_MAX_AGE_SECONDS }: SignSessionOptions = {},
+  { codeKey, now = Date.now(), maxAgeSeconds = SESSION_MAX_AGE_SECONDS }: SignSessionOptions,
 ): Promise<string> {
   if (!secret) throw new Error("PASSCODE_COOKIE_SECRET is not set");
+  if (!isAccessCodeKey(codeKey)) {
+    throw new Error("signSession: codeKey must be an access-code key");
+  }
   const expiresAt = Math.floor(now / 1000) + maxAgeSeconds;
-  const payload = `${SESSION_VERSION}.${expiresAt}`;
+  const payload = `${SESSION_VERSION}.${expiresAt}.${codeKey}`;
   return `${payload}.${await hmac(secret, payload)}`;
 }
 
-export interface VerifySessionOptions {
+export interface ReadSessionOptions {
   now?: number;
 }
 
-/** True when `token` was signed by `secret` and has not expired. */
-export async function verifySession(
+/**
+ * The session `token` carries, or null unless it is a v2 token signed by
+ * `secret`, not expired, whose scope is a valid access-code key.
+ */
+export async function readSession(
   token: string | null | undefined,
   secret: string | null | undefined,
-  { now = Date.now() }: VerifySessionOptions = {},
-): Promise<boolean> {
-  if (!token || !secret) return false;
+  { now = Date.now() }: ReadSessionOptions = {},
+): Promise<Session | null> {
+  if (!token || !secret) return null;
 
   const parts = token.split(".");
-  if (parts.length !== 3) return false;
-  const [version, expiresAtRaw, signature] = parts;
-  if (version !== SESSION_VERSION) return false;
+  if (parts.length !== 4) return null;
+  const [version, expiresAtRaw, scope, signature] = parts;
+  if (version !== SESSION_VERSION) return null;
 
-  const expected = await hmac(secret, `${version}.${expiresAtRaw}`);
-  if (!timingSafeEqual(signature, expected)) return false;
+  const expected = await hmac(secret, `${version}.${expiresAtRaw}.${scope}`);
+  if (!timingSafeEqual(signature, expected)) return null;
 
   const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt)) return false;
-  return now / 1000 < expiresAt;
+  if (!Number.isFinite(expiresAt) || now / 1000 >= expiresAt) return null;
+
+  if (isAccessCodeKey(scope)) return { codeKey: scope };
+  return null;
 }

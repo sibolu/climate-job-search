@@ -14,7 +14,8 @@ import {
   queriesMessage,
   reviseMessage,
   runTurn,
-  withSignal,
+  withCallContext,
+  type CallContext,
   type TurnDeps,
   TurnInputError,
   turnErrorMessage,
@@ -125,11 +126,14 @@ function fakeDeps(overrides: Partial<TurnDeps> = {}): TurnDeps & { calls: string
   return { ...deps, calls };
 }
 
+/** Every turn carries an access code key (technical-plan.md D71). */
+const CTX: CallContext = { codeKey: "a".repeat(32) };
+
 describe("runTurn — cards", () => {
   it("extracts, infers, then asks the first missing preference with pills", async () => {
     const deps = fakeDeps();
     const progress = vi.fn();
-    const res = await runTurn(request("cards", emptyProfile(), "my resume text"), deps, progress);
+    const res = await runTurn(request("cards", emptyProfile(), "my resume text"), deps, progress, CTX);
     expect(deps.calls).toEqual(["extractCards", "inferPreferences"]);
     expect(res.message).toContain("C1: Documentary series");
     expect(res.message).toMatch(/\?/);
@@ -140,27 +144,27 @@ describe("runTurn — cards", () => {
 
   it("refuses feedback input on a message step", async () => {
     const req: TurnRequest = { ...request("cards", emptyProfile()), input: { kind: "feedback", feedback: { queryId: "Q1", verdict: "bad", reason: "" } } };
-    await expect(runTurn(req, fakeDeps())).rejects.toBeInstanceOf(TurnInputError);
+    await expect(runTurn(req, fakeDeps(), undefined, CTX)).rejects.toBeInstanceOf(TurnInputError);
   });
 });
 
 describe("runTurn — elicit", () => {
   it("toggles an area pill without a model call, and sends anything else to the model", async () => {
     const deps = fakeDeps();
-    const picked = await runTurn(request("elicit", cardsOnly(), "Energy"), deps);
+    const picked = await runTurn(request("elicit", cardsOnly(), "Energy"), deps, undefined, CTX);
     expect(deps.calls).toEqual([]);
     expect(parseProfile(picked.profileMd!).profile.preferences.climateInterests).toEqual({
       values: ["Energy"],
       source: "stated",
     });
     // "x" is not a pill: the model interprets it.
-    const typed = await runTurn(request("elicit", cardsOnly(), "x"), deps);
+    const typed = await runTurn(request("elicit", cardsOnly(), "x"), deps, undefined, CTX);
     expect(deps.calls).toEqual(["interpretAnswer"]);
     expect(typed.profileMd).not.toEqual(picked.profileMd);
   });
 
   it("offers the go pill once nothing is missing", async () => {
-    const res = await runTurn(request("elicit", fixture(), "ok"), fakeDeps());
+    const res = await runTurn(request("elicit", fixture(), "ok"), fakeDeps(), undefined, CTX);
     expect(res.pills).toEqual([GO_PILL]);
     expect(res.message).toContain("That's everything I need");
   });
@@ -176,14 +180,14 @@ describe("runTurn — discover / explore / queries / revise", () => {
         return base.discoverFields(req, opts);
       },
     });
-    await runTurn(request("discover", cardsOnly(), "go"), deps);
+    await runTurn(request("discover", cardsOnly(), "go"), deps, undefined, CTX);
     expect(options).toHaveLength(1);
     expect(options[0]).not.toHaveProperty("catalogue");
   });
 
   it("discover lists the written fields, the dropped count, and explore pills", async () => {
     const deps = fakeDeps();
-    const res = await runTurn(request("discover", cardsOnly(), "go"), deps);
+    const res = await runTurn(request("discover", cardsOnly(), "go"), deps, undefined, CTX);
     expect(deps.calls).toEqual(["discoverFields"]);
     expect(res.message).toContain("F9: Grid software");
     expect(res.message).toContain("adjacent move");
@@ -197,7 +201,7 @@ describe("runTurn — discover / explore / queries / revise", () => {
 
   it("explore with a field id runs the drill-down on that field", async () => {
     const deps = fakeDeps();
-    const res = await runTurn(request("explore", fixture(), "Explore F3: Forestry"), deps);
+    const res = await runTurn(request("explore", fixture(), "Explore F3: Forestry"), deps, undefined, CTX);
     expect(deps.calls).toEqual(["exploreField:F3"]);
     expect(res.message).toContain("Explored F3");
     expect(parseProfile(res.profileMd!).profile.fields.find((f) => f.id === "F3")?.explored).toBe(true);
@@ -207,7 +211,7 @@ describe("runTurn — discover / explore / queries / revise", () => {
 
   it("explore without a field id asks which one and offers pills, no model call", async () => {
     const deps = fakeDeps();
-    const res = await runTurn(request("explore", fixture(), "tell me more"), deps);
+    const res = await runTurn(request("explore", fixture(), "tell me more"), deps, undefined, CTX);
     expect(deps.calls).toEqual([]);
     expect(res.message).toContain("Which field");
     expect(res.pills?.every((p) => p.value.startsWith("Explore "))).toBe(true);
@@ -215,10 +219,10 @@ describe("runTurn — discover / explore / queries / revise", () => {
 
   it("queries needs a selectedRoles input and names each role's search", async () => {
     const deps = fakeDeps();
-    await expect(runTurn(request("queries", fixture(), "write queries"), deps)).rejects.toBeInstanceOf(TurnInputError);
+    await expect(runTurn(request("queries", fixture(), "write queries"), deps, undefined, CTX)).rejects.toBeInstanceOf(TurnInputError);
     expect(deps.calls).toEqual([]);
     const req: TurnRequest = { ...request("queries", fixture()), input: { kind: "selectedRoles" } };
-    const res = await runTurn(req, deps);
+    const res = await runTurn(req, deps, undefined, CTX);
     expect(deps.calls).toEqual(["generateQueries"]);
     expect(res.message).toContain("LinkedIn search for the role you selected");
     expect(res.message).toContain("**Grid video producer**");
@@ -228,12 +232,12 @@ describe("runTurn — discover / explore / queries / revise", () => {
 
   it("revise needs feedback input and returns the explanation with the change list", async () => {
     const deps = fakeDeps();
-    await expect(runTurn(request("revise", fixture(), "x"), deps)).rejects.toBeInstanceOf(TurnInputError);
+    await expect(runTurn(request("revise", fixture(), "x"), deps, undefined, CTX)).rejects.toBeInstanceOf(TurnInputError);
     const req: TurnRequest = {
       ...request("revise", fixture()),
       input: { kind: "feedback", feedback: { queryId: "Q2", verdict: "bad", reason: "all sales videos" } },
     };
-    const res = await runTurn(req, deps);
+    const res = await runTurn(req, deps, undefined, CTX);
     expect(deps.calls).toEqual(["reviseQueries:Q2"]);
     expect(res.message).toContain("You said: all sales videos.");
     expect(res.message).toContain("Retired: Q3");
@@ -261,39 +265,88 @@ describe("pure helpers", () => {
   });
 });
 
-describe("withSignal", () => {
-  it("puts the turn's abort signal on every model request", async () => {
-    const seen: (AbortSignal | undefined)[] = [];
-    const base = {
-      streamText: (r: { signal?: AbortSignal }) => {
-        seen.push(r.signal);
-        return {} as never;
-      },
-      structured: (r: { signal?: AbortSignal }) => {
-        seen.push(r.signal);
-        return Promise.resolve({} as never);
-      },
-    } as unknown as Llm;
-    const signal = new AbortController().signal;
-    const wrapped = withSignal(base, signal);
+/** An `Llm` that records the request of every call made through it. */
+function recordingLlm(): { llm: Llm; seen: { signal?: AbortSignal; codeKey?: string }[] } {
+  const seen: { signal?: AbortSignal; codeKey?: string }[] = [];
+  const llm = {
+    streamText: (r: { signal?: AbortSignal; codeKey?: string }) => {
+      seen.push(r);
+      return {} as never;
+    },
+    structured: (r: { signal?: AbortSignal; codeKey?: string }) => {
+      seen.push(r);
+      return Promise.resolve({} as never);
+    },
+  } as unknown as Llm;
+  return { llm, seen };
+}
+
+describe("withCallContext", () => {
+  const KEY = "b".repeat(32);
+
+  it("with no signal, puts the key alone on every model request", async () => {
+    const { llm, seen } = recordingLlm();
+    const wrapped = withCallContext(llm, { codeKey: KEY });
     wrapped.streamText({} as never);
     await wrapped.structured({} as never);
-    expect(seen).toEqual([signal, signal]);
-    expect(withSignal(base, undefined)).toBe(base);
+    expect(seen.map((r) => r.codeKey)).toEqual([KEY, KEY]);
+    expect(seen.every((r) => !("signal" in r))).toBe(true);
   });
 
-  it("hands the signal-carrying llm to the step modules", async () => {
-    let received: unknown;
-    const deps = fakeDeps({
-      discoverFields: (_req, options) => {
-        received = options?.llm;
-        return Promise.reject(new Error("stop here"));
-      },
-    });
+  it("puts both on every model request", async () => {
+    const { llm, seen } = recordingLlm();
     const signal = new AbortController().signal;
-    await runTurn(request("discover", cardsOnly(), "go"), deps, undefined, signal).catch(() => undefined);
-    // The fake deps' llm is `{}`; only the signal wrapper has methods.
-    expect(typeof (received as Llm).structured).toBe("function");
+    const wrapped = withCallContext(llm, { signal, codeKey: KEY });
+    wrapped.streamText({} as never);
+    await wrapped.structured({} as never);
+    expect(seen).toEqual([
+      { signal, codeKey: KEY },
+      { signal, codeKey: KEY },
+    ]);
+  });
+});
+
+describe("runTurn — every step's model calls carry the turn's context (technical-plan.md D45, D69)", () => {
+  const KEY = "c".repeat(32);
+
+  /** Fake steps that each make one model call on the `Llm` they are handed, then do what the plain fakes do. */
+  function callingDeps(): { deps: TurnDeps & { calls: string[] }; seen: { signal?: AbortSignal; codeKey?: string }[] } {
+    const { llm, seen } = recordingLlm();
+    const base = fakeDeps();
+    const call = (handed: Llm | undefined) => handed!.structured({} as never);
+    const deps = fakeDeps({
+      llm: () => llm,
+      extractCards: async (handed, req) => (await call(handed), base.extractCards(handed, req)),
+      inferPreferences: async (handed, req) => (await call(handed), base.inferPreferences(handed, req)),
+      interpretAnswer: async (handed, req) => (await call(handed), base.interpretAnswer(handed, req)),
+      discoverFields: async (req, opts) => (await call(opts?.llm), base.discoverFields(req, opts)),
+      exploreField: async (req, opts) => (await call(opts?.llm), base.exploreField(req, opts)),
+      generateQueries: async (req, opts) => (await call(opts?.llm), base.generateQueries(req, opts)),
+      reviseQueries: async (req, opts) => (await call(opts?.llm), base.reviseQueries(req, opts)),
+    });
+    return { deps, seen };
+  }
+
+  const STEPS: [string, () => TurnRequest, number][] = [
+    ["cards", () => request("cards", emptyProfile(), "my resume text"), 2],
+    ["elicit", () => request("elicit", cardsOnly(), "a typed answer"), 1],
+    ["discover", () => request("discover", cardsOnly(), "go"), 1],
+    ["explore", () => request("explore", fixture(), "Explore F3: Forestry"), 1],
+    ["queries", () => ({ ...request("queries", fixture()), input: { kind: "selectedRoles" } }), 1],
+    [
+      "revise",
+      () => ({ ...request("revise", fixture()), input: { kind: "feedback", feedback: { queryId: "Q2", verdict: "bad", reason: "r" } } }),
+      1,
+    ],
+  ];
+
+  it.each(STEPS)("%s: the key and the signal reach every request", async (_step, req, count) => {
+    const { deps, seen } = callingDeps();
+    const signal = new AbortController().signal;
+    const context: CallContext = { signal, codeKey: KEY };
+    await runTurn(req(), deps, undefined, context);
+    expect(seen).toHaveLength(count);
+    expect(seen.every((r) => r.codeKey === KEY && r.signal === signal)).toBe(true);
   });
 });
 
@@ -334,7 +387,7 @@ describe("runTurn — what the person typed (technical-plan.md D56)", () => {
         return base.extractCards(llm, req);
       },
     });
-    const res = await runTurn(request("cards", typed, "my resume text"), deps);
+    const res = await runTurn(request("cards", typed, "my resume text"), deps, undefined, CTX);
     expect(texts).toEqual(["my resume text"]);
     const after = parseProfile(res.profileMd!).profile;
     expect(after.cards).toHaveLength(1);
@@ -343,7 +396,33 @@ describe("runTurn — what the person typed (technical-plan.md D56)", () => {
 
   it("a later turn returns them unchanged too", async () => {
     const withCard = { ...cardsOnly(), inputs: typed.inputs };
-    const res = await runTurn(request("elicit", withCard, "Energy"), fakeDeps());
+    const res = await runTurn(request("elicit", withCard, "Energy"), fakeDeps(), undefined, CTX);
     expect(parseProfile(res.profileMd!).profile.inputs).toEqual(typed.inputs);
+  });
+});
+
+describe("turnErrorMessage — access-code budget (technical-plan.md D69)", () => {
+  const budget = (reason: unknown) => Object.assign(new Error("SECRET"), { name: "LlmBudgetError", reason });
+
+  it("has one sentence per reason, each saying the work is still in the browser", () => {
+    const exhausted = turnErrorMessage(budget("exhausted"));
+    const inactive = turnErrorMessage(budget("inactive"));
+    const unavailable = turnErrorMessage(budget("unavailable"));
+    for (const text of [exhausted, inactive, unavailable]) {
+      expect(text).toContain("still in this browser");
+      expect(text).toContain("Your profile");
+      expect(text).not.toContain("SECRET");
+    }
+    expect(exhausted).toContain("used up its budget");
+    expect(inactive).toContain("no longer active");
+    expect(unavailable).toContain("Try again");
+    expect(new Set([exhausted, inactive, unavailable]).size).toBe(3);
+  });
+
+  it("falls back to the unavailable sentence for a reason it does not know", () => {
+    const unavailable = turnErrorMessage(budget("unavailable"));
+    expect(turnErrorMessage(budget("something new"))).toBe(unavailable);
+    expect(turnErrorMessage(budget(undefined))).toBe(unavailable);
+    expect(turnErrorMessage(Object.assign(new Error("x"), { name: "LlmBudgetError" }))).toBe(unavailable);
   });
 });

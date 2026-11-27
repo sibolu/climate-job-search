@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D66, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D71, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -32,13 +32,13 @@ Defaults; a decision in §5 overrides a row here.
 | Concern | Choice | Why |
 |---|---|---|
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
-| Hosting | Vercel for app and route handlers. Supabase Postgres for the `llm_usage` table and the reference tables (seeded, not read by the app since D61). Setup in `docs/deploy.md` | Existing subscriptions |
-| Access | Shared passcode (env var) checked in middleware, cookie after entry. No accounts | Gates the pilot without identifying anyone |
+| Hosting | Vercel for app and route handlers. Supabase Postgres for the `llm_usage` table, the `access_codes` table (D67) and the reference tables (seeded, not read by the app since D61). Setup in `docs/deploy.md` | Existing subscriptions |
+| Access | One generated access code per invited person, each with a dollar cap; `/api/enter` checks it and sets a signed cookie carrying the code's derived key, checked in `src/proxy.ts`. There is no operator passcode: every session, the operator's included, carries a code key, and every model call, the scripts' included, is charged to one. No accounts (D68, D71) | Gates the pilot and caps each person's spend without identifying anyone |
 | LLM | Anthropic TS SDK, model per step: `claude-fable-5-2` for `discover`, `claude-opus-5-5` for every other step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on every model. See D44, D45, D52, D62 |
 | Grounding | In the app, the model's own knowledge only: discovery gets the cards, skills and preferences, no catalogue, no URLs (D61). The reference catalogue is kept as an evaluation arm behind `DiscoverOptions.catalogue`, reached only by `pnpm try:discover --catalogue`. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Memory-only is the baseline arm; the app switches to the catalogue only if the evaluation says so (D61); hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
 | Reference data | Supabase tables `climate_fields`, `example_roles`, `example_job_posts`, seeded from `data/*.yaml` in the repo. Publishable key with select-only RLS. Not read by the app since D61; the catalogue arm of the evaluation reads it | The PRD's one allowed collection, reproducible from the repo |
-| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4 |
+| Cost telemetry | `llm_usage` table: random per-browser session id, model, tokens, cost, duration, step name. No content, no identity, not linked to a code. Separately, `access_codes` keeps one running dollar total and a cap per code: every call made under a code is checked against it before it runs and adds its cost after (D67, D69) | Cost per session and per step, the evidence behind model choices (D46 moved `queries` and `revise` to Sonnet 5.5; D52 moved them back). See D4. The per-code total is what stops spend |
 | Resume input | Plain-text paste (textarea). PDF upload deferred | User asked for text; removes a parsing surface |
 | Structured steps | `output_config.format` structured outputs for cards, fields, queries | Deterministic shapes for the UI |
 | Tests | `vitest`; prompt behaviors covered by evals, not unit tests | Unit tests for parsers and pure logic only |
@@ -116,11 +116,14 @@ parentheses). Do not create a later step's file early.
 ```
 src/
   lib/
-    passcode.ts     # shared-passcode logic (0.1)
+    passcode.ts     # operator-passcode check, v2 session cookie sign/read (0.1; 2e.3, D68)
+    access-code.ts  # generate/normalise access codes, derive their key; Web Crypto only (2e.2; D68)
+    budget.ts       # BudgetLedger over access_code_budget / access_code_add_spend (2e.1; D67)
     profile.ts      # profile.md schema, parse/serialize — the contract (0.2)
     session.ts      # browser session state + per-turn payload (0.2)
     __fixtures__/   # canonical profile.md fixtures used by the round-trip tests
-    llm.ts          # client wrapper, model config, usage logging, web tools (0.3)
+    llm.ts          # client wrapper, model config, usage logging, web tools (0.3);
+                    # per-code budget check before a call, charge after (2e.4; D69)
     supabase.ts     # anonClient() / serviceClient() (0.4)
     database.types.ts  # GENERATED by `pnpm db:types`; do not hand-edit (0.4)
     reference-schema.ts # data/*.yaml shapes + blocked-source rules (0.4)
@@ -135,19 +138,20 @@ src/
     screens.ts      # pure screen state for the shell: gates, role groups, search cards (2b.4/2b.11/2b.12)
     profile-summary.ts # readable profile summary for the drawer (2b.11; D49)
     turn-stream.ts  # NDJSON wire codec + sendTurn (2.1)
-    turn.ts         # server dispatcher: TurnRequest → TurnResponse (2.5; D31)
+    turn.ts         # server dispatcher: TurnRequest → TurnResponse; passes the cookie's code key on (2.5; D31; 2e.5)
   components/shell/ # AppShell, Header, ProfileDrawer, ResumeScreen, StartOverDialog,
                     # Highlights, Pending, RoleBoard, RoleGroup, Searches, QueryCard
                     # (2b.4/2b.11/2b.12/2b.17); save-file.ts, the browser download
                     # helper the drawer and the Start over dialog share (2b.17; D55)
   app/
     api/turn/       # the one turn endpoint (NDJSON stream; 2.5)
-    api/enter/      # passcode check
+    api/enter/      # access-code (or operator-passcode) check, sets the session cookie (2e.3; D68)
     page.tsx        # the single-page workspace
-  proxy.ts          # passcode gate (Next 16's name for middleware.ts; D7)
+  proxy.ts          # session-cookie gate (Next 16's name for middleware.ts; D7)
 supabase/
   config.toml          # local stack config (supabase init)
-  migrations/          # reference tables, llm_usage, blocked-source CHECK, RLS
+  migrations/          # reference tables, llm_usage, blocked-source CHECK, RLS;
+                       # access_codes + its two functions (20261126090000_access_codes.sql, 2e.1; D67)
 data/                  # climate_fields.yaml, example_roles.yaml, example_job_posts.yaml (1.3)
 scripts/
   seed.ts              # data/*.yaml → Supabase (mirror; service role)
@@ -156,7 +160,9 @@ scripts/
   try-explore.ts       # stage 2.2 live check (blocked-host assertion)
   try-queries.ts       # stage 2b.8 live check (one LinkedIn query per selected role; optional scripted revise)
   check-rls.ts         # asserts the RLS shape against a live stack
-  smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3)
+  access-codes.ts      # codes:add / codes:list / codes:set; the only writer of codes (service role; 2e.2)
+  smoke-llm.ts         # one live Claude call; proves the usage row lands (0.3) and the code is charged (2e.8)
+  script-access-code.ts # ACCESS_CODE -> key for every script call (2e.8, D71)
 docs/
   data-flow.html       # API calls and profile.md reads/writes (keep current)
   technical-plan.md    # this file
@@ -202,6 +208,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 1. Next.js + TypeScript on Vercel. Supabase holds only the reference
    collection and anonymous usage rows. Python-on-Vercel rejected (weak
    streaming, cold starts).
+   (2026-11-26: Supabase now also holds one `access_codes` row per access
+   code: a derived key, never the code, a dollar cap, a running total, a
+   disabled flag and a creation time; no user data, D67–D69.)
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
    Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
    `claude-opus-5-5`: D44; `queries` and `revise` on `claude-sonnet-5-5`:
@@ -215,7 +224,16 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    step) are written to Supabase for spend caps and model-choice evidence. Nothing else leaves
    the browser except the API request itself. If even this is too much, the
    cap moves client-side and the table is dropped.
+   (2026-11-26: the per-session spend cap planned here is dropped. The
+   session id is made in the browser, so a cap keyed on it stops nobody;
+   the cap is per access code instead, D67, D69. `llm_usage` itself stands,
+   for model-choice evidence.)
 5. Access by a single shared passcode given to invited fellows.
+   (2026-11-26: superseded for invited people by one access code each,
+   D68. The shared passcode survives only as the optional operator
+   passcode, `OPERATOR_PASSCODE` (renamed from `APP_PASSCODE` by D70), whose
+   sessions are not metered.) (2026-11-27: the operator passcode is gone
+   too, D71; an access code is the only way in.)
 6. "Example profiles" in the reference collection means role profiles (what
    someone in the role does day to day), never personal profiles, per the
    PRD's consent rule.
@@ -229,6 +247,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
    `PASSCODE_COOKIE_SECRET` and carrying no user data — only a format version
    and an expiry. Signing and verification use the Web Crypto API so the gate
    stays portable to the Edge runtime.
+   (2026-11-26: now `v2.<expiry>.<scope>.<hmac>`, the scope being the access
+   code's derived key or `operator`; v1 is refused, D68.)
 9. **`profile.md` format is "labeled-bullet markdown"**, defined once in the
    header comment of `src/lib/profile.ts`: eight `##` sections in fixed order
    (Preferences, Experience Cards, Skills, Fields, Role Shortlist, Queries,
@@ -1176,6 +1196,162 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     a kept field or role by its exact name or title (`docs/backlog.md` §2,
     "A re-run keeps a role only if its wording is unchanged").
 
+67. **Each access code has a dollar cap, kept as one running total in
+    `access_codes` (2026-11-26, Phase 2e.1).** The new table
+    `public.access_codes` has five columns: `code_key` (the first 32 hex
+    chars of the SHA-256 of a generated code, pinned to that shape by a
+    CHECK; the code itself is never stored), `cap_usd`, `spent_usd`
+    (default 0; both non-negative and not NaN by CHECK), `disabled` and
+    `created_at`. The table is closed: RLS on, no policies, every grant
+    revoked from `anon` and `authenticated`. The app reaches it only
+    through two SECURITY DEFINER functions (`search_path = ''`, EXECUTE
+    revoked from PUBLIC and granted to `anon` and `authenticated`), called
+    with the publishable key: `access_code_budget(key)` returns one
+    `(cap_usd, spent_usd, disabled)` row for a known key and none for an
+    unknown one, and `access_code_add_spend(key, usd)` adds to the total in
+    one atomic UPDATE, raises 22023 for a null, negative, NaN or infinite
+    amount, and does nothing for an unknown key. Anyone can call them, but
+    only with a 32-hex key they cannot guess, so the worst a tester can do
+    with their own key is use up their own budget. There is no label
+    column, nor a name, session id or time of last use: nothing
+    server-side holds free text, and who holds which code is known only to
+    the operator, outside the repo and the database. The per-session cap
+    planned for step 3.3 (D4, and the comment in the `llm_usage`
+    migration) is dropped: the session id is made in the browser and
+    "Start over" makes a new one, so a cap keyed on it stops nobody.
+    `llm_usage` is untouched and no usage row is linked to a code (D22
+    stands). The data rule now reads, as approved by the user on
+    2026-11-26: "There are two server-side writes: the anonymous
+    `llm_usage` row, and one running dollar total per access code
+    (`access_codes.spent_usd`). Neither holds content or identity. An
+    access-code row is a derived key, a cap, a total, a disabled flag and a
+    creation time." `src/lib/budget.ts` is the ledger over the two
+    functions: `BudgetLedger` (`read`, `addSpend`), `supabaseBudgetLedger`
+    (through `anonClient().rpc`), `memoryBudgetLedger` (mirrors the SQL,
+    for tests), `budgetVerdict` (null or disabled is `inactive`, at or
+    over the cap or non-finite is `exhausted`) and `BudgetLedgerError`,
+    which carries the error code only and is never logged with a key. The
+    cap value is never written into code: it is an argument to the
+    operator's script that step 2e.2 adds. `pnpm db:check-rls` asserts the
+    closed table and the functions' behaviour (group f).
+
+68. **Each invited person enters with their own access code, and the
+    session cookie carries its key (2026-11-26, Phase 2e.3).** Codes are
+    generated, never chosen: 16 characters (80 bits) shown as
+    `XXXX-XXXX-XXXX-XXXX`, and the database key is the first 32 hex of the
+    SHA-256 of the normalised code (trimmed, upper-cased, dashes and spaces
+    dropped) with no server secret, because a code this long cannot be
+    guessed and rotating `PASSCODE_COOKIE_SECRET` must not reset anyone's
+    total. The cookie is now `v2.<expiry>.<scope>.<hmac>`, the HMAC
+    covering `v2.<expiry>.<scope>`; the scope is the code's key or the
+    marker `operator`, which is not hex and so can never be a key. Signing
+    the scope means the browser cannot swap in another key. Any version but
+    v2 is refused, so deploying this signs everyone out once. The token
+    holds a derived key, never the code. `verifySession` (a boolean) is
+    renamed `readSession` and returns `{ codeKey }` or null; `signSession`
+    requires `codeKey` (null for the operator) so no caller mints a session
+    without deciding, and throws on anything that is not null or a key.
+    `/api/enter` reads the field `code` (was `passcode`) and runs in this
+    order: when `OPERATOR_PASSCODE` is set, the typed text is compared to it
+    first in constant time; otherwise the text is normalised, anything not
+    16 characters of the alphabet (`isAccessCodeShape`) is refused without
+    a database round trip, and the key is read through
+    `supabaseBudgetLedger().read`. Three outcomes: enter, with the key in
+    the cookie; the same 401 for an unknown, a disabled and a malformed
+    code, so the response never says which; or a 503 when the ledger cannot
+    be read, logging the error code only, never the typed text, the code or
+    the key. A code that has reached its cap still enters, because the
+    person's profile is in their browser and they must be able to read and
+    export it; it is the next model call that is refused (step 2e.4). The
+    route only reads the ledger. The operator passcode is optional, its
+    sessions carry no key and are not metered, so it is for the operator and
+    local work only. There is no rate limiting on `/api/enter`: an 80-bit
+    code makes guessing pointless. D5 (one shared passcode) is superseded
+    for invited people by this decision.
+    (2026-11-27: the operator passcode, its `operator` scope and the
+    null-key session are removed by D71; everything else here stands.)
+
+69. **Every model call made under an access code is checked against the
+    code's budget before it runs and charged its cost after (2026-11-26,
+    Phase 2e.4).** The check lives in `src/lib/llm.ts` because every model
+    call goes through it: `CallRequest.codeKey` carries the code's derived
+    key (from the signed session cookie, never from the request body), and
+    `runCall` reads the code's budget once per logical call — not per
+    `pause_turn` continuation, not per SDK retry — after the session-id and
+    tool checks and before any request. It fails closed: `LlmBudgetError`
+    with reason `exhausted` (total at or over the cap), `inactive`
+    (disabled, unknown, or a key that is not 32 hex characters, refused
+    without a read) or `unavailable` (the read rejected, or outlasted
+    `BUDGET_READ_TIMEOUT_MS`, 5s, so a hung ledger cannot hold a turn
+    open); its message names the step and the reason, never the key, cap
+    or total, and a refused call writes no usage row and no charge because
+    nothing was billed. A caller abort during the read is still
+    `LlmCancelledError`. The charge is `costUsd` added through
+    `BudgetLedger.addSpend` in `recordOnce`, the one place the usage row is
+    recorded, so an aborted or failed call that was billed is charged too
+    (D45), and it is tracked in the same pending sets as the row, so
+    `usageWritesSettled(signal)` in the route's `after()` waits for both
+    (D64, D65); a zero-cost call is not charged. The overshoot bound: the
+    check is before a call and the charge after it, so a code can go over
+    its cap by the calls already in flight when it crosses — one call in
+    ordinary use, cents — and the next call is refused. A failed charge is a
+    `console.warn` with the error code only, never the key or the amount,
+    and never fails the call; it undercounts, which is accepted. An
+    organisation-level spend limit in the Claude Console stays as the
+    backstop for both. A keyless call (the operator passcode, the `try:*`
+    scripts, `smoke:llm`) is not metered and never touches the ledger.
+    (2026-11-27: no longer; D71 refuses a keyless call as `inactive`.)
+    `llm_usage` is unchanged: `UsageRow` gains no field, the key never
+    reaches a row or a log line, and no row is linked to a code (D22).
+
+70. **The operator passcode is read from `OPERATOR_PASSCODE`, not
+    `APP_PASSCODE` (2026-11-26, G2e.1 code review).** Through Phase 2d,
+    `APP_PASSCODE` held the one passcode every invited fellow was given. D68
+    kept the variable and turned a match into an operator session, with no
+    key and no cap, and the access-code field accepts the passcode text, so
+    after the merge any fellow typing the old passcode would have run
+    uncapped. Renaming the variable makes the old value inert on deploy
+    whatever is still set in Vercel: `/api/enter` never reads
+    `APP_PASSCODE`, and `route.test.ts` asserts that a value set there does
+    not enter. The name also now says what the value is (the global naming
+    rule). `OPERATOR_PASSCODE` stays optional and unset in production unless
+    the operator needs it, and when set it must be a fresh value, never the
+    Phase 2d passcode. Cookies from Phase 2d cannot carry over either: they
+    are v1, and D68 refuses every version but v2.
+    (2026-11-27: superseded by D71, which removes the operator passcode, so
+    neither variable is read.)
+
+71. **Every model call is metered: there is no operator passcode, and the
+    scripts need an access code (2026-11-27, step 2e.8, decided at G2e.1
+    after the code review).** Supersedes D68's operator passcode and D70.
+    An unmetered path is a hole whatever its name: D70 made the old
+    passcode inert, but any operator passcode is a shared secret that opens
+    an uncapped session, and keyless script calls bypass the cap the same
+    way. So `/api/enter` accepts only a known, not-disabled access code and
+    reads neither `OPERATOR_PASSCODE` nor `APP_PASSCODE`. `passcode.ts`
+    loses `OPERATOR_SCOPE` and `isValidPasscode`; `Session` is
+    `{ codeKey: string }`, `signSession` throws without a key, and
+    `readSession` refuses the `operator` scope. `SESSION_VERSION` stays
+    `v2`: production only ever issued v1 cookies, and a local operator
+    cookie is refused by the scope check. `CallContext.codeKey` is
+    required and `withCallContext` always sets it. `llm.ts` refuses any
+    call without a `codeKey` with `LlmBudgetError` reason `inactive` before
+    any request or ledger read, so the budget read now precedes every call
+    (a call's request is no longer made synchronously). Unit tests pass a
+    key to an in-memory ledger instead of calling keyless. The scripts
+    (`try:cards`, `try:discover` in both modes, `try:explore`,
+    `try:queries`, `smoke:llm`) read `ACCESS_CODE` (server-only, scripts
+    only) through one helper, `scripts/script-access-code.ts`, which
+    normalises it, checks its shape, derives the key and exits non-zero
+    with a plain sentence when it is missing or malformed; the key reaches
+    every call through `withCallContext`, so the step modules never see it.
+    No script prints the code, its key, cap or total; `smoke:llm` reads the
+    total before and after its call and fails unless it rose. Every script
+    therefore needs the local Supabase stack, which holds the budget. The
+    operator, and agents working locally, use an ordinary code issued with
+    `pnpm codes:add --cap 5` (the same cap as everyone; raising it for
+    agents would be a later decision) and type the same code at `/enter`.
+
 ---
 
 ## 6. Verification log
@@ -1553,3 +1729,31 @@ Searches left all four rows in one session: `cards` (Opus 5.5, $0.0491),
 $0.2295, 47.3s) and `queries` (Opus 5.5, 1,571 / 1,183, $0.0408, 13.2s);
 $0.334 for the loop. Read with `supabase db query --linked`. The earlier
 session's two rows stay as they were.
+
+**Step 2e.5: the budget on the local stack (2026-11-26).** Against the
+local Supabase stack and `pnpm dev`, with one throwaway code from
+`pnpm codes:add --cap 0.01`, entered through `POST /api/enter`, then
+`cards` turns on `src/lib/__fixtures__/resumes/data-scientist.txt` with
+curl. The first turn did not complete: `extractCards` ran ($0.0386, the
+charge landed before the next read) and `inferPreferences` was refused,
+so the reply was the `exhausted` sentence after one progress line. A cap
+lower than one call's cost stops a turn between its calls, and the cards
+the first call made are not returned. With the cap raised to $1
+(`codes:set`), one `cards` turn completed in 18.1s with a `final` event
+($0.0418, two `llm_usage` rows). Set back to $0.01, `codes:list` showed a
+total of $0.080389 against the $0.01 cap. The next turn came back in
+0.016s as a progress line and one `error` event with the `exhausted`
+sentence; the session's `llm_usage` count, read with the service role, was
+3 before and 3 after, so no model call was made. The dev log showed only
+`turn step=cards failed: LlmBudgetError`. The code row was then deleted.
+
+**Step 2e.7: the access-codes migration in production (2026-11-27).**
+Supabase project `thqugwlqlpflgtndymus`, through the logged-in CLI
+(2.95.4). `supabase db push --dry-run` listed only
+`20261126090000_access_codes.sql`; after `supabase db push`,
+`supabase migration list` shows all four versions applied. The user then
+ran `scripts/check-rls.ts` against production from their own shell, with
+the real secret key read by `read -rs` (never in a file or this session):
+35/35 checks pass, including the `access_codes` group, so the script has
+now passed end to end against production with the service role, which
+2d.3 could not do. The deployed app is unchanged: the migration only adds.
