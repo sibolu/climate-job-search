@@ -253,10 +253,22 @@ the second one, whose change list became PLAN.md steps 2b.14–2b.19;
 
 - **Responsive layout below ~900px** and a dark scheme, once the design
   covers them (D37). *(pre-2b)*
-- **Show session cost in the UI** (wanted first), then spend control:
-  per-session budget, cheaper effort or model past a threshold, or a hard
-  stop. Cost is computed per call already; it is not returned to the
-  browser yet. *(pre-2b)*
+- **Spend control, after the per-code cap.** Phase 2e delivered the hard
+  stop: each invited person has an access code with a dollar cap, every
+  call under it is checked before it runs and charged after (D67–D69).
+  Still open: showing a person their remaining budget or the session's
+  cost in the UI (left out of 2e by decision; cost is computed per call but
+  not returned to the browser); caps that reset by month; a cheaper model
+  or effort once a code is near its cap; a web page for issuing codes in
+  place of `pnpm codes:add`; rate limiting on `/api/enter`. *(pre-2b;
+  rewritten 2026-11-26)*
+- **A turn can be refused between its calls.** The budget is checked per
+  model call, so in the one turn where a code crosses its cap the second
+  call can be refused after the first was charged (a `cards` turn extracts
+  cards, then infers preferences), and that turn's output is not returned.
+  Seen on the local stack in step 2e.5 (technical-plan §6). Possible fixes:
+  check the budget once per turn before its first call, or let a turn that
+  has started finish. *(2026-11-26, step 2e.5)*
 - **A way to ask.** The rail composer idea (pre-2b item 2) is moot once the
   rail is gone (2b.11), but the need remains: (B) "ask about this role
   group", a read-only step grounded in that field's profile entry and

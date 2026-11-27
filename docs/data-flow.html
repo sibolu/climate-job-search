@@ -136,7 +136,7 @@
 <main>
 
 <h1>How profile.md moves through the app</h1>
-<p class="sub">Two flows: paste → climate fields and roles, and ticked roles → LinkedIn searches. Verified against the code on 2026-11-25 (branch <code>phase-2d</code>, after step 2d.2).</p>
+<p class="sub">Two flows: paste → climate fields and roles, and ticked roles → LinkedIn searches. Verified against the code on 2026-11-26 (branch <code>phase-2e</code>, after step 2e.5).</p>
 
 <div class="legend">
   <span><i class="sw" style="background:var(--you-bg);border-color:var(--you-bd)"></i>You, in the browser</span>
@@ -158,8 +158,24 @@
 <ul class="note" style="margin-top:10px">
   <li>Start (which records the pasted text and notes under <code>Inputs</code>), and clicks on skills, cards, interest pills and roles, edit profile.md in the browser. No server call.</li>
   <li>profile.md, <code>Inputs</code> included, lives in <code>localStorage</code> and is resent whole in every turn's request body; the server keeps nothing.</li>
-  <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content. Nothing in either flow reads Supabase (technical-plan D61).</li>
+  <li>Every API call also writes one <code>llm_usage</code> row to Supabase: tokens and cost only, no content, not linked to an access code. A call made under an access code also reads and adds to that code's budget in <code>access_codes</code> (below). No call reads the reference tables (technical-plan D61).</li>
   <li>Every call: adaptive thinking, structured JSON output, no web tools. <code>claude-fable-5-2</code> for discovery, <code>claude-opus-5-5</code> for cards, preferences and searches (<code>MODEL_BY_STEP</code>, technical-plan D62). All go through <a href="../src/lib/llm.ts">llm.ts</a>.</li>
+</ul>
+
+<!-- ───────────── access code + budget ───────────── -->
+<h2 style="margin-top:28px">Around every API call: the access code's budget</h2>
+<p class="sub">Applies to every purple box below. Two server-side writes in all: the <code>llm_usage</code> row and the code's running total (technical-plan D67–D69).</p>
+<div class="trip">
+  <div class="codebox"><b>POST /api/enter</b>the typed code → its derived key → <code>access_code_budget(key)</code>; a known, enabled code gets a signed cookie carrying the key, never the code</div>
+  <div class="codebox"><b>POST /api/turn</b>the key comes from the signed session cookie, never from the request body</div>
+  <div class="store"><b>Before each call</b><code>access_code_budget(key)</code>: at or over the cap, unknown or disabled, or unreadable → refused; no call, no row, no charge</div>
+  <div class="store"><b>After each call</b>its <code>llm_usage</code> row, and <code>access_code_add_spend(key, costUsd)</code> on the code's total</div>
+</div>
+<ul class="note" style="margin-top:10px">
+  <li><code>access_codes</code> holds, per code, a derived key, a cap, a running total, a disabled flag and a creation time. No content, no identity. The app reaches it only through the two functions above, with the publishable key; only <code>pnpm codes:*</code> (<a href="../scripts/access-codes.ts">access-codes.ts</a>, service role) issues or changes codes.</li>
+  <li>The check and the charge are in <a href="../src/lib/llm.ts">llm.ts</a>, once per API call. A refusal ends the turn with one budget sentence; the profile stays in the browser.</li>
+  <li>A code at its cap still enters at <code>/enter</code>, so the person can read and export their profile.</li>
+  <li>Sessions opened with the operator passcode carry no key, and the <code>try:*</code> and <code>smoke:llm</code> scripts pass none: those calls skip both the check and the charge.</li>
 </ul>
 
 <!-- ───────────── flow 1 ───────────── -->

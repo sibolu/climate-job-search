@@ -54,10 +54,14 @@ evidence comes from.
 Next.js and TypeScript on Vercel. Claude through the Anthropic SDK: Opus 5.5
 reads the resume and proposes fields and roles, Sonnet 5.5 writes the
 searches. No step the app reaches searches the web; links come from the
-reference collection. Supabase Postgres holds only the
+reference collection. Supabase Postgres holds the
 reference collection, which is edited as YAML in this repo and mirrored into
-the database, so every row in production is reviewable in a pull request.
-Access is by a shared passcode; there are no accounts.
+the database, so every row in production is reviewable in a pull request,
+plus the anonymous usage rows and one running dollar total per access code;
+no profile or other user data. Access is by one access code per invited
+person, each with a spend cap (`pnpm codes:add --cap <usd>`); there are no
+accounts. Locally, the optional operator passcode (`APP_PASSCODE`, unmetered)
+is enough.
 
 ## Run it locally
 
@@ -69,7 +73,7 @@ pnpm install
 cp .env.example .env.local   # set APP_PASSCODE, PASSCODE_COOKIE_SECRET, ANTHROPIC_API_KEY
 pnpm db:start                # local Supabase; copy its URL and keys into .env.local
 pnpm db:reset && pnpm seed   # apply migrations, load data/*.yaml
-pnpm dev                     # http://localhost:3000, then enter the passcode
+pnpm dev                     # http://localhost:3000, then enter APP_PASSCODE as the access code
 ```
 
 Checks: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`. The

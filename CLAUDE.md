@@ -44,9 +44,13 @@ environment, the hard constraints, and the rules each module enforces.
 - **No user data stored server-side.** Route handlers are stateless. The
   profile (the pasted resume and notes included, kept under `## Inputs`),
   chat, and query feedback live in the browser's `localStorage` and are resent
-  each turn. The only server-side write is the anonymous `llm_usage` row
+  each turn. There are two server-side writes: the anonymous `llm_usage` row
   (random session id, model, tokens, cost, duration, step name — no content,
-  no identity). Never log request bodies or the passcode.
+  no identity), and one running dollar total per access code
+  (`access_codes.spent_usd`). Neither holds content or identity. An
+  access-code row is a derived key, a cap, a total, a disabled flag and a
+  creation time (docs/technical-plan.md D67). Never log request bodies, the
+  passcode, an access code or its key.
 
 ## Commands
 
@@ -66,8 +70,11 @@ Node 24, pnpm 12 (pinned via `packageManager` in `package.json`).
 | `pnpm db:reset` | Recreate the local database and apply `supabase/migrations/` |
 | `pnpm db:types` | Regenerate `src/lib/database.types.ts` from the local schema |
 | `pnpm seed` | `data/*.yaml` → Supabase reference tables (mirror, service role) |
-| `pnpm db:check-rls` | Assert the RLS shape against a live stack; non-zero on any violation |
+| `pnpm db:check-rls` | Assert the RLS shape against a live stack (reference tables, `llm_usage`, and `access_codes` closed to the browser with only its two budget functions callable); non-zero on any violation |
 | `pnpm smoke:llm` | One live Claude call + read back its `llm_usage` row; skips without an API key |
+| `pnpm codes:add --cap <usd> [--count <n>]` | Issue access codes (service role, D67). Prints each new code once, beside the first 8 characters of its key; stores only the key. `--cap` is required: no default cap exists in code (the pilot uses `--cap 5`) |
+| `pnpm codes:list` | Every code's key prefix, cap, running total, disabled flag and creation time |
+| `pnpm codes:set <key-prefix> [--cap <usd>] [--disable\|--enable]` | Change one code's cap or switch it off/on, found by key prefix. Each `codes:*` command prints the database host it is talking to first |
 | `pnpm try:cards <resume.txt> [out.md]` | Stage 1.1 live: pasted text → experience cards; prints profile.md (the pasted text kept under `## Inputs`, D56), non-zero if a card lacks S/A/R or an area of expertise, or any expertise phrase runs over six words (D48) |
 | `pnpm try:discover <profile.md> [out.md] [--catalogue] [--interest=<area>[,<area>…]]` | Stage 1.4 live, no web (D44) → ranked fields and roles. By default memory mode, as the app runs it (D61): no Supabase stack needed; non-zero if any field or role lacks a card citation, carries a `Ref` or a source, has a URL in its text, or a role title carries a level word (D48). `--catalogue` runs the evaluation's catalogue arm instead, reading the local Supabase stack; non-zero if any lacks a card citation, cites a URL the catalogue does not list, has a URL in its text (D66), or carries a level word. A cited card with no evidence line is a warning. `--interest` takes a comma-separated list of the six climate areas (`CLIMATE_AREAS`) and sets the picks the way the pills do (D54) |
 | `pnpm try:explore <profile.md> <fieldId> [out.md]` | Stage 2.2 live: field drill-down; non-zero if any blocked host was fetched or cited |
@@ -108,9 +115,11 @@ claude mcp add playwright --scope local -- \
   in `.playwright-mcp/` in the repo, which is gitignored: local only, never
   scattered outside the repo. Pass screenshot `filename`s as bare names so
   they land there too; delete the folder whenever you like.
-- Set a local-only `APP_PASSCODE` in `.env.local`: the agent types it into
-  the gate and it lands in the transcript.
-- Flow: `pnpm dev` → `/enter` → passcode → screen. Prefer
+- Set a local-only `APP_PASSCODE` (the operator passcode, unmetered) in
+  `.env.local`: the agent types it into the gate's "Access code" field and it
+  lands in the transcript.
+- Flow: `pnpm dev` → `/enter` → operator passcode (or a code from
+  `pnpm codes:add` on the local stack, which is metered) → screen. Prefer
   `browser_snapshot` (text) for structure and repeated labels;
   take a screenshot only to judge layout. Close the browser and stop
   `pnpm dev` afterwards. Any turn the browser triggers is a live, billed
@@ -128,17 +137,19 @@ and must never be imported into a client component.
 
 | Variable | Scope | Purpose |
 |---|---|---|
-| `APP_PASSCODE` | server-only | The shared passcode given to invited fellows |
+| `APP_PASSCODE` | server-only | Optional operator passcode, for the operator and local work only; its sessions carry no code key and are not metered (D68). Invited people get access codes from `pnpm codes:add` instead |
 | `PASSCODE_COOKIE_SECRET` | server-only | HMAC key that signs the session cookie |
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | Publishable key: select-only on reference tables, insert-only on `llm_usage` |
-| `SUPABASE_SECRET_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`); bypasses RLS |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | Publishable key: select-only on reference tables, insert-only on `llm_usage`, execute-only on the two access-code budget functions |
+| `SUPABASE_SECRET_KEY` | server-only | Scripts only (`pnpm seed`, `pnpm db:check-rls`, `pnpm smoke:llm`, `pnpm codes:*`); bypasses RLS |
 
-## Supabase: the reference collection and `llm_usage`
+## Supabase: the reference collection, `llm_usage` and `access_codes`
 
-The app writes `llm_usage` and reads nothing from Supabase at run time: since
-docs/technical-plan.md D61 discovery works from the model's knowledge alone.
+At run time the app writes `llm_usage` and calls the two access-code budget
+functions (read a code's budget, add a call's cost to it; docs/technical-plan.md
+D67); it reads no table directly: since docs/technical-plan.md D61 discovery
+works from the model's knowledge alone.
 The three reference tables, `pnpm seed` and `pnpm db:check-rls` stay, for the
 evaluation's catalogue arm (`pnpm try:discover --catalogue`); Phase 2c's
 researched data still lands in `data/*.yaml`. Hosted setup is in
@@ -151,7 +162,7 @@ nothing here is ever pointed at a remote project.
 pnpm db:start        # first run pulls images; takes a few minutes
 pnpm db:reset        # recreate the db and apply supabase/migrations/
 pnpm seed            # data/*.yaml -> the three reference tables
-pnpm db:check-rls    # prove anon can read reference data and nothing else
+pnpm db:check-rls    # prove anon can read reference data, insert usage rows and call the budget functions, and nothing else
 ```
 
 `pnpm db:start` prints the local URL and keys (`supabase status -o env` prints
@@ -160,14 +171,19 @@ them again): copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into
 and `SUPABASE_SECRET_KEY`. They are fixed local-only dev keys, so they
 are not secrets, but `.env.local` stays gitignored anyway.
 
-**The only server-side write is the anonymous `llm_usage` row.** The reference
-tables are written only by `scripts/seed.ts` from `data/*.yaml`. No other code
-path writes anything to Supabase, ever. Concretely:
+**There are two server-side writes: the anonymous `llm_usage` row, and one
+running dollar total per access code (`access_codes.spent_usd`). Neither holds
+content or identity. An access-code row is a derived key, a cap, a total, a
+disabled flag and a creation time.** The reference tables are written only by
+`scripts/seed.ts` from `data/*.yaml`, and access codes are issued and changed
+only by `scripts/access-codes.ts`. No other code path writes anything to
+Supabase, ever. Concretely:
 
 - `src/lib/supabase.ts` exports exactly two clients. `anonClient()` is the only
   one app code may use; `serviceClient()` bypasses RLS, throws in the browser,
-  and belongs to the three scripts that need it: `seed.ts`, `check-rls.ts` and
-  `smoke-llm.ts` (which reads its own usage row back — anon cannot). Both
+  and belongs to the four scripts that need it: `seed.ts`, `check-rls.ts`,
+  `smoke-llm.ts` (which reads its own usage row back — anon cannot) and
+  `access-codes.ts` (the only writer of codes). Both
   clients read `NEXT_PUBLIC_SUPABASE_URL`, so a script and the app can never be
   pointed at different databases.
 - `src/lib/reference.ts` is read-only and throws `ReferenceReadError` rather
@@ -177,6 +193,22 @@ path writes anything to Supabase, ever. Concretely:
   it that way: `session_id` must be exactly the 32 hex chars `newSessionId()`
   produces and `step` must be one of the six `StepName` values, so neither
   column can carry free text (docs/technical-plan.md D22).
+- `access_codes` (migration `20261126090000_access_codes.sql`,
+  docs/technical-plan.md D67) has `code_key` (exactly 32 hex chars, CHECK),
+  `cap_usd`, `spent_usd`, `disabled` and `created_at`. No label, name or any
+  free-text column, and no content or identity column may be added; who holds
+  which code is known only to the operator. RLS is on with no policies and no
+  grants to anon or authenticated. The app reaches it only through two
+  `SECURITY DEFINER` functions the publishable key may execute:
+  `access_code_budget(key)` (cap, total, disabled; no row for an unknown key)
+  and `access_code_add_spend(key, usd)` (adds a finite non-negative amount,
+  raises otherwise, no-op for an unknown key). `pnpm db:check-rls` asserts
+  that shape in its own group.
+- `src/lib/budget.ts` (server-side: it imports `supabase.ts`) wraps them:
+  `BudgetLedger` (`read(codeKey)` → `BudgetState | null`,
+  `addSpend(codeKey, usd)`), `supabaseBudgetLedger()` over `anonClient().rpc`,
+  `memoryBudgetLedger()` for tests, `budgetVerdict` (`allowed` | `exhausted` |
+  `inactive`), and `BudgetLedgerError`, which carries the error code only.
 
 ### Changing the schema
 
@@ -238,9 +270,27 @@ const { text, usage, costUsd } = await final;   // settles once the call ends, w
 const { value } = await llm().structured({ step: "cards", sessionId, system, messages, schema });
 ```
 
-- **`createLlm({ client, usageSink, now, callTimeoutMs })`** is the injectable form used by
-  tests; `llm()` is the memoized default for route handlers. Both are
+- **`createLlm({ client, usageSink, now, callTimeoutMs, budget, budgetReadTimeoutMs })`**
+  is the injectable form used by tests (`budget` defaults to
+  `supabaseBudgetLedger()`, `budgetReadTimeoutMs` to `BUDGET_READ_TIMEOUT_MS`,
+  5s); `llm()` is the memoized default for route handlers. Both are
   server-only and throw in the browser — `ANTHROPIC_API_KEY` is server-only.
+- **Per-code budget** (docs/technical-plan.md D69): a `CallRequest` may carry
+  `codeKey`. A keyed call reads its budget once per logical call, after the
+  session-id and tool checks and before any request, and throws
+  `LlmBudgetError` with `reason` `exhausted`, `inactive` (disabled, unknown or
+  malformed key) or `unavailable` (the read failed or hung): it fails closed,
+  and nothing is billed. Where the usage row is recorded, a keyed call adds
+  its `costUsd` through the ledger — an aborted call too (D45) — tracked in
+  the same pending set as the usage row; a failed charge is a `console.warn`
+  with the error code and undercounts. A keyless call (operator passcode,
+  `try:*` scripts, `smoke:llm`) is never metered. The check is before a call
+  and the charge after it, so a code can overshoot its cap by the calls in
+  flight when it crosses it, and the turn in which it crosses can be refused
+  between its calls (a `cards` turn makes two) with that turn's output lost;
+  keep an organisation-level spend limit in the Claude Console as the
+  backstop. `llm_usage` is untouched: no column added, no row linked to a
+  code (D22).
 - **Model per step** (`MODEL_BY_STEP`, docs/technical-plan.md D2, D44, D52,
   D62): `discover` runs on `claude-fable-5-2` (D62); the other five steps
   (`cards`, `elicit`, `explore`, `queries`, `revise`) run on
@@ -258,8 +308,8 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
   shapes, with a 32K output cap. **One deadline bounds a logical call**:
   `CALL_TIMEOUT_MS` (3 min, every retry and continuation included) aborts it
   with `LlmTimeoutError`. A request's `signal` aborts it with
-  `LlmCancelledError`; `runTurn` wraps every step's `Llm` with `withSignal`,
-  and the turn route fires it when the browser disconnects. An aborted call
+  `LlmCancelledError`; `runTurn` wraps every step's `Llm` with
+  `withCallContext` (the signal and the code key), and the turn route fires it when the browser disconnects. An aborted call
   still writes its usage row with the input it was billed (docs/technical-plan.md D45).
 - **Discovery has no web tools** (docs/technical-plan.md D44) **and, in the
   app, no catalogue** (D61): `turn.ts` calls `discoverFields` without
@@ -287,21 +337,24 @@ const { value } = await llm().structured({ step: "cards", sessionId, system, mes
 - **Stop reasons**: `refusal` → `LlmRefusalError` (category only, never the
   text), `max_tokens` → `LlmTruncatedError`, `pause_turn` → resumed
   automatically up to `MAX_PAUSE_TURN_CONTINUATIONS`, then
-  `LlmPauseLimitError`. SDK errors (`Anthropic.RateLimitError`, …) pass
+  `LlmPauseLimitError`. A refused budget is `LlmBudgetError` (step and
+  reason only, never the key, cap or total). SDK errors (`Anthropic.RateLimitError`, …) pass
   through untouched — catch the typed classes, never match on message text.
 - **Route handlers** that call this module set
   `export const maxDuration = MAX_DURATION_SECONDS` (800s, docs/technical-plan.md §4).
 - **Never log content.** The module logs no prompt or completion text
   anywhere, error messages included; a failed usage insert is a
-  `console.warn` with the error *code* only. Keep it that way.
+  `console.warn` with the error *code* only, and so is a failed access-code
+  charge; no code or key is ever logged. Keep it that way.
 - **Usage rows** are one per logical call (a `pause_turn` continuation is part
   of the same call and its tokens are summed), priced from `PRICE_PER_MTOK`,
   written through the publishable key without blocking the call; each write is
   tracked until it settles, and `/api/turn` awaits
   `usageWritesSettled(abort.signal)` (bounded by `USAGE_FLUSH_TIMEOUT_MS`,
   5s) inside `after()` so the function is not suspended before the last row
-  lands; the signal scopes the wait to that turn's own writes
-  (docs/technical-plan.md D64, D65).
+  and the last access-code charge land (both are in one pending set); the
+  signal scopes the wait to that turn's own writes
+  (docs/technical-plan.md D64, D65, D69).
   `UsageRow` has a fixed key
   list (`USAGE_ROW_KEYS`) guarded at compile time and in the tests: it holds
   counters only, and no content field may ever be added.
@@ -325,7 +378,14 @@ canonical `profile.md`. The reply is NDJSON via `turn-stream.ts`: progress
 browser sends reads Supabase: discovery runs memory-only (technical-plan.md
 D61). `explore`, which only scripts send (D39), is still dispatched and still
 reads the reference tables, so `turnErrorMessage` keeps its
-`ReferenceReadError` sentence. The only write is the `llm_usage` row.
+`ReferenceReadError` sentence. The only writes are the `llm_usage` row and,
+for a call made under an access code, that code's running total (D69).
+
+- The route reads the session from the cookie with `readSession` and answers
+  `401` without one, then passes `{ signal, codeKey }` as the `CallContext` to
+  `runTurn(request, deps?, onProgress?, context)`. **The code key reaches
+  `llm.ts` only from the signed cookie; `TurnRequest` carries no key.** An
+  operator-passcode session has no key, so its calls are not metered.
 
 - The browser names what it wants through `TurnInput`: `message` (the
   pasted text on Start, and "Find climate roles"; the interest pills are
@@ -337,14 +397,17 @@ reads the reference tables, so `turnErrorMessage` keeps its
   the "Find climate roles" pill is `FIND_ROLES_PILL` in `screens.ts`, which
   `turn.ts` re-exports as `GO_PILL`. Change text there, never inline.
 - User-facing error text comes only from `turnErrorMessage`; the route logs
-  the error class and step, never the message or the body.
+  the error class and step, never the message or the body. It has one
+  sentence per `LlmBudgetError` reason, each saying that what the person has
+  is still in their browser.
 - `maxDuration` in a route file must be a numeric literal and the file may
   export nothing but segment config and handlers (Next 16 build check);
   `route.test.ts` pins the literal to `MAX_DURATION_SECONDS`.
 - Client components import only browser-safe modules: `profile.ts`,
   `session.ts`, `workspace.ts`, `turn-stream.ts`, `boards.ts`, `elicit.ts`
-  (its `llm` import is type-only), `screens.ts` and `profile-summary.ts`.
-  `cards.ts` is server-only.
+  (its `llm` import is type-only), `screens.ts`, `profile-summary.ts` and
+  `access-code.ts` (Web Crypto only, no imports). `cards.ts` and `budget.ts`
+  are server-only.
 - The UI is `src/components/shell/` (technical-plan.md §2, D37, D42, D43,
   D47–D51, D53–D57): one centred column under a four-item nav (Resume,
   Highlights, Roles, Searches), no rail, no tabs, no composer, and no
@@ -358,30 +421,50 @@ reads the reference tables, so `turnErrorMessage` keeps its
   in `src/lib/profile-summary.ts`, both with unit tests; components hold no
   policy.
 
-## Passcode gate
+## Access gate: codes and the operator passcode
 
-One shared passcode, no accounts (docs/technical-plan.md §1 "Access", D5).
+One access code per invited person, each with its own spend cap, plus an
+optional operator passcode; no accounts (docs/technical-plan.md §1 "Access",
+D5, D68).
 
 - **`src/proxy.ts`** is the gate. Next.js 16 renamed the `middleware` file
   convention to `proxy`, so the file is `src/proxy.ts` and it exports `proxy`,
-  not `middleware`.
+  not `middleware`. It checks the cookie with `readSession`.
 - Every path is gated except `/enter`, `/api/enter`, `_next/static`,
   `_next/image`, `favicon.ico`, and static asset extensions. `/api/*` is gated
   too — those are stateless LLM calls the pilot pays for. Unauthenticated
-  `/api/*` requests get a `401` JSON body rather than a redirect, because a
-  redirect would be re-POSTed to an HTML page and swallowed by `fetch()`;
-  everything else is redirected to `/enter`.
-- **`src/lib/passcode.ts`** holds the pure logic: `isValidPasscode` (constant
-  time), `signSession` / `verifySession` (HMAC-SHA-256 via the Web Crypto API,
-  so the code is portable to the Edge runtime). No Node-only imports — nothing
-  the gate touches may import `node:*`.
-- The session token is `v1.<expiryUnixSeconds>.<hmac>`. It encodes **no user
-  data**, only a format version and an expiry. Bump `SESSION_VERSION` to
-  invalidate every live session.
-- **`src/app/api/enter/route.ts`** checks the passcode and sets an `HttpOnly`,
-  `SameSite=Lax`, `Secure`-in-production cookie valid 30 days, then redirects
-  to `/`. A wrong passcode returns `401` and sets no cookie. The submitted
-  passcode is never logged.
+  `/api/*` requests get a `401` JSON body ("Access code required.") rather
+  than a redirect, because a redirect would be re-POSTed to an HTML page and
+  swallowed by `fetch()`; everything else is redirected to `/enter`.
+- **`src/lib/access-code.ts`** (Web Crypto only, browser- and Edge-safe):
+  `generateAccessCode()` (16 random characters, 80 bits, shown
+  `XXXX-XXXX-XXXX-XXXX`), `normalizeAccessCode()` (trim, upper-case, drop
+  dashes and spaces), `isAccessCodeShape()`, `accessCodeKey()` (SHA-256,
+  first 32 hex; no server secret, D68) and `isAccessCodeKey()`. Only the key
+  is ever stored; the code itself is printed once by `pnpm codes:add`.
+- **`src/lib/passcode.ts`** holds the session logic: `isValidPasscode`
+  (constant time), `signSession(secret, { codeKey })` (`codeKey: string |
+  null`, required) and `readSession`, which returns a `Session`
+  (`{ codeKey: string | null }`) or `null` (HMAC-SHA-256 via the Web Crypto
+  API, so the code is portable to the Edge runtime). No Node-only imports —
+  nothing the gate touches may import `node:*`.
+- The session token is `v2.<expiryUnixSeconds>.<scope>.<hmac>`, where scope
+  is the code's key or `OPERATOR_SCOPE` (`"operator"`). It encodes **no user
+  data**: a derived key, not the code. Bump `SESSION_VERSION` to invalidate
+  every live session; v1 cookies are refused, so the v2 deploy signs
+  everyone out once.
+- **`src/app/api/enter/route.ts`** reads the field `code`. If `APP_PASSCODE`
+  is set it is compared first, in constant time, and a match enters with no
+  key (not metered: for the operator and local work only). Otherwise the text
+  is normalised, refused if not code-shaped, its key derived and
+  `supabaseBudgetLedger().read` asked. A known, not-disabled code enters,
+  **including one that has reached its cap**: the profile is in the browser
+  and must stay readable and exportable, and it is the next model call that
+  is refused. Unknown, disabled and malformed codes all get the same `401`;
+  an unreadable ledger is a `503` with a plain sentence. Entering sets an
+  `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie valid 30 days,
+  then redirects to `/`; a refusal sets no cookie. Nothing typed — passcode,
+  code or key — is ever logged.
 
 ## `profile.md` is the contract (docs/technical-plan.md D9–D12)
 
