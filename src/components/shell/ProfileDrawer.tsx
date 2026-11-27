@@ -78,7 +78,10 @@ export default function ProfileDrawer({
         <div>
           <h2 className="cc-drawer-title">Your profile</h2>
           <p className="cc-drawer-sub">
-            Everything here is stored only in this browser, never on a server.
+            No account. Everything here is saved only in this browser; this app
+            keeps no copy on its server. To read your resume and suggest roles,
+            the text is sent to Anthropic&apos;s Claude API, which keeps it for up to
+            30 days and then deletes it.
           </p>
         </div>
         <button type="button" className="cc-drawer-btn" onClick={onClose}>

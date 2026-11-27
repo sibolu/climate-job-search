@@ -80,7 +80,7 @@ function ResumeEntry({
 
       <p style={{ marginTop: 14 }}>
         <button type="button" className="cc-linkish" onClick={onOpenProfile}>
-          No account. Your resume and profile are saved only in this browser.
+          Data policy
         </button>
       </p>
     </>
