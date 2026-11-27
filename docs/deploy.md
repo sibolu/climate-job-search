@@ -52,7 +52,7 @@ URL the browser calls.
 
    | Name | Scope | Value |
    |---|---|---|
-   | `APP_PASSCODE` | server-only | Optional. The operator passcode: it enters without an access code and its calls are **not capped**. Leave it unset in Vercel, or keep it to yourself; never give it to a tester |
+   | `OPERATOR_PASSCODE` | server-only | Optional. The operator passcode: it enters without an access code and its calls are **not capped**. Leave it unset in Vercel, or keep it to yourself and make it a fresh value, never the passcode once shared with fellows; never give it to a tester |
    | `PASSCODE_COOKIE_SECRET` | server-only | `openssl rand -base64 32`, generated once for production |
    | `ANTHROPIC_API_KEY` | server-only | A key from an Anthropic organisation with 30-day data retention (not zero data retention): the `discover` step runs on `claude-fable-5-2`, which needs it; the other steps run on `claude-opus-5-5` |
    | `NEXT_PUBLIC_SUPABASE_URL` | public | `https://<project-ref>.supabase.co` |
@@ -139,7 +139,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   --data-urlencode 'code=wrong' https://<domain>/api/enter
 # 401: the gate works ("wrong" cannot be a code, so no database read).
 # 500: PASSCODE_COOKIE_SECRET is missing from that deployment (variables
-# apply from the next deploy on). APP_PASSCODE may be unset: then only
+# apply from the next deploy on). OPERATOR_PASSCODE may be unset: then only
 # access codes enter.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   --data-urlencode 'code=0000-0000-0000-0000' https://<domain>/api/enter
@@ -220,7 +220,7 @@ Everything you have so far is still in this browser, and you can save a
 copy from Your profile." If the budget cannot be read, the call is refused
 too (it fails closed) and the sentence asks them to try again in a minute.
 
-**The operator passcode** (`APP_PASSCODE`, optional) is for you and local
+**The operator passcode** (`OPERATOR_PASSCODE`, optional) is for you and local
 work only. It is compared before any code; its sessions carry no key, so
 their calls are not checked or charged. The `try:*` scripts and
 `smoke:llm` are not metered either.
@@ -250,8 +250,9 @@ their calls are not checked or charged. The `try:*` scripts and
   key or `operator`, never a code, signed with `PASSCODE_COOKIE_SECRET`.
   No secret goes into a code's key, so rotating the secret resets nobody's
   total; people come back in with the same code.
-- **The operator passcode:** change or remove `APP_PASSCODE` in Vercel and
-  redeploy. Sessions already open with it keep working until they expire
+- **The operator passcode:** change or remove `OPERATOR_PASSCODE` in Vercel and
+  redeploy. `APP_PASSCODE`, the Phase 2d shared passcode, is no longer read
+  (technical-plan.md D70): delete it from Vercel, since it does nothing. Sessions already open with it keep working until they expire
   (30 days) or the secret is rotated.
 
 ## Reading `llm_usage`

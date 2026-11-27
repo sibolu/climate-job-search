@@ -12,7 +12,7 @@ Contents:
 2. [UI shape](#2-ui-shape)
 3. [Repo layout](#3-repo-layout)
 4. [Risks specific to this project](#4-risks-specific-to-this-project)
-5. [Decisions](#5-decisions) — numbered D1–D69, cited from code as
+5. [Decisions](#5-decisions) — numbered D1–D70, cited from code as
    `technical-plan.md D31`. Numbers are stable: never renumber, append.
 6. [Verification log](#6-verification-log) — what each gate checked and
    found, so a later change that breaks one of these is a regression, not a
@@ -33,7 +33,7 @@ Defaults; a decision in §5 overrides a row here.
 |---|---|---|
 | Language | TypeScript, Next.js (App Router), `pnpm` | Vercel is built for Next.js. Evals also in TS so prompts have one home |
 | Hosting | Vercel for app and route handlers. Supabase Postgres for the `llm_usage` table, the `access_codes` table (D67) and the reference tables (seeded, not read by the app since D61). Setup in `docs/deploy.md` | Existing subscriptions |
-| Access | One generated access code per invited person, each with a dollar cap; `/api/enter` checks it and sets a signed cookie carrying the code's derived key, checked in `src/proxy.ts`. An optional operator passcode (`APP_PASSCODE`) enters without a key and is not metered. No accounts (D68) | Gates the pilot and caps each person's spend without identifying anyone |
+| Access | One generated access code per invited person, each with a dollar cap; `/api/enter` checks it and sets a signed cookie carrying the code's derived key, checked in `src/proxy.ts`. An optional operator passcode (`OPERATOR_PASSCODE`) enters without a key and is not metered. No accounts (D68) | Gates the pilot and caps each person's spend without identifying anyone |
 | LLM | Anthropic TS SDK, model per step: `claude-fable-5-2` for `discover`, `claude-opus-5-5` for every other step, `queries` and `revise` included. Adaptive thinking, every call streamed, 3-minute deadline per call, cancelled when the browser disconnects (`maxDuration` 800s) | Effort per call (chat, discovery and queries `medium`, `explore` `high`), set explicitly on every model. See D44, D45, D52, D62 |
 | Grounding | In the app, the model's own knowledge only: discovery gets the cards, skills and preferences, no catalogue, no URLs (D61). The reference catalogue is kept as an evaluation arm behind `DiscoverOptions.catalogue`, reached only by `pnpm try:discover --catalogue`. No web tools in any step the UI reaches (D44); `explore.ts` keeps `web_search_20260209` / `web_fetch_20260209` with `blocked_domains` for linkedin.com, indeed.com, climatebase.org | Memory-only is the baseline arm; the app switches to the catalogue only if the evaluation says so (D61); hard constraint still enforced in code |
 | Session state | `profile.md` text + chat messages, in `localStorage`. Sent to the route handler on every turn. Export and import in the profile drawer, "Start over" on the Resume page (D55). The resume and notes as typed are kept in `profile.md` under `## Inputs` (D56) | PRD's "single .md the user keeps"; server is stateless |
@@ -230,7 +230,8 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 5. Access by a single shared passcode given to invited fellows.
    (2026-11-26: superseded for invited people by one access code each,
    D68. The shared passcode survives only as the optional operator
-   passcode, `APP_PASSCODE`, whose sessions are not metered.)
+   passcode, `OPERATOR_PASSCODE` (renamed from `APP_PASSCODE` by D70), whose
+   sessions are not metered.)
 6. "Example profiles" in the reference collection means role profiles (what
    someone in the role does day to day), never personal profiles, per the
    PRD's consent rule.
@@ -1249,7 +1250,7 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     requires `codeKey` (null for the operator) so no caller mints a session
     without deciding, and throws on anything that is not null or a key.
     `/api/enter` reads the field `code` (was `passcode`) and runs in this
-    order: when `APP_PASSCODE` is set, the typed text is compared to it
+    order: when `OPERATOR_PASSCODE` is set, the typed text is compared to it
     first in constant time; otherwise the text is normalised, anything not
     16 characters of the alphabet (`isAccessCodeShape`) is refused without
     a database round trip, and the key is read through
@@ -1297,6 +1298,21 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
     scripts, `smoke:llm`) is not metered and never touches the ledger.
     `llm_usage` is unchanged: `UsageRow` gains no field, the key never
     reaches a row or a log line, and no row is linked to a code (D22).
+
+70. **The operator passcode is read from `OPERATOR_PASSCODE`, not
+    `APP_PASSCODE` (2026-11-26, G2e.1 code review).** Through Phase 2d,
+    `APP_PASSCODE` held the one passcode every invited fellow was given. D68
+    kept the variable and turned a match into an operator session, with no
+    key and no cap, and the access-code field accepts the passcode text, so
+    after the merge any fellow typing the old passcode would have run
+    uncapped. Renaming the variable makes the old value inert on deploy
+    whatever is still set in Vercel: `/api/enter` never reads
+    `APP_PASSCODE`, and `route.test.ts` asserts that a value set there does
+    not enter. The name also now says what the value is (the global naming
+    rule). `OPERATOR_PASSCODE` stays optional and unset in production unless
+    the operator needs it, and when set it must be a fresh value, never the
+    Phase 2d passcode. Cookies from Phase 2d cannot carry over either: they
+    are v1, and D68 refuses every version but v2.
 
 ---
 

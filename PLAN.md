@@ -25,8 +25,8 @@ in each phase's table. Every phase also starts with your kickoff prompt
   `/security-review`. After the fixes: 2e.7 (the one migration to
   production, in a session where your CLI is linked to it), then G2e.2
   (merge, issue codes with `pnpm codes:add --cap 5 --count <n>` in your own
-  terminal, decide whether `APP_PASSCODE` stays in Vercel). Merging signs
-  everyone out once and the shared passcode stops being what fellows type,
+  terminal, delete `APP_PASSCODE` from Vercel, and set `OPERATOR_PASSCODE`
+  only if you need it, with a fresh value). Merging signs everyone out once and the shared passcode stops being what fellows type,
   so choose the merge date against the demo on 2026-12-01: either issue
   codes before it or merge after it.
 - **2c.2 (after the demo):** set up dataset access in a separate session
@@ -410,7 +410,7 @@ cap keyed on it stops nobody. The phase runs on branch `phase-2e`, cut from
   cookie carrying its key: `v2.<expiry>.<key>.<hmac>`. A code that has
   reached its cap is still let in, because the person's profile is in their
   browser and they must be able to read and export it; it is the next model
-  call that is refused. `APP_PASSCODE` stays as an optional operator
+  call that is refused. `OPERATOR_PASSCODE` stays as an optional operator
   passcode for you and for local work; its sessions carry no key and are not
   metered.
 - **Metering.** The key travels from the signed cookie, never from the
@@ -469,7 +469,7 @@ know who holds each code.
 | 2e.6 | Docs. CLAUDE.md: the data rule in its new wording everywhere it is stated, the commands table (`codes:*`), the environment table (`APP_PASSCODE` optional, operator only), "Passcode gate" (codes, the v2 token, `readSession`), "Supabase" (the fourth table, the fourth service-role script, the two functions), "LLM calls" (`codeKey`, `LlmBudgetError`, the ledger). `docs/technical-plan.md`: §1 "Access" and "Cost telemetry", the §3 module map (`budget.ts`, `access-code.ts`, `scripts/access-codes.ts`), a note on D4 and D5 pointing at the new decisions. `docs/data-flow.html`: the new store, the read before each call and the write after it. `docs/deploy.md`: issuing codes, reading totals, raising a cap, disabling a code, what the operator passcode is for. `docs/backlog.md` §5: the spend-control item, with showing cost in the UI left open. `.env.example` | Claude (Opus) | `grep -rn "only server-side write" CLAUDE.md docs src` returns nothing stale; every command in the docs runs as written on the local stack; tests, lint and build pass | `[DONE]` 2026-11-26: the grep returns nothing; `codes:add`, `codes:list`, `codes:set` and `db:check-rls` (35/35) ran as written on the local stack; 571 tests, lint and build pass. Also dated notes on D8, and README.md |
 | G2e.1 | `/code-review` and `/security-review` (the phase touches auth, input handling and Supabase); PR for `phase-2e` | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2e` | `[TODO]` |
 | 2e.7 | Production, before the merge. `supabase db push` of the one new migration, then `pnpm db:check-rls` against production with the service key from your shell, never from the repo. The migration only adds, so the deployed app keeps working | Claude (Opus), in a session where your CLI is linked to the production project | The migration is applied and `db:check-rls` passes against production | `[TODO]` |
-| G2e.2 | Merge and issue codes. Merge the PR. In your own terminal, never in a Claude session: `pnpm codes:add --cap 5 --count <n>` against production, and keep the list of who has which code outside the repo. Decide whether `APP_PASSCODE` stays in Vercel: it is uncapped, so remove it or keep it to yourself. Then one check on the production URL with a code capped at $0.50: run loops until it is refused | **`YOU`** | A turn is refused with the budget sentence, your profile is still there, `codes:list` shows the total just over $0.50, and a wrong code is refused at `/enter` | `[TODO]` |
+| G2e.2 | Merge and issue codes. Merge the PR. In your own terminal, never in a Claude session: `pnpm codes:add --cap 5 --count <n>` against production, and keep the list of who has which code outside the repo. Delete `APP_PASSCODE` from Vercel (no longer read, D70). Set `OPERATOR_PASSCODE` only if you need it: it is uncapped, so give it a fresh value, never the old shared passcode, and keep it to yourself. Then one check on the production URL with a code capped at $0.50: run loops until it is refused | **`YOU`** | A turn is refused with the budget sentence, your profile is still there, `codes:list` shows the total just over $0.50, and a wrong code is refused at `/enter` | `[TODO]` |
 
 Order: 2e.1 to 2e.6 in sequence on `phase-2e`, one commit each, no
 worktrees: each step builds on the one before (2e.2 on the table, 2e.3 on

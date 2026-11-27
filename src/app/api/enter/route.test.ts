@@ -53,7 +53,7 @@ async function sessionOf(response: Response) {
 
 describe("POST /api/enter", () => {
   beforeEach(async () => {
-    vi.stubEnv("APP_PASSCODE", OPERATOR_PASSCODE);
+    vi.stubEnv("OPERATOR_PASSCODE", OPERATOR_PASSCODE);
     vi.stubEnv("PASSCODE_COOKIE_SECRET", SECRET);
     memory = memoryBudgetLedger({
       [await accessCodeKey(KNOWN)]: { capUsd: 5, spentUsd: 1.25, disabled: false },
@@ -139,8 +139,8 @@ describe("POST /api/enter", () => {
     expect(reads).toEqual([]);
   });
 
-  it("with APP_PASSCODE unset, a real code still enters and arbitrary text is refused", async () => {
-    vi.stubEnv("APP_PASSCODE", "");
+  it("with OPERATOR_PASSCODE unset, a real code still enters and arbitrary text is refused", async () => {
+    vi.stubEnv("OPERATOR_PASSCODE", "");
     const ok = await POST(form({ code: KNOWN }));
     expect(ok.status).toBe(303);
     expect(await sessionOf(ok)).toEqual({ codeKey: await accessCodeKey(KNOWN) });
@@ -150,6 +150,15 @@ describe("POST /api/enter", () => {
       expect(refused.status).toBe(401);
       expect(refused.headers.get("set-cookie")).toBeNull();
     }
+  });
+
+  it("ignores the Phase 2d APP_PASSCODE variable, so the old shared passcode cannot open an unmetered session (D70)", async () => {
+    vi.stubEnv("OPERATOR_PASSCODE", "");
+    vi.stubEnv("APP_PASSCODE", "the-old-shared-passcode");
+    const refused = await POST(form({ code: "the-old-shared-passcode" }));
+    expect(refused.status).toBe(401);
+    expect(refused.headers.get("set-cookie")).toBeNull();
+    expect(reads).toEqual([]);
   });
 
   it("no longer enters on the old passcode field name", async () => {

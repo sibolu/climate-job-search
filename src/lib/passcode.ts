@@ -60,7 +60,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 
 /**
  * True when `input` is the configured passcode. Empty or missing values are
- * always rejected, so an unset `APP_PASSCODE` cannot open the app.
+ * always rejected, so an unset `OPERATOR_PASSCODE` cannot open the app.
  */
 export function isValidPasscode(
   input: string | null | undefined,

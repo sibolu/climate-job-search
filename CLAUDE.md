@@ -115,7 +115,7 @@ claude mcp add playwright --scope local -- \
   in `.playwright-mcp/` in the repo, which is gitignored: local only, never
   scattered outside the repo. Pass screenshot `filename`s as bare names so
   they land there too; delete the folder whenever you like.
-- Set a local-only `APP_PASSCODE` (the operator passcode, unmetered) in
+- Set a local-only `OPERATOR_PASSCODE` (the operator passcode, unmetered) in
   `.env.local`: the agent types it into the gate's "Access code" field and it
   lands in the transcript.
 - Flow: `pnpm dev` → `/enter` → operator passcode (or a code from
@@ -137,7 +137,7 @@ and must never be imported into a client component.
 
 | Variable | Scope | Purpose |
 |---|---|---|
-| `APP_PASSCODE` | server-only | Optional operator passcode, for the operator and local work only; its sessions carry no code key and are not metered (D68). Invited people get access codes from `pnpm codes:add` instead |
+| `OPERATOR_PASSCODE` | server-only | Optional operator passcode, for the operator and local work only; its sessions carry no code key and are not metered (D68). Phase 2d's `APP_PASSCODE` (the passcode shared with fellows) is deliberately not read, so the old value cannot open an uncapped session (D70). Invited people get access codes from `pnpm codes:add` instead |
 | `PASSCODE_COOKIE_SECRET` | server-only | HMAC key that signs the session cookie |
 | `ANTHROPIC_API_KEY` | server-only | Claude API calls from route handlers (Phase 0.3) |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL (local stack: `supabase status -o env`) |
@@ -453,7 +453,7 @@ D5, D68).
   data**: a derived key, not the code. Bump `SESSION_VERSION` to invalidate
   every live session; v1 cookies are refused, so the v2 deploy signs
   everyone out once.
-- **`src/app/api/enter/route.ts`** reads the field `code`. If `APP_PASSCODE`
+- **`src/app/api/enter/route.ts`** reads the field `code`. If `OPERATOR_PASSCODE`
   is set it is compared first, in constant time, and a match enters with no
   key (not metered: for the operator and local work only). Otherwise the text
   is normalised, refused if not code-shaped, its key derived and

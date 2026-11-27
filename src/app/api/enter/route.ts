@@ -14,9 +14,11 @@ import {
  * sets the signed session cookie carrying the code's key (technical-plan.md
  * D68).
  *
- * Order: (1) when `APP_PASSCODE` is set, the typed text is compared to it in
+ * Order: (1) when `OPERATOR_PASSCODE` is set, the typed text is compared to it in
  * constant time; a match is an operator session, with no key and not
- * metered. (2) Otherwise the text is normalised; anything that cannot be a
+ * metered. Phase 2d's `APP_PASSCODE` is deliberately not read: its value was
+ * the passcode shared with every fellow, and honouring it would give each of
+ * them an uncapped session (technical-plan.md D70). (2) Otherwise the text is normalised; anything that cannot be a
  * code is refused without a database round trip. (3) The key is read from the
  * budget ledger: unknown or disabled is the same 401 as a malformed code, so
  * the response never says which. A code at its cap still enters, because the
@@ -120,8 +122,8 @@ export async function POST(request: Request) {
 
   const typed = await readTypedCode(request);
 
-  // isValidPasscode rejects an empty typed value and an unset APP_PASSCODE.
-  if (isValidPasscode(typed, process.env.APP_PASSCODE)) {
+  // isValidPasscode rejects an empty typed value and an unset OPERATOR_PASSCODE.
+  if (isValidPasscode(typed, process.env.OPERATOR_PASSCODE)) {
     return enter(request, secret, null);
   }
 
