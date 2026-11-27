@@ -52,8 +52,8 @@ evidence comes from.
 ## How it works, briefly
 
 Next.js and TypeScript on Vercel. Claude through the Anthropic SDK: Opus 5.5
-reads the resume and proposes fields and roles, Sonnet 5.5 writes the
-searches. No step the app reaches searches the web; links come from the
+reads the resume, Fable 5.2 proposes fields and roles, and Opus 5.5 writes
+the searches. No step the app reaches searches the web; links come from the
 reference collection. Supabase Postgres holds the
 reference collection, which is edited as YAML in this repo and mirrored into
 the database, so every row in production is reviewable in a pull request,

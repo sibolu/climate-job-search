@@ -207,6 +207,9 @@ Taken by default; say so to change one. Cited from code and CLAUDE.md as `D<n>`.
 1. Next.js + TypeScript on Vercel. Supabase holds only the reference
    collection and anonymous usage rows. Python-on-Vercel rejected (weak
    streaming, cold starts).
+   (2026-11-26: Supabase now also holds one `access_codes` row per access
+   code: a derived key, never the code, a dollar cap, a running total, a
+   disabled flag and a creation time; no user data, D67–D69.)
 2. App model `claude-opus-5` everywhere, effort tuned per call. Re-evaluate
    Sonnet 5 for chat turns after Phase 3 using `llm_usage`. (Model now
    `claude-opus-5-5`: D44; `queries` and `revise` on `claude-sonnet-5-5`:

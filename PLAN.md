@@ -16,11 +16,9 @@ in each phase's table. Every phase also starts with your kickoff prompt
 ## Waiting on you
 
 - **Phase 2d (the demo on 2026-12-01), now, G2d.3:** the demo is live at
-  `https://climate-job-search.vercel.app`; 2d.3 and G2d.1 are done. G2d.3
-  (`/code-review`, `/security-review` in fresh sessions, then merge PR #7)
-  does not wait for the demo. After the merge, if you changed Vercel's
-  production branch, set it back to `main`. Then G2d.2, the demo on
-  2026-12-01.
+  `https://climate-job-search.vercel.app`; 2d.3 and G2d.1 are done, and
+  PR #7 merged on 2026-11-26. If you changed Vercel's production branch,
+  set it back to `main`. Then G2d.2, the demo on 2026-12-01.
 - **Phase 2e (a spend cap per access code), now, G2e.1:** steps 2e.0 to
   2e.6 are done on `phase-2e` (cap chosen: $5 per code) and the PR is open.
   Open a fresh session for `/code-review`, then another for
@@ -360,7 +358,7 @@ per-session spend cap stays in 3.3 (the passcode is the demo's guard; watch
 | 2d.4 | Docs. `docs/technical-plan.md`: §1 "LLM" and "Grounding" rows (discovery on Fable 5.2 `medium`, model knowledge only in the app, catalogue kept as an arm) and the "Reference data" row (not read by the app since D61), D61 (memory-only discovery as the baseline arm: why not a generated catalogue, no URLs, companies as text, the catalogue path kept behind an option, 2c.8 feeds the evaluation arm and the app switches only if the evaluation says so; supersedes the D44 sentence on catalogue URLs), D62 (`discover` on Fable 5.2 at `medium`, the price row, the deadline if 2d.2 changed it), §6 entry with the 2d.2 figures; `docs/data-flow.html`: API 3 box (Fable 5.2, no catalogue read, no `Ref`/`Sources` written), the "Reference collection" box marked "not read by the app (D61); evaluation arm", the intro list; CLAUDE.md: the "Discovery has no web tools" bullet, the turn-endpoint paragraph, the Supabase section intro (tables kept, not read at run time), the `try:discover` command row (`--catalogue`); `docs/backlog.md` cross-check (the "Interest areas and the catalogue do not line up" item becomes an evaluation-arm item) | Claude (Opus) | Every doc named here agrees with the code; tests, lint, build pass | `[DONE]` (the §1 "Hosting" row points to `docs/deploy.md`; the production write-up is in technical-plan.md §6, "the 2d.3 production database") |
 | G2d.1 | Browser run on the production URL with your resume: paste → Highlights → two areas → Roles (read the companies: anything you know to be wrong goes into the gate notes) → Searches → open two on LinkedIn. Then open "Your profile" and confirm no `Ref` and no source line was written | **`YOU`** | You reach Searches with no error; two LinkedIn runs return specific results; notes written (a few lines) | `[DONE]` (2026-11-26, on `d65a92f`: reached Searches with no error; the LinkedIn searches worked well. LinkedIn still mixes in promoted posts that match the person's LinkedIn profile rather than the query, though much fewer of them; logged in `docs/backlog.md` §3) |
 | G2d.2 | The demo (2026-12-01) | **`YOU`** | Demo given; what to change goes into `docs/backlog.md` or a dated `docs/demo-2026-12-01.md` | `[TODO]` |
-| G2d.3 | `/code-review` and `/security-review` (2d.3 touched auth and Supabase production; 2d.2 changed a prompt's input shape); merge PR #7 | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2d`; merged to `main` (does not wait for G2d.2) | `[TODO]` |
+| G2d.3 | `/code-review` and `/security-review` (2d.3 touched auth and Supabase production; 2d.2 changed a prompt's input shape); merge PR #7 | **`YOU`** open a fresh session; Claude (Opus) reviews and fixes | Findings fixed and committed on `phase-2d`; merged to `main` (does not wait for G2d.2) | `[TODO]` PR #7 merged 2026-11-26 (`/code-review` fixes in `4cbd0e8`); `/security-review` not recorded |
 
 Order: 2d.1 first (one commit, minutes); then 2d.2 and 2d.3 in parallel
 (disjoint: 2d.2 owns `discover.ts`, `turn.ts`, `try-discover.ts` and their
