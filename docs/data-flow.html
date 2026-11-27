@@ -272,15 +272,15 @@
       </div></div>
       <div class="cell"><div class="box api">
         <div class="api-head"><span class="num">API 3</span><code>discoverFields</code><span class="tag">step discover</span><span class="tag">claude-fable-5-2</span><span class="tag">effort medium</span></div>
-        <h3>Cards + preferences → 4–7 ranked fields, 2–4 roles each, from the model's knowledge</h3>
+        <h3>Cards + preferences → 4–7 ranked fields, 1–3 roles each, from the model's knowledge</h3>
         <ul class="io">
           <li><b>In:</b> active cards, preferences (picked climate areas rank first, never filter), skills from <code>activeSkills</code> (accepted unless removed), fields already on file (rejected ones must not return). No catalogue, no web (D44, D61)</li>
-          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles with plain occupation titles, each citing cards; example organisations as plain text. No <code>Ref</code> and no source URL is written (D61). A re-run replaces the list: fields and roles it does not return are marked <code>Dropped</code> and un-ticked, never deleted (D58)</li>
+          <li><b>Out:</b> fields (fit, uncertainty, evidence citing card IDs, optional question) and roles, each citing cards, whose title is the occupation ("Data science", not a job title; one to three per field; the same occupation may sit under more than one field, D72); example organisations as plain text. No <code>Ref</code> and no source URL is written (D61). A re-run replaces the list: fields and roles it does not return are marked <code>Dropped</code> and un-ticked, never deleted (D58)</li>
         </ul>
         <div class="links">
-          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT_MEMORY · discover.ts:398</a></div>
-          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:554</a></div>
-          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:1098</a></div>
+          <div><span>System prompt</span><a href="../src/lib/discover.ts">DISCOVER_SYSTEM_PROMPT_MEMORY · discover.ts:430</a></div>
+          <div><span>User message</span><a href="../src/lib/discover.ts">buildDiscoverMessage · discover.ts:586</a></div>
+          <div><span>Call site</span><a href="../src/lib/discover.ts">discoverFields · discover.ts:1216</a></div>
         </div>
       </div></div>
       <div class="cell">
@@ -295,10 +295,11 @@
         <ul>
           <li>Drop any field or role that cites no active card</li>
           <li>Strip level words from role titles, dedupe within a field, drop a title headed by a rank (Director of…, Head of…)</li>
+          <li>A title still ending in "Manager" is left in place (code cannot repair it) and reported by <code>endsInManager</code>; <code>pnpm try:discover</code> fails on one (D72)</li>
           <li>Strip any URL from field and role text, with or without a scheme, in both modes (D66; memory mode has no sources)</li>
           <li>Cap at 7 fields, drop duplicates</li>
         </ul>
-        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:850</a></div></div>
+        <div class="links"><div><span>Code</span><a href="../src/lib/discover.ts">validateOutput, applyDiscovery · discover.ts:963</a></div></div>
       </div></div>
       <div class="cell">
         <div class="chips"><em>writes</em><span class="chip w">Fields</span><span class="chip w">Role Shortlist</span></div>
